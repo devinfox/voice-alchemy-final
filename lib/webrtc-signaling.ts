@@ -69,8 +69,11 @@ export class WebRTCSignaling {
    * Connect to the signaling channel
    */
   async connect(): Promise<void> {
+    const channelName = `lesson:${this.roomId}`
+    console.log(`[Signaling] Connecting to channel: ${channelName} as ${this.participantName} (${this.participantId})`)
+
     return new Promise((resolve, reject) => {
-      this.channel = this.supabase.channel(`lesson:${this.roomId}`, {
+      this.channel = this.supabase.channel(channelName, {
         config: {
           presence: { key: this.participantId },
           broadcast: { self: false },
@@ -80,6 +83,7 @@ export class WebRTCSignaling {
       // Handle presence (participant tracking)
       this.channel.on('presence', { event: 'sync' }, () => {
         const presenceState = this.channel?.presenceState() || {}
+        console.log(`[Signaling] Presence sync on ${channelName}:`, JSON.stringify(presenceState, null, 2))
         this.updateParticipantsFromPresence(presenceState)
       })
 
@@ -107,9 +111,11 @@ export class WebRTCSignaling {
 
       // Subscribe to the channel
       this.channel.subscribe(async (status) => {
+        console.log(`[Signaling] Channel ${channelName} status: ${status}`)
         if (status === 'SUBSCRIBED') {
+          console.log(`[Signaling] Successfully subscribed to ${channelName}, tracking presence...`)
           // Track our presence
-          await this.channel?.track({
+          const trackResult = await this.channel?.track({
             id: this.participantId,
             name: this.participantName,
             isHost: this.isHost,
@@ -118,6 +124,7 @@ export class WebRTCSignaling {
             isScreenSharing: false,
             joinedAt: Date.now(),
           })
+          console.log(`[Signaling] Presence track result:`, trackResult)
 
           // Announce ourselves
           this.broadcast({
@@ -133,6 +140,7 @@ export class WebRTCSignaling {
 
           resolve()
         } else if (status === 'CHANNEL_ERROR') {
+          console.error(`[Signaling] Channel error for ${channelName}`)
           reject(new Error('Failed to connect to signaling channel'))
         }
       })
