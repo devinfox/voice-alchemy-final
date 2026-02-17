@@ -63,30 +63,38 @@ export async function POST(request: NextRequest) {
       }, { status: 404 })
     }
 
-    // Generate a magic link for the user
-    const { data, error } = await adminClient.auth.admin.generateLink({
-      type: 'magiclink',
-      email: targetEmail,
-      options: {
-        redirectTo: `${process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000'}/dashboard`
-      }
-    })
-
-    if (error) {
-      console.error('[Dev Login] Error generating link:', error)
-      return NextResponse.json({ error: error.message }, { status: 500 })
+    // Get the user by email
+    const { data: userList, error: listError } = await adminClient.auth.admin.listUsers()
+    if (listError) {
+      console.error('[Dev Login] Error listing users:', listError)
+      return NextResponse.json({ error: listError.message }, { status: 500 })
     }
 
-    // Extract the token from the link
-    const linkUrl = new URL(data.properties.action_link)
-    const token_hash = linkUrl.searchParams.get('token_hash')
-    const type = linkUrl.searchParams.get('type')
+    const targetUser = userList.users.find(u => u.email === targetEmail)
+    if (!targetUser) {
+      return NextResponse.json({ error: 'User not found in auth' }, { status: 404 })
+    }
 
+    // Set a temporary dev password for this user
+    const devPassword = `dev-temp-${Date.now()}-${Math.random().toString(36).slice(2)}`
+
+    const { error: updateError } = await adminClient.auth.admin.updateUserById(
+      targetUser.id,
+      { password: devPassword }
+    )
+
+    if (updateError) {
+      console.error('[Dev Login] Error setting dev password:', updateError)
+      return NextResponse.json({ error: updateError.message }, { status: 500 })
+    }
+
+    // Return credentials for client-side sign-in
     return NextResponse.json({
       success: true,
       email: targetEmail,
-      // Return the verification URL that will set the session
-      verifyUrl: `/auth/callback?token_hash=${token_hash}&type=${type}&next=/dashboard`
+      password: devPassword,
+      // Flag to indicate client should use signInWithPassword
+      usePasswordAuth: true
     })
 
   } catch (error) {

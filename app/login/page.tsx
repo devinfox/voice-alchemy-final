@@ -74,8 +74,24 @@ function DevQuickLogin() {
 
       if (res.ok) {
         const data = await res.json()
-        if (data.verifyUrl) {
-          // Navigate to the verification URL which will set the session
+
+        if (data.usePasswordAuth && data.password) {
+          // Sign in with the temporary password
+          const { error: signInError } = await supabase.auth.signInWithPassword({
+            email: data.email,
+            password: data.password
+          })
+
+          if (signInError) {
+            alert(`Login failed: ${signInError.message}`)
+            setLoggingIn(null)
+            return
+          }
+
+          // Redirect to dashboard
+          window.location.href = '/dashboard'
+        } else if (data.verifyUrl) {
+          // Fallback to magic link verification URL
           window.location.href = data.verifyUrl
         }
       } else {
