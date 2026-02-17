@@ -22,6 +22,7 @@ function DevQuickLogin() {
   const [loading, setLoading] = useState(false)
   const [loggingIn, setLoggingIn] = useState<string | null>(null)
   const [expanded, setExpanded] = useState(false)
+  const [autoLoginAttempted, setAutoLoginAttempted] = useState(false)
 
   const fetchUsers = useCallback(async () => {
     if (users.length > 0) return // Already loaded
@@ -39,9 +40,32 @@ function DevQuickLogin() {
     }
   }, [users.length])
 
+  // Auto-fetch users and auto-login as Julia
+  useEffect(() => {
+    fetchUsers()
+  }, [fetchUsers])
+
+  // Auto-login as Julia when found
+  useEffect(() => {
+    if (autoLoginAttempted || loggingIn) return
+    const julia = users.find(u =>
+      u.name.toLowerCase().includes('julia') &&
+      (u.role === 'teacher' || u.role === 'instructor')
+    )
+    if (julia) {
+      console.log('[DevQuickLogin] Auto-logging in as Julia...')
+      setAutoLoginAttempted(true)
+      handleQuickLogin(julia.email, julia.name)
+    }
+  }, [users, autoLoginAttempted, loggingIn])
+
   const handleQuickLogin = async (email: string, name: string) => {
     setLoggingIn(email)
     try {
+      // Sign out first if there's an existing session
+      const supabase = createClient()
+      await supabase.auth.signOut()
+
       const res = await fetch('/api/dev/login-as', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },

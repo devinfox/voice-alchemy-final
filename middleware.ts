@@ -53,8 +53,10 @@ export async function middleware(request: NextRequest) {
   }
 
   // Redirect authenticated users away from auth pages (except reset-password which needs auth)
+  // Allow ?switch=true to bypass for account switching in dev mode
   const isResetPassword = request.nextUrl.pathname.startsWith('/reset-password')
-  if (user && isAuthRoute && !isResetPassword) {
+  const isSwitchingAccounts = request.nextUrl.searchParams.get('switch') === 'true'
+  if (user && isAuthRoute && !isResetPassword && !isSwitchingAccounts) {
     const url = request.nextUrl.clone()
     url.pathname = '/dashboard'
     return NextResponse.redirect(url)
