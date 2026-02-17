@@ -401,10 +401,17 @@ const VideoWebRTC = forwardRef<VideoWebRTCHandle, VideoWebRTCProps>(function Vid
     }
 
     // Creating the peer connection will add tracks, which triggers onnegotiationneeded
-    // The onnegotiationneeded handler will send the offer if we're the impolite peer
-    // So we don't need to explicitly call sendOffer here
     createPeerConnection(remoteId)
-  }, [createPeerConnection])
+
+    // If we're the impolite peer (higher ID), explicitly send an offer
+    // This ensures connection is initiated even if onnegotiationneeded timing is off
+    if (!isPolite(remoteId)) {
+      console.log(`[VideoWebRTC] We are impolite peer, explicitly sending offer to ${remoteId}`)
+      setTimeout(() => {
+        sendOffer(remoteId)
+      }, 100)
+    }
+  }, [createPeerConnection, isPolite, sendOffer])
 
   // Handle participant left
   const handleParticipantLeft = useCallback((message: SignalingMessage) => {
@@ -833,6 +840,14 @@ const VideoWebRTC = forwardRef<VideoWebRTCHandle, VideoWebRTCProps>(function Vid
               if (p.id !== participantIdRef.current && !peerConnectionsRef.current.has(p.id)) {
                 console.log(`[VideoWebRTC] Creating peer connection to participant from presence: ${p.id}`)
                 createPeerConnection(p.id)
+
+                // If we're the impolite peer, explicitly send an offer
+                if (participantIdRef.current > p.id) {
+                  console.log(`[VideoWebRTC] We are impolite peer (presence), sending offer to ${p.id}`)
+                  setTimeout(() => {
+                    sendOffer(p.id)
+                  }, 100)
+                }
               }
             })
           }
