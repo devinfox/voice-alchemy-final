@@ -1,0 +1,335 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width,initial-scale=1,user-scalable=no" />
+    <title>chromatic tuner</title>
+    <link rel="shortcut icon" href="https://cdn.icon-icons.com/icons2/2783/PNG/512/meter_icon_177217.png" type="image/x-icon">
+    <link rel="stylesheet" href="style1.css" />
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" integrity="sha512-5xE8iNAT+apC4wMrjpGSdEU7mDk6u2gsVr8P3s+T3bpKl9ylH+j5G94UrmR5qVo3RGGCqNevMZ41c3+5jn+GGg==" crossorigin="anonymous" referrerpolicy="no-referrer" />
+
+</head>
+
+<body>
+    <div id="mic-sensitivity-container" style="margin: 24px 0; text-align:center;">
+        <label for="micSensitivity">Mic Sensitivity:</label>
+        <input type="range" id="micSensitivity" min="0" max="100" value="50" style="width: 250px;">
+        <span id="micSensitivityValue">50</span>
+      </div>
+      
+
+    <canvas class="frequency-bars"></canvas>
+    <div style="display: none;" class="meter">
+        <div class="meter-dot"></div>
+        <div class="meter-pointer"></div>
+    </div>
+    <div class="notes">
+        <div class="notes-list"></div>
+        <div style="display: none;" class="frequency">
+            <span>Hz</span>
+        </div>
+    </div>
+    <div class="a4" style="display: none;">A<sub>4</sub> = <span>440</span> Hz</div>
+    <!-- <label class="auto">
+      Auto
+      <input type="checkbox" checked />
+    </label> -->
+    <section id="main">
+        <div class="nowplaying"></div>
+        <div class="keys">
+            <div data-key="65" class="key" data-note="C">
+                <span class="hints">C</span>
+            </div>
+            <div data-key="87" class="key sharp" data-note="C#">
+                <span class="hints">C#</span>
+            </div>
+            <div data-key="83" class="key" data-note="D">
+                <span class="hints">D</span>
+            </div>
+            <div data-key="69" class="key sharp" data-note="D#">
+                <span class="hints">D#</span>
+            </div>
+            <div data-key="68" class="key" data-note="E">
+                <span class="hints">E</span>
+            </div>
+            <div data-key="70" class="key" data-note="F">
+                <span class="hints">F</span>
+            </div>
+            <div data-key="84" class="key sharp" data-note="F#">
+                <span class="hints">F#</span>
+            </div>
+            <div data-key="71" class="key" data-note="G">
+                <span class="hints">G</span>
+            </div>
+            <div data-key="89" class="key sharp" data-note="G#">
+                <span class="hints">G#</span>
+            </div>
+            <div data-key="72" class="key" data-note="A">
+                <span class="hints">A</span>
+            </div>
+            <div data-key="85" class="key sharp" data-note="A#">
+                <span class="hints">A#</span>
+            </div>
+            <div data-key="74" class="key" data-note="B">
+                <span class="hints">B</span>
+            </div>
+            <!-- <div data-key="75" class="key" data-note="C">
+            <span class="hints">K</span>
+        </div>
+        <div data-key="79" class="key sharp" data-note="C#">
+            <span class="hints">O</span>
+        </div>
+        <div data-key="76" class="key" data-note="D">
+            <span class="hints">L</span>
+        </div>
+        <div data-key="80" class="key sharp" data-note="D#">
+            <span class="hints">P</span>
+        </div>
+        <div data-key="186" class="key" data-note="E">
+            <span class="hints">;</span>
+        </div> -->
+        <div class="center" id="center">
+            <div class="controls">
+                <button id="playButton" style="display: block;"><img style="max-width: 15px;" src="./play-icon-white.png" alt="Play"></button>
+                <button id="pauseButton" style="display: none;">  <img style="max-width: 15px;" src="./pause-icon.png" alt="Pause"></button>
+            </div>
+        </div>
+        </div>
+
+        <div class="numbersKeys">
+            <ul>
+                <li class="pressed">0</li>
+                <li>1</li>
+                <li>2</li>
+                <li>3</li>
+                <li>4</li>
+                <li>5</li>
+                <li>6</li>
+                <li>7</li>
+                <li>8</li>
+            </ul>
+        </div>
+        <audio data-key="65" data-octave="0" src="./octave0/C0.mp3"></audio>
+        <audio data-key="83" data-octave="0" src="./octave0/D0.mp3"></audio>
+        <audio data-key="87" data-octave="0" src="./octave0/CSHARP0.mp3"></audio>
+        <audio data-key="69" data-octave="0" src="./octave0/DSHARP0.mp3"></audio>
+        <audio data-key="68" data-octave="0" src="./octave0/E0.mp3"></audio>
+        <audio data-key="70" data-octave="0" src="./octave0/F0.mp3"></audio>
+        <audio data-key="84" data-octave="0" src="./octave0/FSHARP0.mp3"></audio>
+        <audio data-key="71" data-octave="0" src="./octave0/G0.mp3"></audio>
+        <audio data-key="89" data-octave="0" src="./octave0/GSHARP0.mp3"></audio>
+        <audio data-key="72" data-octave="0" src="./octave0/A0.mp3"></audio>
+        <audio data-key="85" data-octave="0" src="./octave0/ASHARP0.mp3"></audio>
+        <audio data-key="74" data-octave="0" src="./octave0/B0.mp3"></audio>
+        <audio data-key="75" data-octave="0" src="http://carolinegabriel.com/demo/js-keyboard/sounds/052.mp3"></audio>
+        <audio data-key="79" data-octave="0" src="http://carolinegabriel.com/demo/js-keyboard/sounds/053.mp3"></audio>
+        <audio data-key="76" data-octave="0" src="http://carolinegabriel.com/demo/js-keyboard/sounds/054.mp3"></audio>
+        <audio data-key="80" data-octave="0" src="http://carolinegabriel.com/demo/js-keyboard/sounds/055.mp3"></audio>
+        <audio data-key="186" data-octave="0" src="http://carolinegabriel.com/demo/js-keyboard/sounds/056.mp3"></audio>
+
+        <audio data-key="65" data-octave="1" src="./octave1/C5.mp3"></audio>
+        <audio data-key="83" data-octave="1" src="./octave1/D5.mp3"></audio>
+        <audio data-key="87" data-octave="1" src="./octave1/Csharp5.mp3"></audio>
+        <audio data-key="69" data-octave="1" src="./octave1/Dsharp5.mp3"></audio>
+        <audio data-key="68" data-octave="1" src="./octave1/E5.mp3"></audio>
+        <audio data-key="70" data-octave="1" src="./octave1/F5.mp3"></audio>
+        <audio data-key="84" data-octave="1" src="./octave1/Fsharp5.mp3"></audio>
+        <audio data-key="71" data-octave="1" src="./octave1/G5.mp3"></audio>
+        <audio data-key="89" data-octave="1" src="./octave1/Gsharp5.mp3"></audio>
+        <audio data-key="72" data-octave="1" src="./octave1/A5.mp3"></audio>
+        <audio data-key="85" data-octave="1" src="./octave1/Asharp5.mp3"></audio>
+        <audio data-key="74" data-octave="1" src="./octave1/B5.mp3"></audio>
+
+        <audio data-key="65" data-octave="2" src="./octave2/c.mp3"></audio>
+        <audio data-key="83" data-octave="2" src="./octave2/d.mp3"></audio>
+        <audio data-key="87" data-octave="2" src="./octave2/csharp.mp3"></audio>
+        <audio data-key="69" data-octave="2" src="./octave2/dsharp.mp3"></audio>
+        <audio data-key="68" data-octave="2" src="./octave2/e.mp3"></audio>
+        <audio data-key="70" data-octave="2" src="./octave2/f.mp3"></audio>
+        <audio data-key="84" data-octave="2" src="./octave2/fsharp.mp3"></audio>
+        <audio data-key="71" data-octave="2" src="./octave2/g.mp3"></audio>
+        <audio data-key="89" data-octave="2" src="./octave2/gsharp.mp3"></audio>
+        <audio data-key="72" data-octave="2" src="./octave2/a.mp3"></audio>
+        <audio data-key="85" data-octave="2" src="./octave2/asharp.mp3"></audio>
+        <audio data-key="74" data-octave="2" src="./octave2/b.mp3"></audio>
+
+        <audio data-key="65" data-octave="3" src="./octave3/c.mp3"></audio>
+        <audio data-key="87" data-octave="3" src="./octave3/csharp.mp3"></audio>
+        <audio data-key="83" data-octave="3" src="./octave3/d.mp3"></audio>
+        <audio data-key="69" data-octave="3" src="./octave3/dsharp.mp3"></audio>
+        <audio data-key="68" data-octave="3" src="./octave3/e.mp3"></audio>
+        <audio data-key="70" data-octave="3" src="./octave3/f.mp3"></audio>
+        <audio data-key="84" data-octave="3" src="./octave3/fsharp.mp3"></audio>
+        <audio data-key="71" data-octave="3" src="./octave3/g.mp3"></audio>
+        <audio data-key="89" data-octave="3" src="./octave3/gsharp.mp3"></audio>
+        <audio data-key="72" data-octave="3" src="./octave3/a.mp3"></audio>
+        <audio data-key="85" data-octave="3" src="./octave3/asharp.mp3"></audio>
+        <audio data-key="74" data-octave="3" src="./octave3/b.mp3"></audio>
+
+        <audio data-key="65" data-octave="4" src="./octave4/c.mp3"></audio>
+        <audio data-key="83" data-octave="4" src="./octave4/d.mp3"></audio>
+        <audio data-key="87" data-octave="4" src="./octave4/csharp.mp3"></audio>
+        <audio data-key="69" data-octave="4" src="./octave4/dsharp.mp3"></audio>
+        <audio data-key="68" data-octave="4" src="./octave4/e.mp3"></audio>
+        <audio data-key="70" data-octave="4" src="./octave4/f.mp3"></audio>
+        <audio data-key="84" data-octave="4" src="./octave4/fsharp.mp3"></audio>
+        <audio data-key="71" data-octave="4" src="./octave4/g.mp3"></audio>
+        <audio data-key="89" data-octave="4" src="./octave4/gsharp.mp3"></audio>
+        <audio data-key="72" data-octave="4" src="./octave4/a.mp3"></audio>
+        <audio data-key="85" data-octave="4" src="./octave4/asharp.mp3"></audio>
+        <audio data-key="74" data-octave="4" src="./octave4/b.mp3"></audio>
+
+        <audio data-key="65" data-octave="5" src="./octave5/c.mp3"></audio>
+        <audio data-key="83" data-octave="5" src="./octave5/d.mp3"></audio>
+        <audio data-key="87" data-octave="5" src="./octave5/csharp.mp3"></audio>
+        <audio data-key="69" data-octave="5" src="./octave5/dsharp.mp3"></audio>
+        <audio data-key="68" data-octave="5" src="./octave5/e.mp3"></audio>
+        <audio data-key="70" data-octave="5" src="./octave5/f.mp3"></audio>
+        <audio data-key="84" data-octave="5" src="./octave5/fsharp.mp3"></audio>
+        <audio data-key="71" data-octave="5" src="./octave5/g.mp3"></audio>
+        <audio data-key="89" data-octave="5" src="./octave5/gsharp.mp3"></audio>
+        <audio data-key="72" data-octave="5" src="./octave5/a.mp3"></audio>
+        <audio data-key="85" data-octave="5" src="./octave5/asharp.mp3"></audio>
+        <audio data-key="74" data-octave="5" src="./octave5/b.mp3"></audio>
+
+        <audio data-key="65" data-octave="6" src="./octave6/c.mp3"></audio>
+        <audio data-key="83" data-octave="6" src="./octave6/d.mp3"></audio>
+        <audio data-key="87" data-octave="6" src="./octave6/csharp.mp3"></audio>
+        <audio data-key="69" data-octave="6" src="./octave6/dsharp.mp3"></audio>
+        <audio data-key="68" data-octave="6" src="./octave6/e.mp3"></audio>
+        <audio data-key="70" data-octave="6" src="./octave6/f.mp3"></audio>
+        <audio data-key="84" data-octave="6" src="./octave6/fsharp.mp3"></audio>
+        <audio data-key="71" data-octave="6" src="./octave6/g.mp3"></audio>
+        <audio data-key="89" data-octave="6" src="./octave6/gsharp.mp3"></audio>
+        <audio data-key="72" data-octave="6" src="./octave6/a.mp3"></audio>
+        <audio data-key="85" data-octave="6" src="./octave6/asharp.mp3"></audio>
+        <audio data-key="74" data-octave="6" src="./octave6/b.mp3"></audio>
+
+        <audio data-key="65" data-octave="7" src="./octave7/c.mp3"></audio>
+        <audio data-key="83" data-octave="7" src="./octave7/d.mp3"></audio>
+        <audio data-key="87" data-octave="7" src="./octave7/csharp.mp3"></audio>
+        <audio data-key="69" data-octave="7" src="./octave7/dsharp.mp3"></audio>
+        <audio data-key="68" data-octave="7" src="./octave7/e.mp3"></audio>
+        <audio data-key="70" data-octave="7" src="./octave7/f.mp3"></audio>
+        <audio data-key="84" data-octave="7" src="./octave7/fsharp.mp3"></audio>
+        <audio data-key="71" data-octave="7" src="./octave7/g.mp3"></audio>
+        <audio data-key="89" data-octave="7" src="./octave7/gsharp.mp3"></audio>
+        <audio data-key="72" data-octave="7" src="./octave7/a.mp3"></audio>
+        <audio data-key="85" data-octave="7" src="./octave7/asharp.mp3"></audio>
+        <audio data-key="74" data-octave="7" src="./octave7/b.mp3"></audio>
+
+        
+        <audio data-key="65" data-octave="8" src="./octave8/c.mp3"></audio>
+        <audio data-key="83" data-octave="8" src="./octave8/d.mp3"></audio>
+        <audio data-key="87" data-octave="8" src="./octave8/csharp.mp3"></audio>
+        <audio data-key="69" data-octave="8" src="./octave8/dsharp.mp3"></audio>
+        <audio data-key="68" data-octave="8" src="./octave8/e.mp3"></audio>
+        <audio data-key="70" data-octave="8" src="./octave8/f.mp3"></audio>
+        <audio data-key="84" data-octave="8" src="./octave8/fsharp.mp3"></audio>
+        <audio data-key="71" data-octave="8" src="./octave8/g.mp3"></audio>
+        <audio data-key="89" data-octave="8" src="./octave8/gsharp.mp3"></audio>
+        <audio data-key="72" data-octave="8" src="./octave8/a.mp3"></audio>
+        <audio data-key="85" data-octave="8" src="./octave8/asharp.mp3"></audio>
+        <audio data-key="74" data-octave="8" src="./octave8/b.mp3"></audio>
+    </section>
+
+    <script>
+        let activeBg = '#4fb605';
+        let textColor = 'darkblue';
+    
+        var btns = document.getElementsByClassName('key');
+        var meter_circle = document.getElementsByClassName('keys')[0];
+    
+        for (var i = 1; i < 12; i++) {
+            btns[i].style.transform = "rotate(" + 30 * i + "deg)";
+            btns[i].querySelector('.hints').style.transform = `rotate(${-30 * i}deg)`;
+            localStorage.setItem('rotation_' + i, (-30 * i) + 'deg');
+        }
+    
+        document.addEventListener("DOMContentLoaded", function () {
+            for (var i = 1; i < 12; i++) {
+                btns[i].style.transform = "rotate(" + 30 * i + "deg)";
+                var hint = btns[i].querySelector('.hints');
+                var storedRotation = localStorage.getItem('rotation_' + i);
+                if (storedRotation) {
+                    hint.style.transform = "rotate(" + storedRotation + ")";
+                }
+            }
+        });
+    
+        // ✅ FIXED: play/pause logic with correct currentlyPlayingNote tracking
+        document.querySelector('#center').addEventListener('click', () => {
+            const selectedKey = document.querySelector('.key.clicked');
+    
+            if (selectedKey) {
+                const keyCode = parseInt(selectedKey.getAttribute('data-key'));
+                const selectedOctave = parseInt(document.querySelector('.numbersKeys>ul>li.pressed').textContent);
+                const audio = document.querySelector(`audio[data-key="${keyCode}"][data-octave="${selectedOctave}"]`);
+    
+                if (!audio) return;
+    
+                // Pause any previously playing note
+                if (window.currentlyPlayingAudio && window.currentlyPlayingKey !== keyCode) {
+                    window.currentlyPlayingAudio.pause();
+                    window.currentlyPlayingAudio.currentTime = 0;
+    
+                    const oldKey = document.querySelector('.key.playing');
+                    if (oldKey) oldKey.classList.remove('playing');
+    
+                    document.getElementById('playButton').style.display = 'block';
+                    document.getElementById('pauseButton').style.display = 'none';
+                }
+    
+                if (!selectedKey.classList.contains('playing')) {
+                    // Play
+                    audio.currentTime = 0;
+                    audio.play();
+                    selectedKey.classList.add('playing');
+    
+                    const keyNote = selectedKey.getAttribute('data-note');
+    
+                    // ✅ Set currently playing note (with parsed octave)
+                    window.currentlyPlayingNote = {
+                        name: keyNote,
+                        octave: selectedOctave
+                    };
+    
+                    window.currentlyPlayingAudio = audio;
+                    window.currentlyPlayingKey = keyCode;
+    
+                    document.getElementById('playButton').style.display = 'none';
+                    document.getElementById('pauseButton').style.display = 'block';
+                } else {
+                    // Pause
+                    audio.pause();
+                    audio.currentTime = 0;
+                    selectedKey.classList.remove('playing');
+    
+                    window.currentlyPlayingNote = null;
+                    window.currentlyPlayingAudio = null;
+                    window.currentlyPlayingKey = null;
+    
+                    document.getElementById('playButton').style.display = 'block';
+                    document.getElementById('pauseButton').style.display = 'none';
+                }
+            }
+        });
+    
+        // Rotation for bottom octave buttons
+        var bottom_btns = document.querySelectorAll('.numbersKeys>ul>li');
+        for (let i = 0; i < 9; i++) {
+            bottom_btns[i].style.transform = "rotate(" + (-15.5 * i) + "deg)";
+        }
+    </script>    
+
+    <script src="https://cdn.jsdelivr.net/npm/sweetalert2@9"></script>
+    <script src="https://cdn.jsdelivr.net/npm/aubiojs@0.1.1/build/aubio.min.js"></script>
+    <script src="tuner.js"></script>
+    <script src="meter.js"></script>
+    <script src="frequency-bars.js"></script>
+    <script src="notes.js"></script>
+    <script src="app.js"></script>
+    <script src="tone.js"></script>
+</body>
+
+</html>
