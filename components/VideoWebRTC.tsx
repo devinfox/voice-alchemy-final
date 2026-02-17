@@ -919,18 +919,23 @@ const VideoWebRTC = forwardRef<VideoWebRTCHandle, VideoWebRTCProps>(function Vid
 
   // Sync local stream to video element - run when layout changes (mini-player toggle)
   useEffect(() => {
+    let cancelled = false
     // Small delay to let DOM settle after layout change
     const timer = setTimeout(() => {
+      if (cancelled) return
       const video = localVideoRef.current
       const stream = localStreamRef.current
 
       if (video && stream && hasLocalStream) {
         // Always reassign when this effect runs (layout may have changed)
-        console.log('[VideoWebRTC] Assigning stream to video element, isMiniPlayer:', isMiniPlayer)
         video.srcObject = stream
         video.muted = true
         video.play().catch(err => {
-          console.error('[VideoWebRTC] Error playing local video:', err)
+          // Ignore AbortError - expected when effect cleanup runs
+          if (err instanceof Error && err.name === 'AbortError') return
+          if (!cancelled) {
+            console.warn('[VideoWebRTC] Error playing local video:', err)
+          }
         })
       } else if (video && !hasLocalStream) {
         // Clear video element when no stream
@@ -938,26 +943,37 @@ const VideoWebRTC = forwardRef<VideoWebRTCHandle, VideoWebRTCProps>(function Vid
       }
     }, 50)
 
-    return () => clearTimeout(timer)
+    return () => {
+      cancelled = true
+      clearTimeout(timer)
+    }
   }, [hasLocalStream, isInitialized, isMiniPlayer])
 
   // Additional effect to ensure video plays when remote streams change (layout may shift)
   useEffect(() => {
+    let cancelled = false
     // Small delay to allow DOM to settle after layout changes
     const timer = setTimeout(() => {
+      if (cancelled) return
       const video = localVideoRef.current
       if (video && hasLocalStream && localStreamRef.current) {
         if (!video.srcObject || video.srcObject !== localStreamRef.current) {
-          console.log('[VideoWebRTC] Re-assigning stream after layout change')
           video.srcObject = localStreamRef.current
           video.muted = true
           video.play().catch(err => {
-            console.error('[VideoWebRTC] Error playing video after layout change:', err)
+            // Ignore AbortError - expected when effect cleanup runs
+            if (err instanceof Error && err.name === 'AbortError') return
+            if (!cancelled) {
+              console.warn('[VideoWebRTC] Error playing video after layout change:', err)
+            }
           })
         }
       }
     }, 100)
-    return () => clearTimeout(timer)
+    return () => {
+      cancelled = true
+      clearTimeout(timer)
+    }
   }, [remoteStreams.size, hasLocalStream])
 
   // Scroll chat to bottom
@@ -1374,41 +1390,51 @@ function RemoteVideoView({
     const video = videoRef.current
     if (!video || !stream) return
 
+    let cancelled = false
+    let unmuteTimeout: NodeJS.Timeout | null = null
+
     const updateVideoTrackState = () => {
+      if (cancelled) return
       const tracks = stream.getVideoTracks()
       setHasVideoTrack(tracks.length > 0 && tracks.some(t => t.enabled && t.readyState === 'live'))
     }
     const videoTracks = stream.getVideoTracks()
     queueMicrotask(updateVideoTrackState)
 
-    // Log stream details for debugging
-    console.log('[RemoteVideoView] Stream:', stream.id, 'Video tracks:', videoTracks.length, 'Audio tracks:', stream.getAudioTracks().length)
-    videoTracks.forEach((track, i) => {
-      console.log(`[RemoteVideoView] Video track ${i}:`, track.label, 'enabled:', track.enabled, 'readyState:', track.readyState)
-    })
-
     // Set the stream
     video.srcObject = stream
 
     // Try to play with various strategies
     const playVideo = async () => {
+      if (cancelled) return
       try {
         // Ensure video is not paused
         video.muted = false // Remote video should have audio
         await video.play()
-        console.log('[RemoteVideoView] Video playing successfully')
       } catch (err) {
-        console.warn('[RemoteVideoView] Autoplay failed, trying muted:', err)
+        // Ignore AbortError - expected when component unmounts
+        if (err instanceof Error && err.name === 'AbortError') {
+          return
+        }
+        if (cancelled) return
         // If autoplay fails due to browser policy, try muted first
         try {
           video.muted = true
           await video.play()
           // Then unmute after a short delay
-          setTimeout(() => {
-            video.muted = false
+          unmuteTimeout = setTimeout(() => {
+            if (!cancelled) {
+              video.muted = false
+            }
           }, 100)
         } catch (mutedErr) {
-          console.error('[RemoteVideoView] Even muted playback failed:', mutedErr)
+          // Ignore AbortError on retry
+          if (mutedErr instanceof Error && mutedErr.name === 'AbortError') {
+            return
+          }
+          if (!cancelled) {
+            console.warn('[RemoteVideoView] Video play failed:', mutedErr)
+          }
         }
       }
     }
@@ -1417,6 +1443,7 @@ function RemoteVideoView({
 
     // Listen for track changes
     const handleTrackChange = () => {
+      if (cancelled) return
       updateVideoTrackState()
     }
 
@@ -1431,6 +1458,10 @@ function RemoteVideoView({
     })
 
     return () => {
+      cancelled = true
+      if (unmuteTimeout) {
+        clearTimeout(unmuteTimeout)
+      }
       stream.removeEventListener('addtrack', handleTrackChange)
       stream.removeEventListener('removetrack', handleTrackChange)
       videoTracks.forEach(track => {
@@ -1519,6 +1550,9 @@ function LocalVideoDisplay({
     const video = videoRef.current
     if (!video) return
 
+    let cancelled = false
+    let retryTimeout: NodeJS.Timeout | null = null
+
     if (stream) {
       // Check for video tracks
       const videoTracks = stream.getVideoTracks()
@@ -1529,19 +1563,34 @@ function LocalVideoDisplay({
       video.muted = true
 
       const playVideo = async () => {
+        if (cancelled) return
         try {
           await video.play()
-          setIsPlaying(true)
-          console.log('[LocalVideoDisplay] Video playing successfully')
+          if (!cancelled) {
+            setIsPlaying(true)
+          }
         } catch (err) {
-          console.warn('[LocalVideoDisplay] Autoplay failed, retrying:', err)
-          // Retry after a short delay
-          setTimeout(async () => {
+          // Ignore AbortError - this is expected when component unmounts or stream changes
+          if (err instanceof Error && err.name === 'AbortError') {
+            return
+          }
+          if (cancelled) return
+          // Retry after a short delay for other errors
+          retryTimeout = setTimeout(async () => {
+            if (cancelled) return
             try {
               await video.play()
-              setIsPlaying(true)
+              if (!cancelled) {
+                setIsPlaying(true)
+              }
             } catch (retryErr) {
-              console.error('[LocalVideoDisplay] Retry failed:', retryErr)
+              // Ignore AbortError on retry too
+              if (retryErr instanceof Error && retryErr.name === 'AbortError') {
+                return
+              }
+              if (!cancelled) {
+                console.warn('[LocalVideoDisplay] Video play failed:', retryErr)
+              }
             }
           }, 100)
         }
@@ -1551,6 +1600,7 @@ function LocalVideoDisplay({
 
       // Listen for track changes
       const handleTrackChange = () => {
+        if (cancelled) return
         const tracks = stream.getVideoTracks()
         setHasVideoTrack(tracks.length > 0 && tracks.some(t => t.enabled && t.readyState === 'live'))
       }
@@ -1564,6 +1614,10 @@ function LocalVideoDisplay({
       })
 
       return () => {
+        cancelled = true
+        if (retryTimeout) {
+          clearTimeout(retryTimeout)
+        }
         stream.removeEventListener('addtrack', handleTrackChange)
         stream.removeEventListener('removetrack', handleTrackChange)
         videoTracks.forEach(track => {
