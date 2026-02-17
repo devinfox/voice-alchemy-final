@@ -1512,23 +1512,79 @@ function LocalVideoDisplay({
   showLoading?: boolean
 }) {
   const videoRef = useRef<HTMLVideoElement>(null)
+  const [isPlaying, setIsPlaying] = useState(false)
+  const [hasVideoTrack, setHasVideoTrack] = useState(false)
 
   useEffect(() => {
     const video = videoRef.current
     if (!video) return
 
     if (stream) {
+      // Check for video tracks
+      const videoTracks = stream.getVideoTracks()
+      const hasTrack = videoTracks.length > 0 && videoTracks.some(t => t.enabled && t.readyState === 'live')
+      setHasVideoTrack(hasTrack)
+
       video.srcObject = stream
       video.muted = true
-      video.play().catch(err => {
-        console.error('[LocalVideoDisplay] Error playing video:', err)
+
+      const playVideo = async () => {
+        try {
+          await video.play()
+          setIsPlaying(true)
+          console.log('[LocalVideoDisplay] Video playing successfully')
+        } catch (err) {
+          console.warn('[LocalVideoDisplay] Autoplay failed, retrying:', err)
+          // Retry after a short delay
+          setTimeout(async () => {
+            try {
+              await video.play()
+              setIsPlaying(true)
+            } catch (retryErr) {
+              console.error('[LocalVideoDisplay] Retry failed:', retryErr)
+            }
+          }, 100)
+        }
+      }
+
+      playVideo()
+
+      // Listen for track changes
+      const handleTrackChange = () => {
+        const tracks = stream.getVideoTracks()
+        setHasVideoTrack(tracks.length > 0 && tracks.some(t => t.enabled && t.readyState === 'live'))
+      }
+
+      stream.addEventListener('addtrack', handleTrackChange)
+      stream.addEventListener('removetrack', handleTrackChange)
+      videoTracks.forEach(track => {
+        track.addEventListener('ended', handleTrackChange)
+        track.addEventListener('mute', handleTrackChange)
+        track.addEventListener('unmute', handleTrackChange)
       })
+
+      return () => {
+        stream.removeEventListener('addtrack', handleTrackChange)
+        stream.removeEventListener('removetrack', handleTrackChange)
+        videoTracks.forEach(track => {
+          track.removeEventListener('ended', handleTrackChange)
+          track.removeEventListener('mute', handleTrackChange)
+          track.removeEventListener('unmute', handleTrackChange)
+        })
+      }
     } else {
       video.srcObject = null
+      setIsPlaying(false)
+      setHasVideoTrack(false)
     }
   }, [stream])
 
   const avatarSize = compact ? 'w-12 h-12 text-xl' : 'w-32 h-32 text-4xl'
+
+  // Show avatar when video is off OR when no video track is available
+  const shouldShowAvatar = isVideoOff || (stream && !hasVideoTrack)
+  // Show loading when explicitly requested OR when stream exists but video isn't playing yet
+  const shouldShowLoading = (showLoading && !stream) || (stream && !isPlaying && !isVideoOff && hasVideoTrack)
 
   return (
     <div className="relative w-full h-full">
@@ -1537,16 +1593,16 @@ function LocalVideoDisplay({
         autoPlay
         playsInline
         muted
-        className={`${className} ${isVideoOff ? 'hidden' : ''}`}
+        className={`${className} ${(isVideoOff || shouldShowAvatar) ? 'hidden' : ''}`}
       />
-      {isVideoOff && (
+      {shouldShowAvatar && (
         <div className="absolute inset-0 flex items-center justify-center bg-gray-800">
           <div className={`${avatarSize} rounded-full bg-gray-700 flex items-center justify-center text-white font-medium`}>
             {participantName.charAt(0).toUpperCase()}
           </div>
         </div>
       )}
-      {showLoading && !stream && (
+      {shouldShowLoading && (
         <div className="absolute inset-0 flex items-center justify-center bg-gray-900">
           <div className="text-center">
             <div className="w-12 h-12 border-4 border-[#CEB466] border-t-transparent rounded-full animate-spin mx-auto mb-4" />

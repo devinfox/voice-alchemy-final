@@ -113,27 +113,40 @@ export async function POST(
 
       console.log('[End Class API] Linked recording', latestRecording.id, 'to archived note', archivedNote.id)
 
-      // Trigger AI processing in the background (non-blocking)
-      const rawBaseUrl = process.env.NEXT_PUBLIC_APP_URL || process.env.VERCEL_URL
-      const baseUrl = rawBaseUrl
-        ? (rawBaseUrl.startsWith('http://') || rawBaseUrl.startsWith('https://') ? rawBaseUrl : `https://${rawBaseUrl}`)
-        : 'http://localhost:3000'
-      const processingHeaders: Record<string, string> = { 'Content-Type': 'application/json' }
-      if (process.env.CRON_SECRET) {
-        processingHeaders['x-internal-secret'] = process.env.CRON_SECRET
+      // Check if AI processing needs to be triggered
+      // Note: AI processing is now primarily handled by the recordings upload route
+      // This serves as a backup in case the upload route's processing failed
+      const { data: recordingStatus } = await dbClient
+        .from('lesson_recordings')
+        .select('ai_processing_status')
+        .eq('id', latestRecording.id)
+        .single()
+
+      if (recordingStatus?.ai_processing_status === 'pending' || recordingStatus?.ai_processing_status === 'failed') {
+        console.log('[End Class API] Recording not yet processed, triggering AI processing as backup')
+        // Trigger AI processing via HTTP call as backup
+        const rawBaseUrl = process.env.NEXT_PUBLIC_APP_URL || process.env.VERCEL_URL
+        const baseUrl = rawBaseUrl
+          ? (rawBaseUrl.startsWith('http://') || rawBaseUrl.startsWith('https://') ? rawBaseUrl : `https://${rawBaseUrl}`)
+          : 'http://localhost:3000'
+        const processingHeaders: Record<string, string> = { 'Content-Type': 'application/json' }
+        if (process.env.CRON_SECRET) {
+          processingHeaders['x-internal-secret'] = process.env.CRON_SECRET
+        }
+        const cookieHeader = request.headers.get('cookie')
+        if (cookieHeader) {
+          processingHeaders.cookie = cookieHeader
+        }
+        fetch(`${baseUrl}/api/lessons/${bookingId}/process-recording`, {
+          method: 'POST',
+          headers: processingHeaders,
+          body: JSON.stringify({ recordingId: latestRecording.id }),
+        }).catch(err => {
+          console.error('[End Class API] Failed to trigger AI processing:', err)
+        })
+      } else {
+        console.log('[End Class API] AI processing already', recordingStatus?.ai_processing_status, 'for recording', latestRecording.id)
       }
-      const cookieHeader = request.headers.get('cookie')
-      if (cookieHeader) {
-        processingHeaders.cookie = cookieHeader
-      }
-      fetch(`${baseUrl}/api/lessons/${bookingId}/process-recording`, {
-        method: 'POST',
-        headers: processingHeaders,
-        body: JSON.stringify({ recordingId: latestRecording.id }),
-      }).catch(err => {
-        console.error('[End Class API] Failed to trigger AI processing:', err)
-      })
-      console.log('[End Class API] Triggered AI processing for recording', latestRecording.id)
     }
 
     // --- Also update session_notes if it exists (non-blocking) ---
