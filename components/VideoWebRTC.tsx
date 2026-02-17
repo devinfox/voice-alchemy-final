@@ -825,6 +825,17 @@ const VideoWebRTC = forwardRef<VideoWebRTCHandle, VideoWebRTCProps>(function Vid
 
         signaling.onParticipantChange((updatedParticipants) => {
           setParticipants(updatedParticipants)
+
+          // IMPORTANT: Create peer connections for any participants we haven't connected to yet
+          // This handles the case where presence syncs after connect() resolves
+          if (localStreamRef.current) {
+            updatedParticipants.forEach(p => {
+              if (p.id !== participantIdRef.current && !peerConnectionsRef.current.has(p.id)) {
+                console.log(`[VideoWebRTC] Creating peer connection to participant from presence: ${p.id}`)
+                createPeerConnection(p.id)
+              }
+            })
+          }
         })
 
         await signaling.connect()
@@ -852,14 +863,24 @@ const VideoWebRTC = forwardRef<VideoWebRTCHandle, VideoWebRTCProps>(function Vid
         // Connect to existing participants
         // Creating peer connections will add tracks, triggering onnegotiationneeded
         // which handles sending offers to the appropriate peers
-        const existingParticipants = signaling.getParticipants()
-        console.log(`[VideoWebRTC] Found ${existingParticipants.length} existing participants`)
-        existingParticipants.forEach(p => {
-          if (p.id !== participantIdRef.current && !peerConnectionsRef.current.has(p.id)) {
-            console.log(`[VideoWebRTC] Creating peer connection to existing participant: ${p.id}`)
-            createPeerConnection(p.id)
+        const connectToExistingParticipants = () => {
+          const existingParticipants = signaling.getParticipants()
+          console.log(`[VideoWebRTC] Found ${existingParticipants.length} existing participants`)
+          existingParticipants.forEach(p => {
+            if (p.id !== participantIdRef.current && !peerConnectionsRef.current.has(p.id)) {
+              console.log(`[VideoWebRTC] Creating peer connection to existing participant: ${p.id}`)
+              createPeerConnection(p.id)
+            }
+          })
+        }
+
+        // Try immediately and again after a short delay (presence sync may be delayed)
+        connectToExistingParticipants()
+        setTimeout(() => {
+          if (mountedRef.current && !cancelled) {
+            connectToExistingParticipants()
           }
-        })
+        }, 500)
 
         // Auto-record immediately if host and autoRecord is enabled
         if (isHostRef.current && autoRecord) {

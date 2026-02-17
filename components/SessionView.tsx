@@ -721,57 +721,67 @@ function ArchivedNoteAccordion({ id, bookingId, title, subtitle, isAdmin, onDele
         setAiStatus('completed')
       } else if (data?.recording_id) {
         setRecordingId(data.recording_id)
-        // Check recording AI processing status
-        const { data: recording } = await supabase
-          .from('lesson_recordings')
-          .select('ai_processing_status, ai_summary')
-          .eq('id', data.recording_id)
-          .single()
-
-        if (recording?.ai_summary) {
-          setAiSummary(recording.ai_summary as AISummary)
-          setAiStatus('completed')
-        } else {
-          setAiStatus(recording?.ai_processing_status || 'pending')
-          await triggerProcessing(data.recording_id, recording?.ai_processing_status || 'pending')
-        }
-      } else if (bookingId) {
-        // Fallback for older notes where recording_id was never linked: pick nearest recording by time.
-        const { data: recordings } = await supabase
-          .from('lesson_recordings')
-          .select('id, started_at, ended_at, ai_processing_status, ai_summary, created_at')
-          .eq('booking_id', bookingId)
-          .order('created_at', { ascending: false })
-          .limit(20)
-
-        if (recordings?.length) {
-          const noteStartMs = data?.class_started_at ? new Date(data.class_started_at).getTime() : null
-          const noteEndMs = data?.class_ended_at ? new Date(data.class_ended_at).getTime() : null
-
-          const best = recordings
-            .map((recording) => {
-              const recordingStartMs = recording.started_at ? new Date(recording.started_at).getTime() : null
-              const recordingEndMs = recording.ended_at ? new Date(recording.ended_at).getTime() : null
-              const deltaStart = noteStartMs && recordingStartMs ? Math.abs(noteStartMs - recordingStartMs) : Number.POSITIVE_INFINITY
-              const deltaEnd = noteEndMs && recordingEndMs ? Math.abs(noteEndMs - recordingEndMs) : Number.POSITIVE_INFINITY
-              return {
-                recording,
-                deltaMs: Math.min(deltaStart, deltaEnd),
-              }
-            })
-            .sort((a, b) => a.deltaMs - b.deltaMs)[0]
-
-          // Accept nearest match only if it's reasonably close to this class.
-          if (best && best.deltaMs <= 3 * 60 * 60 * 1000) {
-            setRecordingId(best.recording.id)
-            if (best.recording.ai_summary) {
-              setAiSummary(best.recording.ai_summary as AISummary)
+        // Check recording AI processing status via API to avoid RLS issues
+        try {
+          const res = await fetch(`/api/lessons/${bookingId}/process-recording?recordingId=${data.recording_id}`)
+          if (res.ok) {
+            const payload = await res.json()
+            if (payload?.summary) {
+              setAiSummary(payload.summary as AISummary)
               setAiStatus('completed')
             } else {
-              setAiStatus(best.recording.ai_processing_status || 'pending')
-              await triggerProcessing(best.recording.id, best.recording.ai_processing_status || 'pending')
+              setAiStatus(payload?.status || 'pending')
+              await triggerProcessing(data.recording_id, payload?.status || 'pending')
+            }
+          } else {
+            setAiStatus('pending')
+            await triggerProcessing(data.recording_id, 'pending')
+          }
+        } catch (err) {
+          console.warn('[ArchivedNoteAccordion] Failed to check recording status via API:', err)
+          setAiStatus('pending')
+          await triggerProcessing(data.recording_id, 'pending')
+        }
+      } else if (bookingId) {
+        // Fallback for older notes where recording_id was never linked: use API endpoint to fetch recordings
+        // (avoids RLS policy issues with direct DB access)
+        try {
+          const res = await fetch(`/api/lessons/${bookingId}/recordings`)
+          if (res.ok) {
+            const { recordings } = await res.json()
+
+            if (recordings?.length) {
+              const noteStartMs = data?.class_started_at ? new Date(data.class_started_at).getTime() : null
+              const noteEndMs = data?.class_ended_at ? new Date(data.class_ended_at).getTime() : null
+
+              const best = recordings
+                .map((recording: { id: string; started_at?: string; ended_at?: string; ai_processing_status?: string; ai_summary?: AISummary; created_at?: string }) => {
+                  const recordingStartMs = recording.started_at ? new Date(recording.started_at).getTime() : null
+                  const recordingEndMs = recording.ended_at ? new Date(recording.ended_at).getTime() : null
+                  const deltaStart = noteStartMs && recordingStartMs ? Math.abs(noteStartMs - recordingStartMs) : Number.POSITIVE_INFINITY
+                  const deltaEnd = noteEndMs && recordingEndMs ? Math.abs(noteEndMs - recordingEndMs) : Number.POSITIVE_INFINITY
+                  return {
+                    recording,
+                    deltaMs: Math.min(deltaStart, deltaEnd),
+                  }
+                })
+                .sort((a: { deltaMs: number }, b: { deltaMs: number }) => a.deltaMs - b.deltaMs)[0]
+
+              // Accept nearest match only if it's reasonably close to this class.
+              if (best && best.deltaMs <= 3 * 60 * 60 * 1000) {
+                setRecordingId(best.recording.id)
+                if (best.recording.ai_summary) {
+                  setAiSummary(best.recording.ai_summary as AISummary)
+                  setAiStatus('completed')
+                } else {
+                  setAiStatus(best.recording.ai_processing_status || 'pending')
+                  await triggerProcessing(best.recording.id, best.recording.ai_processing_status || 'pending')
+                }
+              }
             }
           }
+        } catch (err) {
+          console.warn('[ArchivedNoteAccordion] Failed to fetch recordings via API:', err)
         }
       }
 
