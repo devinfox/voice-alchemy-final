@@ -294,10 +294,20 @@ export default function SessionView({ studentId, bookingId, isAdmin = false, cur
         classStartedAt: startedAt?.toISOString() ?? ended.toISOString(),
       }),
     })
-    const result = await res.json().catch(() => null)
+
+    let result = null
+    try {
+      const text = await res.text()
+      console.log('[SessionView] Response status:', res.status, 'Body length:', text.length)
+      if (text) {
+        result = JSON.parse(text)
+      }
+    } catch (parseErr) {
+      console.error('[SessionView] Failed to parse response:', parseErr)
+    }
 
     if (!res.ok) {
-      console.error('[SessionView] End class failed:', result)
+      console.error('[SessionView] End class failed:', res.status, JSON.stringify(result))
       // Don't clear the editor if archiving failed — content would be lost
       const detail = result?.details || result?.error || `Status ${res.status}`
       alert(`Failed to archive notes: ${detail}\n\nYour notes are still in the editor. Please try ending class again.`)
@@ -671,16 +681,17 @@ function ArchivedNoteAccordion({ id, bookingId, title, subtitle, isAdmin, onDele
     }
   }, [bookingId])
 
-  const triggerProcessing = useCallback(async (targetRecordingId: string, status: string | null | undefined) => {
+  const triggerProcessing = useCallback(async (targetRecordingId: string, status: string | null | undefined, force: boolean = false) => {
     if (!targetRecordingId) return
-    if (status === 'processing' || status === 'completed') return
+    if (!force && (status === 'processing' || status === 'completed')) return
 
     setReprocessing(true)
+    setAiStatus('processing')
     try {
       const res = await fetch(`/api/lessons/${bookingId}/process-recording`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ recordingId: targetRecordingId }),
+        body: JSON.stringify({ recordingId: targetRecordingId, force }),
       })
 
       if (res.ok) {
@@ -912,6 +923,31 @@ function ArchivedNoteAccordion({ id, bookingId, title, subtitle, isAdmin, onDele
                 )}
                 {aiSummary && (
                   <>
+                    {/* Rescan Button */}
+                    {recordingId && (
+                      <div className="flex justify-end">
+                        <button
+                          onClick={() => triggerProcessing(recordingId, aiStatus, true)}
+                          disabled={reprocessing}
+                          className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-[#CEB466]/20 hover:bg-[#CEB466]/30 text-[#CEB466] text-xs font-medium disabled:opacity-50 transition-colors"
+                        >
+                          {reprocessing ? (
+                            <>
+                              <div className="w-3 h-3 border-2 border-[#CEB466] border-t-transparent rounded-full animate-spin" />
+                              Scanning...
+                            </>
+                          ) : (
+                            <>
+                              <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+                              </svg>
+                              Rescan Lesson for Notes
+                            </>
+                          )}
+                        </button>
+                      </div>
+                    )}
+
                     <div>
                       <p className="text-gray-300 text-sm">{aiSummary.summary}</p>
                     </div>

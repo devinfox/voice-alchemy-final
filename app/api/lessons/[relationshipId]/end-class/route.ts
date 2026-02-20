@@ -194,6 +194,7 @@ export async function POST(
     })
   } catch (error) {
     console.error('[End Class API] Unexpected error:', error)
-    return NextResponse.json({ error: 'Internal server error' }, { status: 500 })
+    const message = error instanceof Error ? error.message : 'Unknown error'
+    return NextResponse.json({ error: 'Internal server error', details: message }, { status: 500 })
   }
 }

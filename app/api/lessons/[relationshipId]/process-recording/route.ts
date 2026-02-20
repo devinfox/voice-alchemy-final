@@ -25,7 +25,7 @@ export async function POST(
     }
 
     const body = await request.json()
-    const { recordingId } = body
+    const { recordingId, force } = body
 
     if (!recordingId) {
       return NextResponse.json({ error: 'recordingId is required' }, { status: 400 })
@@ -46,8 +46,8 @@ export async function POST(
       return NextResponse.json({ error: 'Recording does not belong to this lesson' }, { status: 400 })
     }
 
-    // Check if already processed
-    if (recording.ai_processing_status === 'completed') {
+    // Check if already processed (skip if force=true for rescanning)
+    if (recording.ai_processing_status === 'completed' && !force) {
       return NextResponse.json({
         message: 'Recording already processed',
         transcript: recording.transcript,
