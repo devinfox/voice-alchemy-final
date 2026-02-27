@@ -89,6 +89,9 @@ export class WebRTCSignaling {
 
       this.channel.on('presence', { event: 'join' }, ({ key, newPresences }) => {
         console.log('[Signaling] Participant joined:', key, newPresences)
+        // Update participants from latest presence state to ensure new participant is detected
+        const presenceState = this.channel?.presenceState() || {}
+        this.updateParticipantsFromPresence(presenceState)
       })
 
       this.channel.on('presence', { event: 'leave' }, ({ key, leftPresences }) => {

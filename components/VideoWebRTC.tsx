@@ -1045,7 +1045,7 @@ const VideoWebRTC = forwardRef<VideoWebRTCHandle, VideoWebRTCProps>(function Vid
                 createPeerConnection(p.id)
 
                 // If we're the impolite peer, explicitly send an offer
-                if (participantIdRef.current > p.id) {
+                if (!isPolite(p.id)) {
                   console.log(`[VideoWebRTC] We are impolite peer (presence), sending offer to ${p.id}`)
                   setTimeout(() => {
                     sendOffer(p.id)
