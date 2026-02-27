@@ -93,10 +93,12 @@ export class WebRTCSignaling {
         const presenceState = this.channel?.presenceState() || {}
         this.updateParticipantsFromPresence(presenceState)
 
-        // Also fire participant-joined callbacks for each new presence
-        // This ensures VideoWebRTC creates peer connections even if the broadcast was missed
+        // Only fire participant-joined for unique participant IDs we haven't seen yet
+        // This prevents duplicate callbacks when a participant has multiple stale presence entries
+        const seenIds = new Set<string>()
         newPresences.forEach((presence: any) => {
-          if (presence.id && presence.id !== this.participantId) {
+          if (presence.id && presence.id !== this.participantId && !seenIds.has(presence.id)) {
+            seenIds.add(presence.id)
             console.log(`[Signaling] Firing participant-joined callback for ${presence.id}`)
             const message: SignalingMessage = {
               type: 'participant-joined',
@@ -136,6 +138,15 @@ export class WebRTCSignaling {
         console.log(`[Signaling] Channel ${channelName} status: ${status}`)
         if (status === 'SUBSCRIBED') {
           console.log(`[Signaling] Successfully subscribed to ${channelName}, tracking presence...`)
+
+          // First untrack any existing presence for this participant (clean up stale sessions)
+          try {
+            await this.channel?.untrack()
+            console.log(`[Signaling] Cleared any existing presence for this session`)
+          } catch (e) {
+            // Ignore - might not have existing presence
+          }
+
           // Track our presence
           const trackResult = await this.channel?.track({
             id: this.participantId,
@@ -343,8 +354,21 @@ export class WebRTCSignaling {
   private updateParticipantsFromPresence(presenceState: Record<string, any[]>): void {
     this.roomState.participants.clear()
 
+    // For each participant ID, only keep the most recent presence entry (by joinedAt)
+    // This handles stale presence entries from disconnected tabs/sessions
     Object.entries(presenceState).forEach(([_key, presences]) => {
+      // Group by participant ID and keep only the most recent
+      const latestByParticipant = new Map<string, any>()
+
       presences.forEach((presence: any) => {
+        const existingPresence = latestByParticipant.get(presence.id)
+        if (!existingPresence || (presence.joinedAt || 0) > (existingPresence.joinedAt || 0)) {
+          latestByParticipant.set(presence.id, presence)
+        }
+      })
+
+      // Add only the most recent presence for each participant
+      latestByParticipant.forEach((presence) => {
         this.roomState.participants.set(presence.id, {
           id: presence.id,
           name: presence.name,

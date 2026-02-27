@@ -1,6 +1,7 @@
 'use client'
 
 import React, { useEffect, useMemo, useRef, useState, useCallback } from 'react'
+import { createPortal } from 'react-dom'
 import { getSupabaseClient } from '@/lib/supabase'
 import VideoWebRTC, { VideoWebRTCHandle } from './VideoWebRTC'
 import { useEditor, EditorContent } from '@tiptap/react'
@@ -521,6 +522,95 @@ const VideoSection = React.memo(function VideoSection({
     }
   }, [bookingId, startedAt])
 
+  // Track if we're in browser for portal rendering
+  const [isBrowser, setIsBrowser] = useState(false)
+  // Track the wrapper position for non-mini mode positioning
+  const [wrapperRect, setWrapperRect] = useState<DOMRect | null>(null)
+
+  useEffect(() => {
+    setIsBrowser(true)
+  }, [])
+
+  // Update wrapper position when not in mini mode (for portal positioning)
+  useEffect(() => {
+    if (!isBrowser || isMiniPlayer) return
+
+    const updateRect = () => {
+      if (videoWrapperRef.current) {
+        setWrapperRect(videoWrapperRef.current.getBoundingClientRect())
+      }
+    }
+
+    updateRect()
+    window.addEventListener('resize', updateRect)
+    window.addEventListener('scroll', updateRect, true)
+
+    return () => {
+      window.removeEventListener('resize', updateRect)
+      window.removeEventListener('scroll', updateRect, true)
+    }
+  }, [isBrowser, isMiniPlayer, videoWrapperRef])
+
+  // Calculate styles based on mode
+  const videoContainerStyle: React.CSSProperties = isMiniPlayer
+    ? {
+        position: 'fixed',
+        bottom: `${miniPosition.bottom}px`,
+        right: `${miniPosition.right}px`,
+        width: `${miniSize.width}px`,
+        height: `${miniSize.height}px`,
+        borderRadius: '12px',
+        boxShadow: '0 8px 32px rgba(0,0,0,0.4)',
+        zIndex: 99999,
+        background: 'black',
+        overflow: 'hidden'
+      }
+    : wrapperRect
+    ? {
+        position: 'fixed',
+        top: `${wrapperRect.top}px`,
+        left: `${wrapperRect.left}px`,
+        width: `${wrapperRect.width}px`,
+        height: `${wrapperRect.height}px`,
+        zIndex: 10,
+        background: 'black',
+      }
+    : {
+        position: 'absolute',
+        inset: 0,
+        background: 'black',
+      }
+
+  // Video content - always rendered in portal when browser is ready
+  const videoContent = (
+    <div
+      ref={videoStickyRef}
+      style={videoContainerStyle}
+    >
+      <VideoWebRTC
+        ref={videoRef}
+        key={`video-persistent-${bookingId}`}
+        roomId={`lesson-${bookingId}`}
+        participantId={currentUser?.id || studentId}
+        participantName={currentUser?.name || 'Participant'}
+        isHost={isAdmin}
+        canJoin={active}
+        autoRecord={isAdmin && active}
+        className="block w-full h-full"
+        isMiniPlayer={isMiniPlayer}
+        onRecordingComplete={handleRecordingComplete}
+      />
+      {/* Mini-player controls overlay */}
+      {isMiniPlayer && (
+        <>
+          <div onPointerDown={(e) => onPointerDown(e, 'drag')} className="absolute inset-0 z-10" style={{ cursor: 'move', pointerEvents: 'auto' }} />
+          <div onPointerDown={(e) => onPointerDown(e, 'resize')} className="absolute bottom-0 right-0 w-5 h-5 cursor-se-resize z-20" style={{ background: 'linear-gradient(135deg, transparent 50%, rgba(255,255,255,0.3) 50%)', borderBottomRightRadius: '12px', pointerEvents: 'auto' }} />
+          <button onClick={() => { videoWrapperRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' }) }} className="absolute top-2 right-2 w-6 h-6 rounded-full bg-black/50 hover:bg-black/70 flex items-center justify-center text-white text-xs z-20" style={{ pointerEvents: 'auto' }} title="Return to full view">×</button>
+        </>
+      )}
+    </div>
+  )
+
   return (
     <section className="bg-white/5 backdrop-blur-sm rounded-xl border border-white/10 overflow-hidden">
       <div className="flex items-center justify-between p-4 pb-3">
@@ -536,45 +626,8 @@ const VideoSection = React.memo(function VideoSection({
         )}
       </div>
       <div ref={videoWrapperRef} className="relative aspect-video" style={{ background: 'black' }}>
-        {/* Persistent video container - uses position:fixed to escape overflow:hidden when mini-player */}
-        <div
-          ref={videoStickyRef}
-          className={isMiniPlayer ? '' : 'absolute inset-0'}
-          style={isMiniPlayer ? {
-            position: 'fixed',
-            bottom: `${miniPosition.bottom}px`,
-            right: `${miniPosition.right}px`,
-            width: `${miniSize.width}px`,
-            height: `${miniSize.height}px`,
-            borderRadius: '12px',
-            boxShadow: '0 8px 32px rgba(0,0,0,0.4)',
-            zIndex: 99999,
-            background: 'black',
-            overflow: 'hidden'
-          } : {}}
-        >
-          <VideoWebRTC
-            ref={videoRef}
-            key={`video-persistent-${bookingId}`}
-            roomId={`lesson-${bookingId}`}
-            participantId={currentUser?.id || studentId}
-            participantName={currentUser?.name || 'Participant'}
-            isHost={isAdmin}
-            canJoin={active}
-            autoRecord={isAdmin && active}
-            className="block w-full h-full"
-            isMiniPlayer={isMiniPlayer}
-            onRecordingComplete={handleRecordingComplete}
-          />
-          {/* Mini-player controls overlay */}
-          {isMiniPlayer && (
-            <>
-              <div onPointerDown={(e) => onPointerDown(e, 'drag')} className="absolute inset-0 z-10" style={{ cursor: 'move', pointerEvents: 'auto' }} />
-              <div onPointerDown={(e) => onPointerDown(e, 'resize')} className="absolute bottom-0 right-0 w-5 h-5 cursor-se-resize z-20" style={{ background: 'linear-gradient(135deg, transparent 50%, rgba(255,255,255,0.3) 50%)', borderBottomRightRadius: '12px', pointerEvents: 'auto' }} />
-              <button onClick={() => { videoWrapperRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' }) }} className="absolute top-2 right-2 w-6 h-6 rounded-full bg-black/50 hover:bg-black/70 flex items-center justify-center text-white text-xs z-20" style={{ pointerEvents: 'auto' }} title="Return to full view">×</button>
-            </>
-          )}
-        </div>
+        {/* Video rendered via portal to escape backdrop-blur containing block */}
+        {isBrowser ? createPortal(videoContent, document.body) : videoContent}
         {/* Placeholder when video is in mini-player */}
         {isMiniPlayer && <div className="absolute inset-0 flex items-center justify-center text-gray-500 text-sm bg-black/80 rounded-lg pointer-events-none">Video in mini player ↘</div>}
       </div>
