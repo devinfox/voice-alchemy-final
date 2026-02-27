@@ -248,9 +248,11 @@ const VideoWebRTC = forwardRef<VideoWebRTCHandle, VideoWebRTCProps>(function Vid
           console.log(`[VideoWebRTC]   Track ${i}: ${t.kind}, enabled=${t.enabled}, readyState=${t.readyState}`)
         })
 
+        console.log(`[VideoWebRTC] Calling setRemoteStreams for participant ${remoteParticipantId}`)
         setRemoteStreams(prev => {
           const newMap = new Map(prev)
           newMap.set(remoteParticipantId, remoteStream)
+          console.log(`[VideoWebRTC] setRemoteStreams: now have ${newMap.size} remote streams`)
           return newMap
         })
       }
@@ -1468,6 +1470,9 @@ const VideoWebRTC = forwardRef<VideoWebRTCHandle, VideoWebRTCProps>(function Vid
   const remoteStreamArray = Array.from(remoteStreams.entries())
   const hasRemoteStream = remoteStreamArray.length > 0
 
+  // Debug logging for remote streams state
+  console.log(`[VideoWebRTC] Render: remoteStreams.size=${remoteStreams.size}, hasRemoteStream=${hasRemoteStream}, hasLocalStream=${hasLocalStream}, isConnected=${isConnected}`)
+
   // Not joined state
   if (!canJoin) {
     return (
@@ -1732,9 +1737,14 @@ function RemoteVideoView({
   const videoRef = useRef<HTMLVideoElement>(null)
   const [hasVideoTrack, setHasVideoTrack] = useState(false)
 
+  console.log(`[RemoteVideoView] Rendering for ${participantName}, stream=${stream?.id || 'null'}, hasVideoTrack=${hasVideoTrack}, isVideoOff=${isVideoOff}`)
+
   useEffect(() => {
     const video = videoRef.current
-    if (!video || !stream) return
+    if (!video || !stream) {
+      console.log(`[RemoteVideoView] Missing video element or stream, video=${!!video}, stream=${!!stream}`)
+      return
+    }
 
     let cancelled = false
     let unmuteTimeout: NodeJS.Timeout | null = null
@@ -1742,13 +1752,37 @@ function RemoteVideoView({
     const updateVideoTrackState = () => {
       if (cancelled) return
       const tracks = stream.getVideoTracks()
-      setHasVideoTrack(tracks.length > 0 && tracks.some(t => t.enabled && t.readyState === 'live'))
+      const hasLiveTrack = tracks.length > 0 && tracks.some(t => t.enabled && t.readyState === 'live')
+      console.log(`[RemoteVideoView] updateVideoTrackState: ${tracks.length} video tracks, hasLiveTrack=${hasLiveTrack}`)
+      tracks.forEach((t, i) => {
+        console.log(`[RemoteVideoView]   Track ${i}: enabled=${t.enabled}, readyState=${t.readyState}, muted=${t.muted}`)
+      })
+      setHasVideoTrack(hasLiveTrack)
     }
     const videoTracks = stream.getVideoTracks()
+    console.log(`[RemoteVideoView] useEffect: Setting up stream ${stream.id} with ${videoTracks.length} video tracks`)
     queueMicrotask(updateVideoTrackState)
 
     // Set the stream
+    console.log(`[RemoteVideoView] Setting video.srcObject to stream ${stream.id}`)
     video.srcObject = stream
+
+    // Listen for video element events to detect when video is ready
+    const handleLoadedMetadata = () => {
+      console.log(`[RemoteVideoView] loadedmetadata: videoWidth=${video.videoWidth}, videoHeight=${video.videoHeight}`)
+      updateVideoTrackState()
+    }
+    const handlePlaying = () => {
+      console.log(`[RemoteVideoView] playing event: video is now playing`)
+      updateVideoTrackState()
+    }
+    const handleCanPlay = () => {
+      console.log(`[RemoteVideoView] canplay event`)
+      updateVideoTrackState()
+    }
+    video.addEventListener('loadedmetadata', handleLoadedMetadata)
+    video.addEventListener('playing', handlePlaying)
+    video.addEventListener('canplay', handleCanPlay)
 
     // Try to play with various strategies
     const playVideo = async () => {
@@ -1756,7 +1790,9 @@ function RemoteVideoView({
       try {
         // Ensure video is not paused
         video.muted = false // Remote video should have audio
+        console.log(`[RemoteVideoView] Attempting to play video...`)
         await video.play()
+        console.log(`[RemoteVideoView] Video play() succeeded! videoWidth=${video.videoWidth}, videoHeight=${video.videoHeight}`)
       } catch (err) {
         // Ignore AbortError - expected when component unmounts
         if (err instanceof Error && err.name === 'AbortError') {
@@ -1790,6 +1826,7 @@ function RemoteVideoView({
     // Listen for track changes
     const handleTrackChange = () => {
       if (cancelled) return
+      console.log(`[RemoteVideoView] Track change detected, updating state...`)
       updateVideoTrackState()
     }
 
@@ -1803,11 +1840,23 @@ function RemoteVideoView({
       track.addEventListener('unmute', handleTrackChange)
     })
 
+    // Also retry checking track state after delays - tracks might not be immediately live
+    const retryIntervals = [100, 500, 1000, 2000]
+    const retryTimeouts = retryIntervals.map(delay =>
+      setTimeout(() => {
+        if (!cancelled) {
+          console.log(`[RemoteVideoView] Retry checking track state after ${delay}ms`)
+          updateVideoTrackState()
+        }
+      }, delay)
+    )
+
     return () => {
       cancelled = true
       if (unmuteTimeout) {
         clearTimeout(unmuteTimeout)
       }
+      retryTimeouts.forEach(clearTimeout)
       stream.removeEventListener('addtrack', handleTrackChange)
       stream.removeEventListener('removetrack', handleTrackChange)
       videoTracks.forEach(track => {
@@ -1815,19 +1864,24 @@ function RemoteVideoView({
         track.removeEventListener('mute', handleTrackChange)
         track.removeEventListener('unmute', handleTrackChange)
       })
+      video.removeEventListener('loadedmetadata', handleLoadedMetadata)
+      video.removeEventListener('playing', handlePlaying)
+      video.removeEventListener('canplay', handleCanPlay)
       video.srcObject = null
     }
   }, [stream])
 
   // Determine if we should show the avatar (video off OR no video track)
   const showAvatar = isVideoOff || !hasVideoTrack
+  console.log(`[RemoteVideoView] showAvatar=${showAvatar} (isVideoOff=${isVideoOff}, hasVideoTrack=${hasVideoTrack})`)
 
   if (compact) {
     return (
       <div className="relative w-full h-full">
-        <video ref={videoRef} autoPlay playsInline className="w-full h-full object-cover" />
+        {/* Always render video, use z-index to layer avatar on top if needed */}
+        <video ref={videoRef} autoPlay playsInline className="w-full h-full object-cover absolute inset-0" />
         {showAvatar && (
-          <div className="absolute inset-0 flex items-center justify-center bg-gray-800">
+          <div className="absolute inset-0 flex items-center justify-center bg-gray-800 z-10">
             <div className="w-8 h-8 rounded-full bg-gray-700 flex items-center justify-center text-sm text-white font-medium">
               {participantName.charAt(0).toUpperCase()}
             </div>
@@ -1839,15 +1893,15 @@ function RemoteVideoView({
 
   return (
     <div className="relative w-full h-full">
+      {/* Always render video element to ensure it stays in DOM, use z-index for layering */}
       <video
         ref={videoRef}
         autoPlay
         playsInline
-        className="w-full h-full object-cover"
-        style={{ display: showAvatar ? 'none' : 'block' }}
+        className="w-full h-full object-cover absolute inset-0"
       />
       {showAvatar && (
-        <div className="absolute inset-0 flex items-center justify-center bg-gray-800">
+        <div className="absolute inset-0 flex items-center justify-center bg-gray-800 z-10">
           <div className="w-32 h-32 rounded-full bg-gray-700 flex items-center justify-center text-4xl text-white font-medium">
             {participantName.charAt(0).toUpperCase()}
           </div>

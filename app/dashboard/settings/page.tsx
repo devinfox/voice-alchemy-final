@@ -1,6 +1,7 @@
 import { createClient, getCurrentUser } from '@/lib/supabase-server'
 import { redirect } from 'next/navigation'
 import { Settings, User } from 'lucide-react'
+import ProfileEditForm from './profile-edit-form'
 
 export default async function SettingsPage() {
   const supabase = await createClient()
@@ -47,7 +48,13 @@ export default async function SettingsPage() {
             </div>
 
             <div className="pt-4 border-t border-white/10 space-y-3">
-              <div>
+              <ProfileEditForm
+                userId={profile.id}
+                initialFirstName={profile.first_name}
+                initialLastName={profile.last_name}
+              />
+
+              <div className="pt-3 border-t border-white/10">
                 <label className="block text-sm text-gray-400 mb-1">Email</label>
                 <p className="text-white font-medium">{authUser.email}</p>
               </div>
@@ -73,11 +80,11 @@ export default async function SettingsPage() {
           </div>
         </div>
 
-        {/* Coming Soon */}
+        {/* Preferences */}
         <div className="bg-white/5 backdrop-blur-sm rounded-xl border border-white/10 p-6">
           <h2 className="text-lg font-semibold text-white mb-4">Preferences</h2>
           <p className="text-gray-400">
-            Profile editing and preferences coming soon.
+            Additional preferences coming soon.
           </p>
         </div>
       </div>
