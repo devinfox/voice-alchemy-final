@@ -1119,10 +1119,17 @@ const VideoWebRTC = forwardRef<VideoWebRTCHandle, VideoWebRTCProps>(function Vid
                 }
               } else if (forceOffer) {
                 // Force offer if no remote stream after timeout (handles race conditions)
-                const hasRemoteStream = remoteStreams.size > 0
+                // But don't disrupt connections that are already in progress
                 const connectionState = existingPeer.connection.connectionState
-                if (!hasRemoteStream && connectionState !== 'connected') {
-                  console.log(`[VideoWebRTC] No remote stream yet, forcing offer to ${p.id} (state: ${connectionState})`)
+                const iceState = existingPeer.connection.iceConnectionState
+
+                // Skip if connection is already established or in progress
+                if (connectionState === 'connected' || connectionState === 'connecting' ||
+                    iceState === 'connected' || iceState === 'checking') {
+                  console.log(`[VideoWebRTC] Connection already in progress to ${p.id} (conn=${connectionState}, ice=${iceState}), skipping forced offer`)
+                } else if (connectionState === 'failed' || connectionState === 'disconnected' ||
+                           iceState === 'failed' || iceState === 'disconnected') {
+                  console.log(`[VideoWebRTC] Connection failed to ${p.id}, forcing offer (conn=${connectionState}, ice=${iceState})`)
                   sendOffer(p.id)
                 }
               }
@@ -1234,9 +1241,10 @@ const VideoWebRTC = forwardRef<VideoWebRTCHandle, VideoWebRTCProps>(function Vid
             const iceState = peer.connection.iceConnectionState
             console.log(`[VideoWebRTC] Health check: Peer ${p.id} state=${state}, ice=${iceState}`)
 
-            // If connection is not established, send an offer
-            if (state !== 'connected' && state !== 'connecting') {
-              console.log(`[VideoWebRTC] Health check: Connection not established, sending offer to ${p.id}`)
+            // Only send offer if connection has failed, not if it's in progress
+            if (state === 'failed' || state === 'disconnected' ||
+                iceState === 'failed' || iceState === 'disconnected') {
+              console.log(`[VideoWebRTC] Health check: Connection failed, sending offer to ${p.id}`)
               sendOffer(p.id)
             }
           }
