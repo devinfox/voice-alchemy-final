@@ -175,7 +175,11 @@ const VideoWebRTC = forwardRef<VideoWebRTCHandle, VideoWebRTCProps>(function Vid
   // Determine if we should be the "polite" peer (yields to incoming offers on collision)
   // Uses localeCompare for consistent ordering that works with both UUIDs and numeric IDs
   const isPolite = useCallback((remoteId: string) => {
-    return participantIdRef.current.localeCompare(remoteId) < 0
+    const ourId = participantIdRef.current
+    const comparison = ourId.localeCompare(remoteId)
+    const weArePolite = comparison < 0
+    console.log(`[VideoWebRTC] isPolite check: ourId=${ourId.slice(0,8)}... vs remoteId=${remoteId.slice(0,8)}..., comparison=${comparison}, weArePolite=${weArePolite}`)
+    return weArePolite
   }, [])
 
   // ICE restart - renegotiate connection when ICE fails
@@ -367,6 +371,9 @@ const VideoWebRTC = forwardRef<VideoWebRTCHandle, VideoWebRTCProps>(function Vid
         signalingRef.current.sendSignal(remoteParticipantId, 'offer', {
           sdp: pc.localDescription.toJSON(),
         })
+        console.log(`[VideoWebRTC] Offer sent to ${remoteParticipantId}, signaling state: ${pc.signalingState}`)
+      } else {
+        console.warn(`[VideoWebRTC] Failed to send offer to ${remoteParticipantId}: no signaling or local description`)
       }
     } catch (err) {
       console.error('[VideoWebRTC] Error creating offer:', err)
@@ -483,22 +490,37 @@ const VideoWebRTC = forwardRef<VideoWebRTCHandle, VideoWebRTCProps>(function Vid
 
     console.log(`[VideoWebRTC] Participant joined: ${remoteId}`)
 
-    if (!localStreamRef.current) {
-      console.log(`[VideoWebRTC] No local stream yet, can't create peer connection for ${remoteId}`)
-      return
+    const attemptConnection = (retryCount = 0) => {
+      if (!localStreamRef.current) {
+        if (retryCount < 5) {
+          console.log(`[VideoWebRTC] No local stream yet, retrying in 500ms (attempt ${retryCount + 1}/5)`)
+          setTimeout(() => attemptConnection(retryCount + 1), 500)
+        } else {
+          console.error(`[VideoWebRTC] Failed to create peer connection - no local stream after 5 retries`)
+        }
+        return
+      }
+
+      // Don't create duplicate connections
+      if (peerConnectionsRef.current.has(remoteId)) {
+        console.log(`[VideoWebRTC] Already have peer connection to ${remoteId}`)
+        return
+      }
+
+      // Creating the peer connection will add tracks, which triggers onnegotiationneeded
+      createPeerConnection(remoteId)
+
+      // If we're the impolite peer (higher ID), explicitly send an offer
+      // This ensures connection is initiated even if onnegotiationneeded timing is off
+      if (!isPolite(remoteId)) {
+        console.log(`[VideoWebRTC] We are impolite peer, explicitly sending offer to ${remoteId}`)
+        setTimeout(() => {
+          sendOffer(remoteId)
+        }, 100)
+      }
     }
 
-    // Creating the peer connection will add tracks, which triggers onnegotiationneeded
-    createPeerConnection(remoteId)
-
-    // If we're the impolite peer (higher ID), explicitly send an offer
-    // This ensures connection is initiated even if onnegotiationneeded timing is off
-    if (!isPolite(remoteId)) {
-      console.log(`[VideoWebRTC] We are impolite peer, explicitly sending offer to ${remoteId}`)
-      setTimeout(() => {
-        sendOffer(remoteId)
-      }, 100)
-    }
+    attemptConnection()
   }, [createPeerConnection, isPolite, sendOffer])
 
   // Handle participant left
@@ -1009,7 +1031,7 @@ const VideoWebRTC = forwardRef<VideoWebRTCHandle, VideoWebRTCProps>(function Vid
         }
 
         // Connect to signaling
-        console.log('[VideoWebRTC] Connecting to signaling...')
+        console.log(`[VideoWebRTC] Connecting to signaling... roomId=${roomId}, participantId=${participantIdRef.current}, isHost=${isHostRef.current}`)
         const signaling = new WebRTCSignaling(
           roomId,
           participantIdRef.current,
@@ -1081,24 +1103,52 @@ const VideoWebRTC = forwardRef<VideoWebRTCHandle, VideoWebRTCProps>(function Vid
         // Connect to existing participants
         // Creating peer connections will add tracks, triggering onnegotiationneeded
         // which handles sending offers to the appropriate peers
-        const connectToExistingParticipants = () => {
+        const connectToExistingParticipants = (forceOffer = false) => {
           const existingParticipants = signaling.getParticipants()
-          console.log(`[VideoWebRTC] Found ${existingParticipants.length} existing participants`)
+          console.log(`[VideoWebRTC] Found ${existingParticipants.length} existing participants (forceOffer=${forceOffer})`)
           existingParticipants.forEach(p => {
-            if (p.id !== participantIdRef.current && !peerConnectionsRef.current.has(p.id)) {
-              console.log(`[VideoWebRTC] Creating peer connection to existing participant: ${p.id}`)
-              createPeerConnection(p.id)
+            if (p.id !== participantIdRef.current) {
+              const existingPeer = peerConnectionsRef.current.get(p.id)
+              if (!existingPeer) {
+                console.log(`[VideoWebRTC] Creating peer connection to existing participant: ${p.id}`)
+                createPeerConnection(p.id)
+                // If we're the impolite peer, send an offer
+                if (!isPolite(p.id)) {
+                  console.log(`[VideoWebRTC] We are impolite peer, sending offer to ${p.id}`)
+                  setTimeout(() => sendOffer(p.id), 100)
+                }
+              } else if (forceOffer) {
+                // Force offer if no remote stream after timeout (handles race conditions)
+                const hasRemoteStream = remoteStreams.size > 0
+                const connectionState = existingPeer.connection.connectionState
+                if (!hasRemoteStream && connectionState !== 'connected') {
+                  console.log(`[VideoWebRTC] No remote stream yet, forcing offer to ${p.id} (state: ${connectionState})`)
+                  sendOffer(p.id)
+                }
+              }
             }
           })
         }
 
-        // Try immediately and again after a short delay (presence sync may be delayed)
+        // Try immediately and with multiple retries (presence sync can be delayed)
         connectToExistingParticipants()
+        // Retry at 500ms, 1500ms, 3000ms with increasing aggressiveness
         setTimeout(() => {
           if (mountedRef.current && !cancelled) {
             connectToExistingParticipants()
           }
         }, 500)
+        setTimeout(() => {
+          if (mountedRef.current && !cancelled) {
+            connectToExistingParticipants()
+          }
+        }, 1500)
+        // After 3 seconds, if still no connection, force an offer regardless of polite/impolite
+        setTimeout(() => {
+          if (mountedRef.current && !cancelled) {
+            connectToExistingParticipants(true)
+          }
+        }, 3000)
 
         // Auto-record immediately if host and autoRecord is enabled
         if (isHostRef.current && autoRecord) {
@@ -1155,6 +1205,55 @@ const VideoWebRTC = forwardRef<VideoWebRTCHandle, VideoWebRTCProps>(function Vid
       }
     }
   }, [])
+
+  // Periodic connection health check - ensures connections are established even after race conditions
+  useEffect(() => {
+    if (!isConnected || !canJoin) return
+
+    const healthCheck = () => {
+      const signaling = signalingRef.current
+      const localStream = localStreamRef.current
+      if (!signaling || !localStream) return
+
+      const participants = signaling.getParticipants()
+      const remoteParticipants = participants.filter(p => p.id !== participantIdRef.current)
+      const hasRemoteStreams = remoteStreams.size > 0
+
+      // If there are participants but no remote streams, try to establish connection
+      if (remoteParticipants.length > 0 && !hasRemoteStreams) {
+        console.log(`[VideoWebRTC] Health check: ${remoteParticipants.length} participants but no remote streams, attempting reconnection`)
+
+        remoteParticipants.forEach(p => {
+          const peer = peerConnectionsRef.current.get(p.id)
+          if (!peer) {
+            console.log(`[VideoWebRTC] Health check: Creating missing peer connection to ${p.id}`)
+            createPeerConnection(p.id)
+            setTimeout(() => sendOffer(p.id), 100)
+          } else {
+            const state = peer.connection.connectionState
+            const iceState = peer.connection.iceConnectionState
+            console.log(`[VideoWebRTC] Health check: Peer ${p.id} state=${state}, ice=${iceState}`)
+
+            // If connection is not established, send an offer
+            if (state !== 'connected' && state !== 'connecting') {
+              console.log(`[VideoWebRTC] Health check: Connection not established, sending offer to ${p.id}`)
+              sendOffer(p.id)
+            }
+          }
+        })
+      }
+    }
+
+    // Run health check every 5 seconds for the first 30 seconds
+    const intervals = [5000, 10000, 15000, 20000, 25000, 30000]
+    const timeouts = intervals.map(delay =>
+      setTimeout(healthCheck, delay)
+    )
+
+    return () => {
+      timeouts.forEach(clearTimeout)
+    }
+  }, [isConnected, canJoin, remoteStreams.size, createPeerConnection, sendOffer])
 
   // Sync local stream to video element - run when layout changes (mini-player toggle)
   useEffect(() => {

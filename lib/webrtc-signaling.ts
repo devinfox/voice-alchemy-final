@@ -88,10 +88,29 @@ export class WebRTCSignaling {
       })
 
       this.channel.on('presence', { event: 'join' }, ({ key, newPresences }) => {
-        console.log('[Signaling] Participant joined:', key, newPresences)
+        console.log('[Signaling] Participant joined via presence:', key, newPresences)
         // Update participants from latest presence state to ensure new participant is detected
         const presenceState = this.channel?.presenceState() || {}
         this.updateParticipantsFromPresence(presenceState)
+
+        // Also fire participant-joined callbacks for each new presence
+        // This ensures VideoWebRTC creates peer connections even if the broadcast was missed
+        newPresences.forEach((presence: any) => {
+          if (presence.id && presence.id !== this.participantId) {
+            console.log(`[Signaling] Firing participant-joined callback for ${presence.id}`)
+            const message: SignalingMessage = {
+              type: 'participant-joined',
+              from: presence.id,
+              payload: {
+                id: presence.id,
+                name: presence.name,
+                isHost: presence.isHost,
+              },
+              timestamp: Date.now(),
+            }
+            this.handleSignalingMessage(message)
+          }
+        })
       })
 
       this.channel.on('presence', { event: 'leave' }, ({ key, leftPresences }) => {
