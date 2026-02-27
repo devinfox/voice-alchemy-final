@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useRef, useState, useCallback, useImperativeHandle, forwardRef } from 'react'
+import React, { useEffect, useRef, useState, useCallback, useImperativeHandle, forwardRef } from 'react'
 import {
   Video,
   VideoOff,
@@ -54,7 +54,12 @@ interface PeerConnection {
   stream: MediaStream | null
   makingOffer: boolean  // Track if we're currently creating an offer
   ignoreOffer: boolean  // Track if we should ignore incoming offers
+  processingAnswer: boolean  // Track if we're currently processing an answer (prevents race conditions)
+  lastOfferProcessedAt: number  // Timestamp of last processed offer (for deduplication)
 }
+
+// Minimum time between processing offers from the same peer (ms)
+const OFFER_DEDUP_WINDOW = 1000
 
 // Optimized ICE configuration for best connectivity without TURN
 // Multiple STUN servers for redundancy, aggressive ICE settings
@@ -183,7 +188,8 @@ const VideoWebRTC = forwardRef<VideoWebRTCHandle, VideoWebRTCProps>(function Vid
   }, [])
 
   // ICE restart - renegotiate connection when ICE fails
-  const restartIce = useCallback(async (remoteParticipantId: string) => {
+  // force=true allows polite peer to initiate restart (used by health check when video isn't flowing)
+  const restartIce = useCallback(async (remoteParticipantId: string, force: boolean = false) => {
     const peer = peerConnectionsRef.current.get(remoteParticipantId)
     if (!peer) return
 
@@ -192,14 +198,14 @@ const VideoWebRTC = forwardRef<VideoWebRTCHandle, VideoWebRTCProps>(function Vid
     // Don't restart if already closed
     if (pc.connectionState === 'closed') return
 
-    // Only the impolite peer initiates ICE restart
-    if (isPolite(remoteParticipantId)) {
+    // Only the impolite peer initiates ICE restart (unless forced)
+    if (!force && isPolite(remoteParticipantId)) {
       console.log(`[VideoWebRTC] Skipping ICE restart - we are polite peer for ${remoteParticipantId}`)
       return
     }
 
     try {
-      console.log(`[VideoWebRTC] Initiating ICE restart with ${remoteParticipantId}`)
+      console.log(`[VideoWebRTC] Initiating ICE restart with ${remoteParticipantId}${force ? ' (forced)' : ''}`)
       peer.makingOffer = true
 
       // Create offer with ICE restart flag
@@ -314,6 +320,8 @@ const VideoWebRTC = forwardRef<VideoWebRTCHandle, VideoWebRTCProps>(function Vid
       stream: null,
       makingOffer: false,
       ignoreOffer: false,
+      processingAnswer: false,
+      lastOfferProcessedAt: 0,
     }
     peerConnectionsRef.current.set(remoteParticipantId, peerInfo)
 
@@ -349,6 +357,35 @@ const VideoWebRTC = forwardRef<VideoWebRTCHandle, VideoWebRTCProps>(function Vid
 
     return pc
   }, [isPolite, restartIce])
+
+  // Add local tracks to all existing peer connections that don't have them yet
+  // This handles the race condition where peer connections were created before local stream was ready
+  const addLocalTracksToExistingPeers = useCallback(() => {
+    if (!localStreamRef.current) {
+      console.log('[VideoWebRTC] addLocalTracksToExistingPeers: No local stream yet')
+      return
+    }
+
+    const localTracks = localStreamRef.current.getTracks()
+    console.log(`[VideoWebRTC] addLocalTracksToExistingPeers: Adding ${localTracks.length} tracks to ${peerConnectionsRef.current.size} peer connections`)
+
+    peerConnectionsRef.current.forEach((peer, peerId) => {
+      const pc = peer.connection
+      const senders = pc.getSenders()
+      const existingTrackIds = new Set(senders.map(s => s.track?.id).filter(Boolean))
+
+      localTracks.forEach(track => {
+        if (!existingTrackIds.has(track.id)) {
+          console.log(`[VideoWebRTC] Adding ${track.kind} track to peer ${peerId}`)
+          try {
+            pc.addTrack(track, localStreamRef.current!)
+          } catch (err) {
+            console.error(`[VideoWebRTC] Error adding track to peer ${peerId}:`, err)
+          }
+        }
+      })
+    })
+  }, [])
 
   // Send offer to a remote participant
   const sendOffer = useCallback(async (remoteParticipantId: string) => {
@@ -387,11 +424,18 @@ const VideoWebRTC = forwardRef<VideoWebRTCHandle, VideoWebRTCProps>(function Vid
   // Handle incoming offer - implements "perfect negotiation" pattern
   const handleOffer = useCallback(async (message: SignalingMessage) => {
     const fromId = message.from
+    const now = Date.now()
 
     let peer = peerConnectionsRef.current.get(fromId)
     if (!peer) {
       createPeerConnection(fromId)
       peer = peerConnectionsRef.current.get(fromId)!
+    }
+
+    // Deduplicate offers - ignore if we recently processed one from this peer
+    if (now - peer.lastOfferProcessedAt < OFFER_DEDUP_WINDOW) {
+      console.log(`[VideoWebRTC] Ignoring duplicate offer from ${fromId} (processed ${now - peer.lastOfferProcessedAt}ms ago)`)
+      return
     }
 
     const pc = peer.connection
@@ -411,7 +455,29 @@ const VideoWebRTC = forwardRef<VideoWebRTCHandle, VideoWebRTCProps>(function Vid
         return
       }
 
+      // Mark this offer as being processed
+      peer.lastOfferProcessedAt = now
+
       console.log(`[VideoWebRTC] Processing offer from ${fromId}, collision=${offerCollision}, weArePolite=${weArePolite}`)
+
+      // IMPORTANT: Ensure local tracks are added before creating answer
+      // This handles the race condition where we receive an offer before our local stream is ready
+      if (localStreamRef.current) {
+        const senders = pc.getSenders()
+        const existingTrackIds = new Set(senders.map(s => s.track?.id).filter(Boolean))
+        const localTracks = localStreamRef.current.getTracks()
+
+        localTracks.forEach(track => {
+          if (!existingTrackIds.has(track.id)) {
+            console.log(`[VideoWebRTC] Adding ${track.kind} track before answer to ${fromId}`)
+            try {
+              pc.addTrack(track, localStreamRef.current!)
+            } catch (err) {
+              console.error(`[VideoWebRTC] Error adding track before answer:`, err)
+            }
+          }
+        })
+      }
 
       // If there's a collision and we're polite, we need to rollback
       // Use setRemoteDescription directly - it will handle rollback automatically in modern browsers
@@ -438,17 +504,40 @@ const VideoWebRTC = forwardRef<VideoWebRTCHandle, VideoWebRTCProps>(function Vid
     if (!peer) return
 
     const pc = peer.connection
+
+    // Prevent concurrent answer processing - this fixes race condition where
+    // multiple answers arrive before the first one completes setRemoteDescription
+    if (peer.processingAnswer) {
+      console.log(`[VideoWebRTC] Already processing answer from ${fromId}, ignoring duplicate`)
+      return
+    }
+
+    // Check state before acquiring lock
+    if (pc.signalingState !== 'have-local-offer') {
+      console.log(`[VideoWebRTC] Ignoring answer from ${fromId}, wrong state: ${pc.signalingState}`)
+      return
+    }
+
+    peer.processingAnswer = true
     try {
-      // Only set remote description if we're in the right state
-      if (pc.signalingState === 'have-local-offer') {
-        console.log(`[VideoWebRTC] Received answer from ${fromId}`)
-        await pc.setRemoteDescription(new RTCSessionDescription(message.payload.sdp))
-        console.log(`[VideoWebRTC] Answer processed, connection state: ${pc.connectionState}`)
-      } else {
-        console.log(`[VideoWebRTC] Ignoring answer from ${fromId}, wrong state: ${pc.signalingState}`)
+      // Double-check state after acquiring lock (another answer might have just completed)
+      if (pc.signalingState !== 'have-local-offer') {
+        console.log(`[VideoWebRTC] Ignoring answer from ${fromId}, state changed to: ${pc.signalingState}`)
+        return
       }
+
+      console.log(`[VideoWebRTC] Processing answer from ${fromId}`)
+      await pc.setRemoteDescription(new RTCSessionDescription(message.payload.sdp))
+      console.log(`[VideoWebRTC] Answer processed, connection state: ${pc.connectionState}`)
     } catch (err) {
-      console.error('[VideoWebRTC] Error handling answer:', err)
+      // Handle race condition where state changes between check and setRemoteDescription
+      if (err instanceof DOMException && err.name === 'InvalidStateError') {
+        console.log(`[VideoWebRTC] Ignoring stale answer from ${fromId}, state: ${pc.signalingState}`)
+      } else {
+        console.error('[VideoWebRTC] Error handling answer:', err)
+      }
+    } finally {
+      peer.processingAnswer = false
     }
   }, [])
 
@@ -476,8 +565,14 @@ const VideoWebRTC = forwardRef<VideoWebRTCHandle, VideoWebRTCProps>(function Vid
         await pc.addIceCandidate(new RTCIceCandidate(message.payload.candidate))
       }
     } catch (err) {
-      // Ignore errors for candidates that arrive after connection is established
-      if (pc.iceConnectionState === 'connected' || pc.iceConnectionState === 'completed') {
+      // Ignore errors for candidates that arrive after connection is established or from stale sessions
+      const errMessage = err instanceof Error ? err.message : String(err)
+      const isStaleCandidate = errMessage.includes('Unknown ufrag') || errMessage.includes('unknown ufrag')
+      const isLateCandidate = pc.iceConnectionState === 'connected' || pc.iceConnectionState === 'completed'
+
+      if (isStaleCandidate) {
+        console.log(`[VideoWebRTC] Ignoring stale ICE candidate from ${fromId} (unknown ufrag)`)
+      } else if (isLateCandidate) {
         console.log(`[VideoWebRTC] Ignoring late ICE candidate from ${fromId}`)
       } else {
         console.error('[VideoWebRTC] Error adding ICE candidate:', err)
@@ -544,7 +639,7 @@ const VideoWebRTC = forwardRef<VideoWebRTCHandle, VideoWebRTCProps>(function Vid
   }, [])
 
   // Create combined stream for recording with PIP layout
-  // Teacher (host/local) = main view, Student (remote) = small PIP in bottom right
+  // Student (remote) = main view, Teacher (host/local) = small PIP in bottom right
   const createCombinedStream = useCallback(() => {
     const canvas = document.createElement('canvas')
     canvas.width = 1280
@@ -616,10 +711,32 @@ const VideoWebRTC = forwardRef<VideoWebRTCHandle, VideoWebRTCProps>(function Vid
 
       const localStream = localStreamRef.current
       const remoteStreamsList = Array.from(remoteStreams.values())
-      const remoteStream = remoteStreamsList[0] // Primary remote participant
+      const remoteStream = remoteStreamsList[0] // Primary remote participant (student)
 
-      // Draw main view (teacher/host local stream - full canvas)
-      if (localStream) {
+      // Draw main view (student/remote stream - full canvas)
+      // Student is the focus of the lesson recording
+      if (remoteStream) {
+        const remoteVideo = findVideoForStream(remoteStream)
+        const remoteVideoTrack = remoteStream.getVideoTracks()[0]
+
+        if (remoteVideo && remoteVideoTrack?.enabled) {
+          try {
+            drawVideoCover(remoteVideo, 0, 0, canvas.width, canvas.height)
+          } catch (e) {
+            // Video not ready
+          }
+        } else {
+          // Show placeholder for student
+          ctx.fillStyle = '#2a2a2a'
+          ctx.fillRect(0, 0, canvas.width, canvas.height)
+          ctx.fillStyle = '#666'
+          ctx.font = 'bold 48px sans-serif'
+          ctx.textAlign = 'center'
+          ctx.textBaseline = 'middle'
+          ctx.fillText('Student', canvas.width / 2, canvas.height / 2)
+        }
+      } else if (localStream) {
+        // Fallback: show teacher if no student connected yet
         const localVideo = findVideoForStream(localStream)
         const localVideoTrack = localStream.getVideoTracks()[0]
 
@@ -630,21 +747,20 @@ const VideoWebRTC = forwardRef<VideoWebRTCHandle, VideoWebRTCProps>(function Vid
             // Video not ready
           }
         } else {
-          // Show placeholder for teacher
           ctx.fillStyle = '#2a2a2a'
           ctx.fillRect(0, 0, canvas.width, canvas.height)
           ctx.fillStyle = '#666'
           ctx.font = 'bold 48px sans-serif'
           ctx.textAlign = 'center'
           ctx.textBaseline = 'middle'
-          ctx.fillText('Teacher', canvas.width / 2, canvas.height / 2)
+          ctx.fillText('Waiting for Student', canvas.width / 2, canvas.height / 2)
         }
       }
 
-      // Draw PIP (student/remote stream - bottom right corner)
-      if (remoteStream) {
-        const remoteVideo = findVideoForStream(remoteStream)
-        const remoteVideoTrack = remoteStream.getVideoTracks()[0]
+      // Draw PIP (teacher/local stream - bottom right corner)
+      if (localStream && remoteStream) {
+        const localVideo = findVideoForStream(localStream)
+        const localVideoTrack = localStream.getVideoTracks()[0]
 
         // Draw PIP border/shadow
         ctx.save()
@@ -657,21 +773,21 @@ const VideoWebRTC = forwardRef<VideoWebRTCHandle, VideoWebRTCProps>(function Vid
         drawRoundedRect(pipX, pipY, pipWidth, pipHeight, pipBorderRadius)
         ctx.clip()
 
-        if (remoteVideo && remoteVideoTrack?.enabled) {
+        if (localVideo && localVideoTrack?.enabled) {
           try {
-            drawVideoCover(remoteVideo, pipX, pipY, pipWidth, pipHeight)
+            drawVideoCover(localVideo, pipX, pipY, pipWidth, pipHeight)
           } catch (e) {
             // Video not ready
           }
         } else {
-          // Show placeholder for student
+          // Show placeholder for teacher
           ctx.fillStyle = '#3a3a3a'
           ctx.fillRect(pipX, pipY, pipWidth, pipHeight)
           ctx.fillStyle = '#888'
           ctx.font = 'bold 20px sans-serif'
           ctx.textAlign = 'center'
           ctx.textBaseline = 'middle'
-          ctx.fillText('Student', pipX + pipWidth / 2, pipY + pipHeight / 2)
+          ctx.fillText('Teacher', pipX + pipWidth / 2, pipY + pipHeight / 2)
         }
 
         ctx.restore()
@@ -780,8 +896,13 @@ const VideoWebRTC = forwardRef<VideoWebRTCHandle, VideoWebRTCProps>(function Vid
   // Start recording
   const startRecordingInternal = useCallback(() => {
     try {
+      console.log('[VideoWebRTC] startRecordingInternal called, localStream exists:', !!localStreamRef.current)
       const stream = createCombinedStream()
-      if (!stream) return
+      if (!stream) {
+        console.error('[VideoWebRTC] createCombinedStream returned null - cannot start recording')
+        return
+      }
+      console.log('[VideoWebRTC] Combined stream created with', stream.getTracks().length, 'tracks')
 
       const options = { mimeType: 'video/webm;codecs=vp9,opus' }
       if (!MediaRecorder.isTypeSupported(options.mimeType)) {
@@ -794,6 +915,11 @@ const VideoWebRTC = forwardRef<VideoWebRTCHandle, VideoWebRTCProps>(function Vid
       recorder.ondataavailable = (event) => {
         if (event.data.size > 0) {
           recordedChunksRef.current.push(event.data)
+          // Log every 10 chunks to confirm data is being captured
+          if (recordedChunksRef.current.length % 10 === 0) {
+            const totalSize = recordedChunksRef.current.reduce((sum, chunk) => sum + chunk.size, 0)
+            console.log(`[VideoWebRTC] Recording progress: ${recordedChunksRef.current.length} chunks, ${(totalSize / 1024 / 1024).toFixed(2)} MB`)
+          }
         }
       }
 
@@ -839,11 +965,11 @@ const VideoWebRTC = forwardRef<VideoWebRTCHandle, VideoWebRTCProps>(function Vid
     recordingStartTimeRef.current = null
 
     if (!mediaRecorderRef.current || mediaRecorderRef.current.state === 'inactive') {
-      console.log('[VideoWebRTC] No active recording to stop')
+      console.log('[VideoWebRTC] No active recording to stop - mediaRecorder:', mediaRecorderRef.current ? `state=${mediaRecorderRef.current.state}` : 'null')
       return null
     }
 
-    console.log('[VideoWebRTC] Stopping recording...')
+    console.log('[VideoWebRTC] Stopping recording... chunks collected:', recordedChunksRef.current.length)
 
     // Create a promise that resolves when recording stops, with timeout
     const recordingPromise = new Promise<Blob | null>((resolve) => {
@@ -882,7 +1008,13 @@ const VideoWebRTC = forwardRef<VideoWebRTCHandle, VideoWebRTCProps>(function Vid
 
   // Internal disconnect helper so we can optionally preserve auto-reconnect behavior.
   const disconnectInternal = useCallback(async (markUserDisconnected: boolean) => {
-    console.log('[VideoWebRTC] Disconnecting...')
+    console.log('[VideoWebRTC] Disconnecting... markUserDisconnected:', markUserDisconnected)
+    console.log('[VideoWebRTC] Current recording state:', {
+      mediaRecorderExists: !!mediaRecorderRef.current,
+      mediaRecorderState: mediaRecorderRef.current?.state,
+      isRecording,
+      hasOnRecordingComplete: !!onRecordingComplete
+    })
 
     // Mark explicit user disconnect only when requested (manual stop).
     if (markUserDisconnected) {
@@ -890,16 +1022,24 @@ const VideoWebRTC = forwardRef<VideoWebRTCHandle, VideoWebRTCProps>(function Vid
     }
 
     // Stop recording and upload
+    console.log('[VideoWebRTC] Calling stopRecordingAndGetBlob...')
     const recordingBlob = await stopRecordingAndGetBlob()
+    console.log('[VideoWebRTC] stopRecordingAndGetBlob returned:', recordingBlob ? `${recordingBlob.size} bytes` : 'null')
 
     if (recordingBlob && recordingBlob.size > 0 && onRecordingComplete) {
-      console.log('[VideoWebRTC] Uploading recording...')
+      console.log('[VideoWebRTC] Uploading recording via onRecordingComplete...')
       try {
         await onRecordingComplete(recordingBlob)
-        console.log('[VideoWebRTC] Recording uploaded successfully')
+        console.log('[VideoWebRTC] Recording uploaded successfully via onRecordingComplete')
       } catch (err) {
         console.error('[VideoWebRTC] Error uploading recording:', err)
       }
+    } else {
+      console.warn('[VideoWebRTC] Skipping upload:', {
+        hasBlob: !!recordingBlob,
+        blobSize: recordingBlob?.size ?? 0,
+        hasCallback: !!onRecordingComplete
+      })
     }
 
     // Close all peer connections
@@ -972,16 +1112,54 @@ const VideoWebRTC = forwardRef<VideoWebRTCHandle, VideoWebRTCProps>(function Vid
     }
   }, [canJoin, isConnected, isInitialized, disconnectInternal])
 
+  // Track previous canJoin value to detect transitions
+  const prevCanJoinRef = useRef(canJoin)
+
+  // When canJoin transitions from false to true, force reinitialization
+  useEffect(() => {
+    const wasNotJoinable = !prevCanJoinRef.current
+    const isNowJoinable = canJoin
+
+    if (wasNotJoinable && isNowJoinable) {
+      console.log('[VideoWebRTC] canJoin transitioned from false to true - forcing reinitialization')
+      // Reset all states that might prevent reinitialization
+      userDisconnectedRef.current = false
+      initializingRef.current = false
+      setIsInitialized(false)
+      // Force the init effect to re-run
+      setInitTrigger(prev => prev + 1)
+    }
+
+    prevCanJoinRef.current = canJoin
+  }, [canJoin])
+
   // Initialize media and signaling
   useEffect(() => {
+    console.log('[VideoWebRTC] Init effect triggered:', {
+      canJoin,
+      userDisconnected: userDisconnectedRef.current,
+      isInitialized,
+      initializing: initializingRef.current,
+      initTrigger
+    })
+
     // Don't do anything if we can't join
-    if (!canJoin) return
+    if (!canJoin) {
+      console.log('[VideoWebRTC] Skipping init - canJoin is false')
+      return
+    }
 
     // Don't re-initialize if user explicitly disconnected
-    if (userDisconnectedRef.current) return
+    if (userDisconnectedRef.current) {
+      console.log('[VideoWebRTC] Skipping init - user disconnected')
+      return
+    }
 
     // Already initialized or currently initializing
-    if (isInitialized || initializingRef.current) return
+    if (isInitialized || initializingRef.current) {
+      console.log('[VideoWebRTC] Skipping init - already initialized or initializing')
+      return
+    }
 
     // Mark as initializing to prevent double-init
     initializingRef.current = true
@@ -1141,28 +1319,42 @@ const VideoWebRTC = forwardRef<VideoWebRTCHandle, VideoWebRTCProps>(function Vid
 
         // Try immediately and with multiple retries (presence sync can be delayed)
         connectToExistingParticipants()
+        // Also ensure any existing peer connections have local tracks added
+        // (handles race condition where peer was created before local stream)
+        addLocalTracksToExistingPeers()
+
         // Retry at 500ms, 1500ms, 3000ms with increasing aggressiveness
         setTimeout(() => {
           if (mountedRef.current && !cancelled) {
             connectToExistingParticipants()
+            addLocalTracksToExistingPeers()
           }
         }, 500)
         setTimeout(() => {
           if (mountedRef.current && !cancelled) {
             connectToExistingParticipants()
+            addLocalTracksToExistingPeers()
           }
         }, 1500)
         // After 3 seconds, if still no connection, force an offer regardless of polite/impolite
         setTimeout(() => {
           if (mountedRef.current && !cancelled) {
             connectToExistingParticipants(true)
+            addLocalTracksToExistingPeers()
           }
         }, 3000)
 
         // Auto-record immediately if host and autoRecord is enabled
+        console.log('[VideoWebRTC] Checking auto-record conditions:', {
+          isHost: isHostRef.current,
+          autoRecord,
+          shouldAutoRecord: isHostRef.current && autoRecord
+        })
         if (isHostRef.current && autoRecord) {
           console.log('[VideoWebRTC] Auto-starting recording for host')
           startRecordingInternal()
+        } else {
+          console.log('[VideoWebRTC] Skipping auto-record - conditions not met')
         }
       } catch (err) {
         console.error('[VideoWebRTC] Error initializing:', err)
@@ -1241,13 +1433,23 @@ const VideoWebRTC = forwardRef<VideoWebRTCHandle, VideoWebRTCProps>(function Vid
           } else {
             const state = peer.connection.connectionState
             const iceState = peer.connection.iceConnectionState
-            console.log(`[VideoWebRTC] Health check: Peer ${p.id} state=${state}, ice=${iceState}`)
+            const hasRemoteStreamForPeer = remoteStreams.has(p.id)
 
-            // Only send offer if connection has failed, not if it's in progress
-            if (state === 'failed' || state === 'disconnected' ||
-                iceState === 'failed' || iceState === 'disconnected') {
-              console.log(`[VideoWebRTC] Health check: Connection failed, sending offer to ${p.id}`)
-              sendOffer(p.id)
+            console.log(`[VideoWebRTC] Health check: Peer ${p.id} state=${state}, ice=${iceState}, hasStream=${hasRemoteStreamForPeer}`)
+
+            // Only restart for actual connection failures - don't use track.muted as it's unreliable
+            // and can cause false positives that freeze working video
+            const connectionFailed = state === 'failed' || state === 'disconnected' ||
+                iceState === 'failed' || iceState === 'disconnected'
+            const connectionStuck = !hasRemoteStreamForPeer &&
+                (state === 'new' || state === 'connecting' || iceState === 'new' || iceState === 'checking')
+
+            if (connectionFailed || connectionStuck) {
+              const reason = connectionFailed ? 'Connection failed' : 'Connection stuck'
+              console.log(`[VideoWebRTC] Health check: ${reason}, initiating ICE restart to ${p.id}`)
+
+              // Use ICE restart with force=true to override polite peer rules when video isn't flowing
+              restartIce(p.id, true)
             }
           }
         })
@@ -1263,7 +1465,7 @@ const VideoWebRTC = forwardRef<VideoWebRTCHandle, VideoWebRTCProps>(function Vid
     return () => {
       timeouts.forEach(clearTimeout)
     }
-  }, [isConnected, canJoin, remoteStreams.size, createPeerConnection, sendOffer])
+  }, [isConnected, canJoin, remoteStreams.size, remoteStreams, createPeerConnection, sendOffer, restartIce])
 
   // Sync local stream to video element - run when layout changes (mini-player toggle)
   useEffect(() => {
@@ -1527,7 +1729,7 @@ const VideoWebRTC = forwardRef<VideoWebRTCHandle, VideoWebRTCProps>(function Vid
           />
           {hasRemoteStream && (
             <div className="absolute bottom-1 right-1 w-16 h-12 rounded overflow-hidden border border-white/20">
-              <RemoteVideoView stream={remoteStreamArray[0][1]} participantName="Remote" compact />
+              <RemoteVideoView key={`mini-${remoteStreamArray[0][0]}-${remoteStreamArray[0][1].id}`} stream={remoteStreamArray[0][1]} participantName="Remote" compact />
             </div>
           )}
           {isMuted && (
@@ -1554,7 +1756,7 @@ const VideoWebRTC = forwardRef<VideoWebRTCHandle, VideoWebRTCProps>(function Vid
                       const participant = participants.find(p => p.id === peerId)
                       return (
                         <RemoteVideoView
-                          key={peerId}
+                          key={`${peerId}-${stream.id}`}
                           stream={stream}
                           participantName={participant?.name || 'Participant'}
                           isMuted={participant?.isMuted || false}
@@ -1720,8 +1922,8 @@ const VideoWebRTC = forwardRef<VideoWebRTCHandle, VideoWebRTCProps>(function Vid
 
 export default VideoWebRTC
 
-// Remote Video Component
-function RemoteVideoView({
+// Remote Video Component - memoized to prevent unnecessary re-renders
+const RemoteVideoView = React.memo(function RemoteVideoView({
   stream,
   participantName,
   isMuted = false,
@@ -1735,98 +1937,201 @@ function RemoteVideoView({
   compact?: boolean
 }) {
   const videoRef = useRef<HTMLVideoElement>(null)
-  const [hasVideoTrack, setHasVideoTrack] = useState(false)
-
-  console.log(`[RemoteVideoView] Rendering for ${participantName}, stream=${stream?.id || 'null'}, hasVideoTrack=${hasVideoTrack}, isVideoOff=${isVideoOff}`)
+  const playAttemptedRef = useRef(false)
+  // Initialize hasVideoTrack based on actual stream state to avoid flash of avatar
+  const [hasVideoTrack, setHasVideoTrack] = useState(() => {
+    if (!stream) return false
+    const tracks = stream.getVideoTracks()
+    return tracks.length > 0 && tracks.some(t => t.enabled && t.readyState === 'live')
+  })
+  // Track if video is actually playing
+  const [isVideoPlaying, setIsVideoPlaying] = useState(false)
+  // Control muted state - start muted for autoplay, unmute after play succeeds
+  const [isMutedForAutoplay, setIsMutedForAutoplay] = useState(true)
 
   useEffect(() => {
     const video = videoRef.current
-    if (!video || !stream) {
-      console.log(`[RemoteVideoView] Missing video element or stream, video=${!!video}, stream=${!!stream}`)
-      return
-    }
+    if (!video || !stream) return
 
     let cancelled = false
     let unmuteTimeout: NodeJS.Timeout | null = null
+
+    // Reset playing state when stream changes
+    setIsVideoPlaying(false)
+
+    // Immediately check track state for the new stream
+    const tracks = stream.getVideoTracks()
+    const initialHasTrack = tracks.length > 0 && tracks.some(t => t.enabled && t.readyState === 'live')
+    setHasVideoTrack(initialHasTrack)
 
     const updateVideoTrackState = () => {
       if (cancelled) return
       const tracks = stream.getVideoTracks()
       const hasLiveTrack = tracks.length > 0 && tracks.some(t => t.enabled && t.readyState === 'live')
-      console.log(`[RemoteVideoView] updateVideoTrackState: ${tracks.length} video tracks, hasLiveTrack=${hasLiveTrack}`)
-      tracks.forEach((t, i) => {
-        console.log(`[RemoteVideoView]   Track ${i}: enabled=${t.enabled}, readyState=${t.readyState}, muted=${t.muted}`)
-      })
       setHasVideoTrack(hasLiveTrack)
     }
     const videoTracks = stream.getVideoTracks()
-    console.log(`[RemoteVideoView] useEffect: Setting up stream ${stream.id} with ${videoTracks.length} video tracks`)
     queueMicrotask(updateVideoTrackState)
 
     // Set the stream
-    console.log(`[RemoteVideoView] Setting video.srcObject to stream ${stream.id}`)
     video.srcObject = stream
 
     // Listen for video element events to detect when video is ready
     const handleLoadedMetadata = () => {
-      console.log(`[RemoteVideoView] loadedmetadata: videoWidth=${video.videoWidth}, videoHeight=${video.videoHeight}`)
+      console.log(`[RemoteVideoView] loadedmetadata: ${video.videoWidth}x${video.videoHeight}`)
       updateVideoTrackState()
+      // If we have valid dimensions, mark as playing
+      if (video.videoWidth > 0 && video.videoHeight > 0) {
+        console.log('[RemoteVideoView] Marking as playing from loadedmetadata')
+        setIsVideoPlaying(true)
+      }
+    }
+    const handleLoadedData = () => {
+      console.log(`[RemoteVideoView] loadeddata: ${video.videoWidth}x${video.videoHeight}, readyState=${video.readyState}`)
+      // First frame is available - mark as playing
+      if (video.videoWidth > 0 && video.videoHeight > 0) {
+        console.log('[RemoteVideoView] Marking as playing from loadeddata')
+        setIsVideoPlaying(true)
+      }
     }
     const handlePlaying = () => {
-      console.log(`[RemoteVideoView] playing event: video is now playing`)
+      console.log(`[RemoteVideoView] Video playing: ${video.videoWidth}x${video.videoHeight}`)
+      setIsVideoPlaying(true)
       updateVideoTrackState()
     }
     const handleCanPlay = () => {
-      console.log(`[RemoteVideoView] canplay event`)
+      console.log(`[RemoteVideoView] canplay: ${video.videoWidth}x${video.videoHeight}`)
       updateVideoTrackState()
+      if (video.videoWidth > 0 && video.videoHeight > 0) {
+        setIsVideoPlaying(true)
+      }
+    }
+    // Handle video freeze/stall - try to resume playback
+    const handleStalled = () => {
+      if (cancelled) return
+      console.log('[RemoteVideoView] Video stalled, attempting to resume...')
+      playAttemptedRef.current = false
+      playVideo()
+    }
+    const handlePause = () => {
+      // Video paused unexpectedly - try to resume (autoplay should keep it playing)
+      if (cancelled || video.ended) return
+      console.log('[RemoteVideoView] Video paused unexpectedly, resuming...')
+      video.play().catch(() => {})
     }
     video.addEventListener('loadedmetadata', handleLoadedMetadata)
+    video.addEventListener('loadeddata', handleLoadedData)
     video.addEventListener('playing', handlePlaying)
     video.addEventListener('canplay', handleCanPlay)
+    video.addEventListener('stalled', handleStalled)
+    video.addEventListener('pause', handlePause)
 
     // Try to play with various strategies
+    // Start muted for better autoplay compatibility, then unmute
     const playVideo = async () => {
       if (cancelled) return
+      // Don't skip if already attempted - we need to retry on each stream change
+
+      console.log('[RemoteVideoView] Attempting to play video...', {
+        videoWidth: video.videoWidth,
+        videoHeight: video.videoHeight,
+        readyState: video.readyState,
+        paused: video.paused,
+        srcObject: !!video.srcObject,
+        networkState: video.networkState,
+        currentTime: video.currentTime
+      })
+
       try {
-        // Ensure video is not paused
-        video.muted = false // Remote video should have audio
-        console.log(`[RemoteVideoView] Attempting to play video...`)
-        await video.play()
-        console.log(`[RemoteVideoView] Video play() succeeded! videoWidth=${video.videoWidth}, videoHeight=${video.videoHeight}`)
+        // Start muted - browsers are more permissive with muted autoplay
+        setIsMutedForAutoplay(true)
+        video.muted = true
+
+        // Create a promise that races between play() and a timeout
+        const playPromise = video.play()
+        const timeoutPromise = new Promise((_, reject) =>
+          setTimeout(() => reject(new Error('Play timeout after 3s')), 3000)
+        )
+
+        await Promise.race([playPromise, timeoutPromise])
+        console.log('[RemoteVideoView] video.play() succeeded')
+        if (!cancelled) {
+          setIsVideoPlaying(true)
+          // Unmute after video starts playing
+          unmuteTimeout = setTimeout(() => {
+            if (!cancelled && video) {
+              setIsMutedForAutoplay(false)
+              video.muted = false
+              console.log('[RemoteVideoView] Video unmuted')
+            }
+          }, 100)
+        }
       } catch (err) {
         // Ignore AbortError - expected when component unmounts
         if (err instanceof Error && err.name === 'AbortError') {
+          console.log('[RemoteVideoView] Play aborted (component unmount)')
           return
         }
         if (cancelled) return
-        // If autoplay fails due to browser policy, try muted first
-        try {
-          video.muted = true
-          await video.play()
-          // Then unmute after a short delay
-          unmuteTimeout = setTimeout(() => {
-            if (!cancelled) {
-              video.muted = false
+        console.warn('[RemoteVideoView] Video play failed:', err)
+
+        // Check if video has dimensions - it might be playing anyway
+        if (video.videoWidth > 0 && video.videoHeight > 0) {
+          console.log('[RemoteVideoView] Video has dimensions despite play error, marking as playing')
+          setIsVideoPlaying(true)
+        } else {
+          // Retry after a short delay
+          setTimeout(() => {
+            if (!cancelled && video.paused) {
+              console.log('[RemoteVideoView] Retrying play after error...')
+              video.play().then(() => {
+                console.log('[RemoteVideoView] Retry play succeeded')
+                setIsVideoPlaying(true)
+              }).catch(e => console.warn('[RemoteVideoView] Retry play also failed:', e))
             }
-          }, 100)
-        } catch (mutedErr) {
-          // Ignore AbortError on retry
-          if (mutedErr instanceof Error && mutedErr.name === 'AbortError') {
-            return
-          }
-          if (!cancelled) {
-            console.warn('[RemoteVideoView] Video play failed:', mutedErr)
-          }
+          }, 500)
         }
       }
     }
 
+    // Reset play attempt ref for this stream
+    playAttemptedRef.current = false
     playVideo()
+
+    // Also try to play when tracks unmute (WebRTC tracks can start muted)
+    const handleTrackUnmute = () => {
+      playAttemptedRef.current = false
+      playVideo()
+    }
+
+    videoTracks.forEach(track => {
+      track.addEventListener('unmute', handleTrackUnmute)
+    })
+
+    // If tracks remain muted after 5 seconds, the ICE connection might be stuck
+    // But still try to show video if element has valid dimensions (track.muted is unreliable)
+    const mutedCheckTimeout = setTimeout(() => {
+      if (cancelled) return
+      const currentTracks = stream.getVideoTracks()
+      const stillMuted = currentTracks.some(t => t.muted)
+      if (stillMuted && !isVideoPlaying) {
+        console.warn(`[RemoteVideoView] Tracks still muted after 5s, checking video element...`)
+        // Fallback: if video element has valid dimensions, mark as playing anyway
+        // The track.muted property can be unreliable in some browsers
+        if (video.videoWidth > 0 && video.videoHeight > 0) {
+          console.log(`[RemoteVideoView] Video has valid dimensions (${video.videoWidth}x${video.videoHeight}), forcing playing state`)
+          setIsVideoPlaying(true)
+        } else {
+          // Try another play attempt
+          playAttemptedRef.current = false
+          playVideo()
+        }
+      }
+    }, 5000)
 
     // Listen for track changes
     const handleTrackChange = () => {
       if (cancelled) return
-      console.log(`[RemoteVideoView] Track change detected, updating state...`)
       updateVideoTrackState()
     }
 
@@ -1840,22 +2145,36 @@ function RemoteVideoView({
       track.addEventListener('unmute', handleTrackChange)
     })
 
-    // Also retry checking track state after delays - tracks might not be immediately live
-    const retryIntervals = [100, 500, 1000, 2000]
+    // Retry checking track state after delays - tracks might not be immediately live
+    const retryIntervals = [100, 300, 500, 1000, 2000, 3000]
     const retryTimeouts = retryIntervals.map(delay =>
       setTimeout(() => {
         if (!cancelled) {
-          console.log(`[RemoteVideoView] Retry checking track state after ${delay}ms`)
           updateVideoTrackState()
+          // Fallback: if video has dimensions, consider it playing (even if paused - frames may still render)
+          if (video.videoWidth > 0 && video.videoHeight > 0) {
+            console.log(`[RemoteVideoView] Fallback at ${delay}ms: video has dimensions ${video.videoWidth}x${video.videoHeight}, paused=${video.paused}, marking as playing`)
+            setIsVideoPlaying(true)
+            // Also try to ensure it's actually playing
+            if (video.paused) {
+              video.play().catch(() => {})
+            }
+          } else if (!video.paused && video.readyState >= 2) {
+            // Video is not paused and has enough data - consider it playing
+            console.log(`[RemoteVideoView] Fallback at ${delay}ms: video readyState=${video.readyState}, marking as playing`)
+            setIsVideoPlaying(true)
+          }
         }
       }, delay)
     )
 
     return () => {
       cancelled = true
+      playAttemptedRef.current = false
       if (unmuteTimeout) {
         clearTimeout(unmuteTimeout)
       }
+      clearTimeout(mutedCheckTimeout)
       retryTimeouts.forEach(clearTimeout)
       stream.removeEventListener('addtrack', handleTrackChange)
       stream.removeEventListener('removetrack', handleTrackChange)
@@ -1863,23 +2182,34 @@ function RemoteVideoView({
         track.removeEventListener('ended', handleTrackChange)
         track.removeEventListener('mute', handleTrackChange)
         track.removeEventListener('unmute', handleTrackChange)
+        track.removeEventListener('unmute', handleTrackUnmute)
       })
       video.removeEventListener('loadedmetadata', handleLoadedMetadata)
+      video.removeEventListener('loadeddata', handleLoadedData)
       video.removeEventListener('playing', handlePlaying)
       video.removeEventListener('canplay', handleCanPlay)
+      video.removeEventListener('stalled', handleStalled)
+      video.removeEventListener('pause', handlePause)
       video.srcObject = null
     }
   }, [stream])
 
-  // Determine if we should show the avatar (video off OR no video track)
-  const showAvatar = isVideoOff || !hasVideoTrack
-  console.log(`[RemoteVideoView] showAvatar=${showAvatar} (isVideoOff=${isVideoOff}, hasVideoTrack=${hasVideoTrack})`)
+  // Determine if we should show the avatar (video off OR no video track OR video not playing)
+  // Give priority to showing video if tracks exist - only show avatar if explicitly off or truly no track
+  const showAvatar = isVideoOff || (!hasVideoTrack && !isVideoPlaying)
+  // Show connecting state when we have a track but video isn't playing yet
+  const showConnecting = hasVideoTrack && !isVideoPlaying && !isVideoOff
 
   if (compact) {
     return (
-      <div className="relative w-full h-full">
+      <div className="relative w-full h-full bg-black">
         {/* Always render video, use z-index to layer avatar on top if needed */}
-        <video ref={videoRef} autoPlay playsInline className="w-full h-full object-cover absolute inset-0" />
+        <video ref={videoRef} autoPlay playsInline muted={isMutedForAutoplay} className="w-full h-full object-cover absolute inset-0 z-0" style={{ minHeight: '100%', minWidth: '100%' }} />
+        {showConnecting && (
+          <div className="absolute inset-0 flex items-center justify-center bg-gray-900/80 z-5">
+            <div className="w-6 h-6 border-2 border-[#CEB466] border-t-transparent rounded-full animate-spin" />
+          </div>
+        )}
         {showAvatar && (
           <div className="absolute inset-0 flex items-center justify-center bg-gray-800 z-10">
             <div className="w-8 h-8 rounded-full bg-gray-700 flex items-center justify-center text-sm text-white font-medium">
@@ -1892,14 +2222,25 @@ function RemoteVideoView({
   }
 
   return (
-    <div className="relative w-full h-full">
+    <div className="relative w-full h-full bg-black">
       {/* Always render video element to ensure it stays in DOM, use z-index for layering */}
       <video
         ref={videoRef}
         autoPlay
         playsInline
-        className="w-full h-full object-cover absolute inset-0"
+        muted={isMutedForAutoplay}
+        className="w-full h-full object-cover absolute inset-0 z-0"
+        style={{ minHeight: '100%', minWidth: '100%' }}
       />
+      {/* Show connecting state while waiting for video */}
+      {showConnecting && (
+        <div className="absolute inset-0 flex items-center justify-center bg-gray-900/80 z-5">
+          <div className="text-center">
+            <div className="w-12 h-12 border-4 border-[#CEB466] border-t-transparent rounded-full animate-spin mx-auto mb-3" />
+            <p className="text-gray-300 text-sm">Connecting video...</p>
+          </div>
+        </div>
+      )}
       {showAvatar && (
         <div className="absolute inset-0 flex items-center justify-center bg-gray-800 z-10">
           <div className="w-32 h-32 rounded-full bg-gray-700 flex items-center justify-center text-4xl text-white font-medium">
@@ -1924,7 +2265,7 @@ function RemoteVideoView({
       </div>
     </div>
   )
-}
+})
 
 // Local Video Display Component - maintains its own video element with stream
 function LocalVideoDisplay({

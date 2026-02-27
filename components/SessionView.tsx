@@ -1,7 +1,6 @@
 'use client'
 
 import React, { useEffect, useMemo, useRef, useState, useCallback } from 'react'
-import { createPortal } from 'react-dom'
 import { getSupabaseClient } from '@/lib/supabase'
 import VideoWebRTC, { VideoWebRTCHandle } from './VideoWebRTC'
 import { useEditor, EditorContent } from '@tiptap/react'
@@ -170,12 +169,41 @@ export default function SessionView({ studentId, bookingId, isAdmin = false, cur
   // Realtime: class_sessions changes
   useEffect(() => {
     const channel = supabase.channel(`class_sessions:${studentId}`).on('postgres_changes', { event: '*', schema: 'public', table: 'class_sessions', filter: `student_id=eq.${studentId}` }, (payload) => {
+      console.log('[SessionView] Realtime class_sessions update:', payload)
       const row = (payload.new ?? payload.old) as { is_active?: boolean; started_at?: string | null }
-      if (typeof row?.is_active === 'boolean') setActive(row.is_active)
+      if (typeof row?.is_active === 'boolean') {
+        console.log('[SessionView] Setting active to:', row.is_active)
+        setActive(row.is_active)
+      }
       if (row?.started_at !== undefined) setStartedAt(row.started_at ? new Date(row.started_at) : null)
-    }).subscribe()
+    }).subscribe((status) => {
+      console.log('[SessionView] Realtime subscription status:', status)
+    })
     return () => { supabase.removeChannel(channel) }
   }, [studentId, supabase])
+
+  // Polling fallback: check class status every 3 seconds when class is not active
+  // This handles cases where realtime subscription might not work
+  useEffect(() => {
+    if (active || isAdmin) return // Don't poll if already active or if user is admin (teacher)
+
+    console.log('[SessionView] Starting class status polling (student waiting for class)')
+    const pollInterval = setInterval(async () => {
+      const { data } = await supabase
+        .from('class_sessions')
+        .select('is_active, started_at')
+        .eq('student_id', studentId)
+        .maybeSingle()
+
+      if (data?.is_active && !active) {
+        console.log('[SessionView] Polling detected class started!')
+        setActive(true)
+        if (data.started_at) setStartedAt(new Date(data.started_at))
+      }
+    }, 3000)
+
+    return () => clearInterval(pollInterval)
+  }, [active, isAdmin, studentId, supabase])
 
   // Realtime: notes_archive changes (so student sees archive instantly when teacher ends class)
   useEffect(() => {
@@ -225,21 +253,23 @@ export default function SessionView({ studentId, bookingId, isAdmin = false, cur
     console.log('[SessionView] Starting class...')
     const editor = editorRef.current
     const provider = providerRef.current
-    const now = new Date()
 
     // Clear notes for fresh start
     editor?.commands.clearContent(true)
     await provider?.forceSave()
 
-    // Update database first
-    await supabase.from('class_sessions').upsert({
-      student_id: studentId,
-      is_active: true,
-      started_at: now.toISOString(),
-      ended_at: null,
-    })
+    // Call API to start class - this handles both class_sessions and session_notes
+    const response = await fetch(`/api/lessons/${bookingId}/start-class`, { method: 'POST' })
+    const result = await response.json()
+
+    if (!response.ok) {
+      console.error('[SessionView] Failed to start class:', result)
+      alert(`Failed to start class: ${result.error || 'Unknown error'}`)
+      return
+    }
 
     // Set local state - this makes canJoin=true and autoRecord=true
+    const now = result.startedAt ? new Date(result.startedAt) : new Date()
     setActive(true)
     setStartedAt(now)
 
@@ -249,9 +279,8 @@ export default function SessionView({ studentId, bookingId, isAdmin = false, cur
       videoRef.current.reconnect()
     }
 
-    await fetch(`/api/lessons/${bookingId}/start-class`, { method: 'POST' })
     console.log('[SessionView] Class started!')
-  }, [studentId, bookingId, supabase])
+  }, [bookingId])
 
   const endClass = useCallback(async () => {
     console.log('[SessionView] Ending class...')
@@ -451,12 +480,14 @@ const VideoSection = React.memo(function VideoSection({
 }) {
   // Handle recording upload
   const handleRecordingComplete = useCallback(async (blob: Blob) => {
+    console.log('[VideoSection] handleRecordingComplete called, blob:', blob ? `${blob.size} bytes` : 'null')
+
     if (!blob || blob.size === 0) {
-      console.log('[VideoSection] No recording data to upload')
+      console.error('[VideoSection] No recording data to upload - blob is empty or null')
       return
     }
 
-    console.log('[VideoSection] Uploading recording, size:', blob.size)
+    console.log('[VideoSection] Uploading recording, size:', blob.size, 'bookingId:', bookingId)
 
     try {
       const formData = new FormData()
@@ -466,21 +497,27 @@ const VideoSection = React.memo(function VideoSection({
         formData.append('classStartedAt', startedAt.toISOString())
       }
 
+      console.log('[VideoSection] Sending POST to /api/lessons/' + bookingId + '/recordings')
       const response = await fetch(`/api/lessons/${bookingId}/recordings`, {
         method: 'POST',
         body: formData,
       })
 
+      const responseText = await response.text()
+      console.log('[VideoSection] Recording upload response status:', response.status, 'body:', responseText)
+
       if (!response.ok) {
-        const error = await response.json()
-        console.error('[VideoSection] Recording upload failed:', error)
+        console.error('[VideoSection] Recording upload failed:', response.status, responseText)
+        // Show user-visible error for upload failures
+        alert(`Recording upload failed: ${responseText}`)
         return
       }
 
-      const result = await response.json()
+      const result = JSON.parse(responseText)
       console.log('[VideoSection] Recording uploaded successfully:', result)
     } catch (err) {
       console.error('[VideoSection] Error uploading recording:', err)
+      alert(`Recording upload error: ${err instanceof Error ? err.message : 'Unknown error'}`)
     }
   }, [bookingId, startedAt])
 
@@ -498,62 +535,48 @@ const VideoSection = React.memo(function VideoSection({
           </span>
         )}
       </div>
-      <div ref={videoWrapperRef} className="relative" style={{ minHeight: isMiniPlayer ? `${videoPlaceholderHeight.current}px` : 'auto', background: isMiniPlayer ? 'rgba(0,0,0,0.2)' : 'transparent' }}>
-        {isMiniPlayer && <div className="absolute inset-0 flex items-center justify-center text-gray-500 text-sm">Video playing in mini player (bottom right)</div>}
-        {/* When NOT mini player, render inline */}
-        {!isMiniPlayer && (
-          <div ref={videoStickyRef} className="aspect-video w-full" style={{ background: 'black', width: '100%' }}>
-            <VideoWebRTC
-              ref={videoRef}
-              key={`video-${bookingId}`}
-              roomId={`lesson-${bookingId}`}
-              participantId={currentUser?.id || studentId}
-              participantName={currentUser?.name || 'Participant'}
-              isHost={isAdmin}
-              canJoin={active}
-              autoRecord={isAdmin && active}
-              className="block w-full h-full"
-              isMiniPlayer={false}
-              onRecordingComplete={handleRecordingComplete}
-            />
-          </div>
-        )}
-        {/* When mini player, render via portal to escape scrollable container */}
-        {isMiniPlayer && typeof document !== 'undefined' && createPortal(
-          <div
-            ref={videoStickyRef}
-            style={{
-              position: 'fixed',
-              bottom: `${miniPosition.bottom}px`,
-              right: `${miniPosition.right}px`,
-              width: `${miniSize.width}px`,
-              height: `${miniSize.height}px`,
-              borderRadius: '12px',
-              boxShadow: '0 8px 32px rgba(0,0,0,0.4)',
-              zIndex: 99999,
-              background: 'black',
-              overflow: 'hidden'
-            }}
-          >
-            <div onPointerDown={(e) => onPointerDown(e, 'drag')} className="absolute inset-0 z-10" style={{ cursor: 'move' }} />
-            <VideoWebRTC
-              ref={videoRef}
-              key={`video-mini-${bookingId}`}
-              roomId={`lesson-${bookingId}`}
-              participantId={currentUser?.id || studentId}
-              participantName={currentUser?.name || 'Participant'}
-              isHost={isAdmin}
-              canJoin={active}
-              autoRecord={isAdmin && active}
-              className="block w-full h-full"
-              isMiniPlayer={true}
-              onRecordingComplete={handleRecordingComplete}
-            />
-            <div onPointerDown={(e) => onPointerDown(e, 'resize')} className="absolute bottom-0 right-0 w-5 h-5 cursor-se-resize z-20" style={{ background: 'linear-gradient(135deg, transparent 50%, rgba(255,255,255,0.3) 50%)', borderBottomRightRadius: '12px' }} />
-            <button onClick={() => { videoWrapperRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' }) }} className="absolute top-2 right-2 w-6 h-6 rounded-full bg-black/50 hover:bg-black/70 flex items-center justify-center text-white text-xs z-20" title="Return to full view">×</button>
-          </div>,
-          document.body
-        )}
+      <div ref={videoWrapperRef} className="relative aspect-video" style={{ background: 'black' }}>
+        {/* Persistent video container - uses position:fixed to escape overflow:hidden when mini-player */}
+        <div
+          ref={videoStickyRef}
+          className={isMiniPlayer ? '' : 'absolute inset-0'}
+          style={isMiniPlayer ? {
+            position: 'fixed',
+            bottom: `${miniPosition.bottom}px`,
+            right: `${miniPosition.right}px`,
+            width: `${miniSize.width}px`,
+            height: `${miniSize.height}px`,
+            borderRadius: '12px',
+            boxShadow: '0 8px 32px rgba(0,0,0,0.4)',
+            zIndex: 99999,
+            background: 'black',
+            overflow: 'hidden'
+          } : {}}
+        >
+          <VideoWebRTC
+            ref={videoRef}
+            key={`video-persistent-${bookingId}`}
+            roomId={`lesson-${bookingId}`}
+            participantId={currentUser?.id || studentId}
+            participantName={currentUser?.name || 'Participant'}
+            isHost={isAdmin}
+            canJoin={active}
+            autoRecord={isAdmin && active}
+            className="block w-full h-full"
+            isMiniPlayer={isMiniPlayer}
+            onRecordingComplete={handleRecordingComplete}
+          />
+          {/* Mini-player controls overlay */}
+          {isMiniPlayer && (
+            <>
+              <div onPointerDown={(e) => onPointerDown(e, 'drag')} className="absolute inset-0 z-10" style={{ cursor: 'move', pointerEvents: 'auto' }} />
+              <div onPointerDown={(e) => onPointerDown(e, 'resize')} className="absolute bottom-0 right-0 w-5 h-5 cursor-se-resize z-20" style={{ background: 'linear-gradient(135deg, transparent 50%, rgba(255,255,255,0.3) 50%)', borderBottomRightRadius: '12px', pointerEvents: 'auto' }} />
+              <button onClick={() => { videoWrapperRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' }) }} className="absolute top-2 right-2 w-6 h-6 rounded-full bg-black/50 hover:bg-black/70 flex items-center justify-center text-white text-xs z-20" style={{ pointerEvents: 'auto' }} title="Return to full view">×</button>
+            </>
+          )}
+        </div>
+        {/* Placeholder when video is in mini-player */}
+        {isMiniPlayer && <div className="absolute inset-0 flex items-center justify-center text-gray-500 text-sm bg-black/80 rounded-lg pointer-events-none">Video in mini player ↘</div>}
       </div>
       {isAdmin ? (
         <div className="p-4 border-t border-white/10 flex items-center gap-2">
@@ -585,7 +608,7 @@ function CollaborativeEditor({
 }) {
   // Awareness state lives HERE, not in the parent - prevents parent/video re-renders
   const [awarenessUsers, setAwarenessUsers] = useState<Map<number, AwarenessUser>>(
-    () => new Map(provider.getAwareness())
+    () => new Map(provider.getAwarenessMap())
   )
 
   useEffect(() => {
@@ -635,6 +658,10 @@ function CollaborativeEditor({
         <div className="flex items-center gap-3 text-xs text-gray-400">
           {Array.from(awarenessUsers.entries())
             .filter(([, user]) => user.name !== currentUser?.name)
+            // Deduplicate by user name - only show each user once
+            .filter(([, user], index, arr) =>
+              arr.findIndex(([, u]) => u.name === user.name) === index
+            )
             .map(([clientId, user]) => (
               <div key={clientId} className="flex items-center gap-2" style={{ color: user.color }}>
                 <span className="w-2 h-2 rounded-full" style={{ backgroundColor: user.color }}></span>

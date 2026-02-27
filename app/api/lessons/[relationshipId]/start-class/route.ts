@@ -139,12 +139,28 @@ export async function POST(
       return NextResponse.json({ error: 'Database error', details: notesError.message }, { status: 500 })
     }
 
+    // Update class_sessions table for realtime updates to students
+    const { error: sessionError } = await dbClient
+      .from('class_sessions')
+      .upsert({
+        student_id: booking.student_id,
+        is_active: true,
+        started_at: new Date().toISOString(),
+        ended_at: null,
+      })
+
+    if (sessionError) {
+      console.error('[Start Class API] Error updating class_sessions:', sessionError)
+      // Non-fatal - continue even if this fails
+    }
+
     console.log('[Start Class API] Success! Notes:', notes?.id, 'class_active:', notes?.class_active)
 
     return NextResponse.json({
       success: true,
       message: 'Class started',
       notes,
+      startedAt: new Date().toISOString(),
     })
   } catch (error) {
     console.error('[Start Class API] Unexpected error:', error)

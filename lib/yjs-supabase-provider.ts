@@ -1,4 +1,5 @@
 import * as Y from 'yjs'
+import { Awareness, encodeAwarenessUpdate, applyAwarenessUpdate } from 'y-protocols/awareness'
 import { getSupabaseClient } from '@/lib/supabase'
 import type { RealtimeChannel } from '@supabase/supabase-js'
 
@@ -59,13 +60,15 @@ export class YjsSupabaseProvider {
   private userName: string
   private userColor: string
   private clientId: number
-  private awareness: Map<number, AwarenessUser> = new Map()
+  private awarenessMap: Map<number, AwarenessUser> = new Map()
   private onSynced?: () => void
   private awarenessListeners: Set<(users: Map<number, AwarenessUser>) => void> = new Set()
   private synced = false
   private destroyed = false
   // Store bound handler so we can properly remove it
   private boundHandleDocumentUpdate: (update: Uint8Array, origin: unknown) => void
+  // y-protocols awareness for CollaborationCursor support
+  public awareness: Awareness
 
   constructor(ydoc: Y.Doc, options: YjsSupabaseProviderOptions) {
     this.ydoc = ydoc
@@ -80,6 +83,14 @@ export class YjsSupabaseProvider {
       this.awarenessListeners.add(options.onAwarenessUpdate)
     }
     this.boundHandleDocumentUpdate = this.handleDocumentUpdate.bind(this)
+
+    // Create y-protocols awareness instance
+    this.awareness = new Awareness(ydoc)
+    // Set initial local state with user info
+    this.awareness.setLocalStateField('user', {
+      name: this.userName,
+      color: this.userColor,
+    })
 
     this.connect()
   }
@@ -108,11 +119,23 @@ export class YjsSupabaseProvider {
       }
     })
 
-    // Handle awareness updates
+    // Handle awareness updates (legacy custom format)
     this.channel.on('broadcast', { event: 'awareness' }, ({ payload }) => {
       if (payload.clientId !== this.clientId) {
-        this.awareness.set(payload.clientId, payload.user)
+        this.awarenessMap.set(payload.clientId, payload.user)
         this.notifyAwarenessListeners()
+      }
+    })
+
+    // Handle y-protocols awareness updates (for CollaborationCursor)
+    this.channel.on('broadcast', { event: 'cursor-awareness' }, ({ payload }) => {
+      if (payload.clientId !== this.clientId && payload.update) {
+        try {
+          const update = decodeUpdate(payload.update)
+          applyAwarenessUpdate(this.awareness, update, 'remote')
+        } catch (error) {
+          console.error('[YjsProvider] Error applying cursor awareness update:', error)
+        }
       }
     })
 
@@ -151,7 +174,7 @@ export class YjsSupabaseProvider {
         const presenceArray = presences as Array<{ clientId: number; user: AwarenessUser }>
         presenceArray.forEach((presence) => {
           if (presence.clientId !== this.clientId) {
-            this.awareness.set(presence.clientId, presence.user)
+            this.awarenessMap.set(presence.clientId, presence.user)
           }
         })
       })
@@ -162,7 +185,7 @@ export class YjsSupabaseProvider {
       leftPresences.forEach((presence) => {
         const p = presence as unknown as { clientId: number }
         if (p.clientId) {
-          this.awareness.delete(p.clientId)
+          this.awarenessMap.delete(p.clientId)
         }
       })
       this.notifyAwarenessListeners()
@@ -170,6 +193,22 @@ export class YjsSupabaseProvider {
 
     // Listen for local document changes
     this.ydoc.on('update', this.boundHandleDocumentUpdate)
+
+    // Listen for y-protocols awareness changes to broadcast cursor positions
+    this.awareness.on('change', ({ added, updated, removed }: { added: number[]; updated: number[]; removed: number[] }) => {
+      const changedClients = added.concat(updated, removed)
+      if (changedClients.length > 0 && this.channel) {
+        const update = encodeAwarenessUpdate(this.awareness, changedClients)
+        this.channel.send({
+          type: 'broadcast',
+          event: 'cursor-awareness',
+          payload: {
+            clientId: this.clientId,
+            update: encodeUpdate(update),
+          },
+        })
+      }
+    })
 
     // --- NOW subscribe (all handlers already registered) ---
     await this.channel.subscribe(async (status) => {
@@ -191,6 +230,17 @@ export class YjsSupabaseProvider {
           type: 'broadcast',
           event: 'sync-request',
           payload: { clientId: this.clientId },
+        })
+
+        // Broadcast our initial awareness state
+        const initialAwarenessUpdate = encodeAwarenessUpdate(this.awareness, [this.awareness.clientID])
+        this.channel?.send({
+          type: 'broadcast',
+          event: 'cursor-awareness',
+          payload: {
+            clientId: this.clientId,
+            update: encodeUpdate(initialAwarenessUpdate),
+          },
         })
       }
     })
@@ -303,13 +353,13 @@ export class YjsSupabaseProvider {
 
   // Update local awareness (cursor position, etc.)
   setAwareness(state: Partial<AwarenessUser>) {
-    const currentState = this.awareness.get(this.clientId) || {
+    const currentState = this.awarenessMap.get(this.clientId) || {
       name: this.userName,
       color: this.userColor,
     }
 
     const newState = { ...currentState, ...state }
-    this.awareness.set(this.clientId, newState)
+    this.awarenessMap.set(this.clientId, newState)
 
     this.channel?.send({
       type: 'broadcast',
@@ -323,7 +373,7 @@ export class YjsSupabaseProvider {
 
   private notifyAwarenessListeners() {
     for (const listener of this.awarenessListeners) {
-      listener(this.awareness)
+      listener(this.awarenessMap)
     }
   }
 
@@ -335,8 +385,8 @@ export class YjsSupabaseProvider {
     this.awarenessListeners.delete(handler)
   }
 
-  getAwareness(): Map<number, AwarenessUser> {
-    return this.awareness
+  getAwarenessMap(): Map<number, AwarenessUser> {
+    return this.awarenessMap
   }
 
   getClientId(): number {
@@ -371,7 +421,8 @@ export class YjsSupabaseProvider {
       this.channel = null
     }
 
-    this.awareness.clear()
+    this.awarenessMap.clear()
     this.awarenessListeners.clear()
+    this.awareness.destroy()
   }
 }
