@@ -7,6 +7,7 @@ import { analyzeSessionPerformance } from '@/lib/openai'
 // ============================================================================
 
 interface NoteMetricInput {
+  // Legacy metrics
   noteName: string
   octave: number
   targetFrequency: number
@@ -19,6 +20,15 @@ interface NoteMetricInput {
   maxCentsDeviation: number
   minCentsDeviation: number
   attemptNumber: number
+  // New singer-focused metrics
+  targetAccuracy?: number
+  voiceStability?: number
+  avgSemitoneDeviation?: number
+  mostSungNote?: string | null
+  mostSungOctave?: number | null
+  pitchDirection?: 'sharp' | 'flat' | 'on-target'
+  timeToFirstSound?: number
+  sampleCount?: number
 }
 
 interface SessionInput {
@@ -61,6 +71,11 @@ export async function POST(request: NextRequest) {
     let avgPitchStability: number
     let avgInTuneSustainMs: number
     let overallScore: number
+    // New singer-focused session aggregates
+    let avgTargetAccuracy: number = 0
+    let avgVoiceStability: number = 0
+    let avgSemitoneDeviation: number = 0
+    let pitchTendency: 'sharp' | 'flat' | 'on-target' = 'on-target'
 
     if (isSongKeySession) {
       // Song Key Trainer session
@@ -79,20 +94,70 @@ export async function POST(request: NextRequest) {
 
       // Calculate session aggregates
       totalNotes = noteMetrics.length
-      matchedNotes = noteMetrics.filter(n => n.pitchAccuracy >= 70).length
 
-      avgPitchAccuracy = noteMetrics.reduce((sum, n) => sum + n.pitchAccuracy, 0) / totalNotes
-      avgPitchOnsetSpeedMs = Math.round(noteMetrics.reduce((sum, n) => sum + n.pitchOnsetSpeedMs, 0) / totalNotes)
-      avgPitchStability = noteMetrics.reduce((sum, n) => sum + n.pitchStability, 0) / totalNotes
-      avgInTuneSustainMs = Math.round(noteMetrics.reduce((sum, n) => sum + n.inTuneSustainMs, 0) / totalNotes)
+      // Check if we have the new singer-focused metrics
+      const hasNewMetrics = noteMetrics.some(n => n.targetAccuracy !== undefined)
 
-      // Calculate overall score (weighted average)
-      overallScore = (
-        avgPitchAccuracy * 0.35 +
-        Math.min(100, Math.max(0, 100 - (avgPitchOnsetSpeedMs / 10))) * 0.2 +
-        avgPitchStability * 0.25 +
-        Math.min(100, (avgInTuneSustainMs / 50)) * 0.2
-      )
+      if (hasNewMetrics) {
+        // NEW: Use singer-focused metrics
+        avgTargetAccuracy = noteMetrics.reduce((sum, n) => sum + (n.targetAccuracy ?? n.pitchAccuracy), 0) / totalNotes
+        avgVoiceStability = noteMetrics.reduce((sum, n) => sum + (n.voiceStability ?? n.pitchStability), 0) / totalNotes
+        avgSemitoneDeviation = noteMetrics.reduce((sum, n) => sum + (n.avgSemitoneDeviation ?? 0), 0) / totalNotes
+
+        // Calculate pitch tendency
+        const sharpCount = noteMetrics.filter(n => n.pitchDirection === 'sharp').length
+        const flatCount = noteMetrics.filter(n => n.pitchDirection === 'flat').length
+        if (sharpCount > flatCount && sharpCount > totalNotes * 0.3) {
+          pitchTendency = 'sharp'
+        } else if (flatCount > sharpCount && flatCount > totalNotes * 0.3) {
+          pitchTendency = 'flat'
+        } else {
+          pitchTendency = 'on-target'
+        }
+
+        // Count matched notes: within 1 semitone of target AND >50% target accuracy
+        matchedNotes = noteMetrics.filter(n => {
+          const semitones = Math.abs(n.avgSemitoneDeviation ?? 0)
+          const accuracy = n.targetAccuracy ?? n.pitchAccuracy
+          return semitones <= 1 && accuracy >= 50
+        }).length
+
+        avgPitchAccuracy = avgTargetAccuracy
+        avgPitchOnsetSpeedMs = Math.round(noteMetrics.reduce((sum, n) => sum + n.pitchOnsetSpeedMs, 0) / totalNotes)
+        avgPitchStability = avgVoiceStability
+        avgInTuneSustainMs = Math.round(noteMetrics.reduce((sum, n) => sum + n.inTuneSustainMs, 0) / totalNotes)
+
+        // NEW: Calculate overall score with singer-focused weighting
+        // Target Accuracy (40%): How close to the target note
+        // Voice Stability (35%): How steady their pitch is
+        // Onset Speed (15%): How quickly they find a pitch
+        // Sample Count bonus (10%): Reward for actually singing (not just hitting mic)
+        const avgSampleCount = noteMetrics.reduce((sum, n) => sum + (n.sampleCount ?? 10), 0) / totalNotes
+        const sampleBonus = Math.min(100, avgSampleCount * 2) // 50 samples = 100%
+
+        overallScore = (
+          avgTargetAccuracy * 0.40 +
+          avgVoiceStability * 0.35 +
+          Math.min(100, Math.max(0, 100 - (avgPitchOnsetSpeedMs / 15))) * 0.15 +
+          sampleBonus * 0.10
+        )
+      } else {
+        // LEGACY: Use old metrics
+        matchedNotes = noteMetrics.filter(n => n.pitchAccuracy >= 70).length
+
+        avgPitchAccuracy = noteMetrics.reduce((sum, n) => sum + n.pitchAccuracy, 0) / totalNotes
+        avgPitchOnsetSpeedMs = Math.round(noteMetrics.reduce((sum, n) => sum + n.pitchOnsetSpeedMs, 0) / totalNotes)
+        avgPitchStability = noteMetrics.reduce((sum, n) => sum + n.pitchStability, 0) / totalNotes
+        avgInTuneSustainMs = Math.round(noteMetrics.reduce((sum, n) => sum + n.inTuneSustainMs, 0) / totalNotes)
+
+        // Calculate overall score (weighted average)
+        overallScore = (
+          avgPitchAccuracy * 0.35 +
+          Math.min(100, Math.max(0, 100 - (avgPitchOnsetSpeedMs / 10))) * 0.2 +
+          avgPitchStability * 0.25 +
+          Math.min(100, (avgInTuneSustainMs / 50)) * 0.2
+        )
+      }
     }
 
     const startTime = new Date(startedAt)
@@ -106,7 +171,7 @@ export async function POST(request: NextRequest) {
       .select('id, overall_score')
       .eq('user_id', user.id)
       .eq('session_date', sessionDate)
-      .single()
+      .maybeSingle()
 
     // Only save if this session is better than existing or no existing session
     if (existingSession && existingSession.overall_score >= overallScore) {
@@ -126,7 +191,7 @@ export async function POST(request: NextRequest) {
         .eq('id', existingSession.id)
     }
 
-    // Create new session
+    // Create new session (including new singer-focused metrics)
     const { data: session, error: sessionError } = await supabase
       .from('pitch_training_sessions')
       .insert({
@@ -135,13 +200,19 @@ export async function POST(request: NextRequest) {
         started_at: startedAt,
         ended_at: endedAt,
         duration_seconds: durationSeconds,
+        // Legacy metrics
         avg_pitch_accuracy: avgPitchAccuracy,
         avg_pitch_onset_speed_ms: avgPitchOnsetSpeedMs,
         avg_pitch_stability: avgPitchStability,
         avg_in_tune_sustain_ms: avgInTuneSustainMs,
         overall_score: overallScore,
         total_notes_attempted: totalNotes,
-        total_notes_matched: matchedNotes
+        total_notes_matched: matchedNotes,
+        // New singer-focused metrics
+        avg_target_accuracy: avgTargetAccuracy,
+        avg_voice_stability: avgVoiceStability,
+        avg_semitone_deviation: avgSemitoneDeviation,
+        pitch_tendency: pitchTendency,
       })
       .select()
       .single()
@@ -151,10 +222,11 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'Failed to save session' }, { status: 500 })
     }
 
-    // Insert note metrics
+    // Insert note metrics (including new singer-focused metrics)
     const noteMetricsToInsert = noteMetrics.map(n => ({
       session_id: session.id,
       user_id: user.id,
+      // Legacy fields
       note_name: n.noteName,
       octave: n.octave,
       target_frequency: n.targetFrequency,
@@ -166,7 +238,16 @@ export async function POST(request: NextRequest) {
       avg_cents_deviation: n.avgCentsDeviation,
       max_cents_deviation: n.maxCentsDeviation,
       min_cents_deviation: n.minCentsDeviation,
-      attempt_number: n.attemptNumber
+      attempt_number: n.attemptNumber,
+      // New singer-focused fields
+      target_accuracy: n.targetAccuracy ?? n.pitchAccuracy,
+      voice_stability: n.voiceStability ?? n.pitchStability,
+      avg_semitone_deviation: n.avgSemitoneDeviation ?? 0,
+      most_sung_note: n.mostSungNote,
+      most_sung_octave: n.mostSungOctave,
+      pitch_direction: n.pitchDirection ?? 'on-target',
+      time_to_first_sound: n.timeToFirstSound ?? 0,
+      sample_count: n.sampleCount ?? 0,
     }))
 
     const { error: metricsError } = await supabase

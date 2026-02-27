@@ -1,6 +1,7 @@
 'use client'
 
 import React, { useEffect, useMemo, useRef, useState, useCallback } from 'react'
+import { createPortal } from 'react-dom'
 import { getSupabaseClient } from '@/lib/supabase'
 import VideoWebRTC, { VideoWebRTCHandle } from './VideoWebRTC'
 import { useEditor, EditorContent } from '@tiptap/react'
@@ -111,11 +112,16 @@ export default function SessionView({ studentId, bookingId, isAdmin = false, cur
     if (!stickyEl || !wrapperEl) return
     videoPlaceholderHeight.current = stickyEl.offsetHeight
 
+    // Find the main scrollable container (dashboard uses <main> with overflow-auto)
+    const mainContainer = document.querySelector('main.overflow-auto') ||
+                          document.querySelector('main') ||
+                          document.documentElement
+
     const checkScroll = () => {
       const wrapperRect = wrapperEl.getBoundingClientRect()
       // Switch to mini-player when the TOP of the video wrapper goes above the viewport
-      // (i.e., when wrapperRect.top < 0 means video is scrolled out of view upward)
-      // We use a small negative threshold to trigger slightly before it's fully gone
+      // Use viewport top (0) as reference, not the container
+      // Trigger when video is scrolled 50px above the viewport
       const shouldBeMini = wrapperRect.top < -50
       setIsMiniPlayer((prev) => {
         if (prev === shouldBeMini) return prev
@@ -127,16 +133,10 @@ export default function SessionView({ studentId, bookingId, isAdmin = false, cur
       })
     }
 
-    // Attach scroll listener to all potential scrollable parents
-    const scrollableParent = wrapperEl.closest('[style*="overflow"]') ||
-                             wrapperEl.closest('.overflow-auto') ||
-                             wrapperEl.closest('.overflow-y-auto') ||
-                             document.querySelector('main')
-
+    // Attach scroll listener to the main container AND window
+    // This ensures we catch scrolling regardless of which element is scrolling
     window.addEventListener('scroll', checkScroll, { passive: true })
-    if (scrollableParent) {
-      scrollableParent.addEventListener('scroll', checkScroll, { passive: true })
-    }
+    mainContainer.addEventListener('scroll', checkScroll, { passive: true })
 
     // Also check on resize
     window.addEventListener('resize', checkScroll, { passive: true })
@@ -145,9 +145,7 @@ export default function SessionView({ studentId, bookingId, isAdmin = false, cur
     return () => {
       window.removeEventListener('scroll', checkScroll)
       window.removeEventListener('resize', checkScroll)
-      if (scrollableParent) {
-        scrollableParent.removeEventListener('scroll', checkScroll)
-      }
+      mainContainer.removeEventListener('scroll', checkScroll)
     }
   }, [defaultMiniSize])
 
@@ -502,24 +500,60 @@ const VideoSection = React.memo(function VideoSection({
       </div>
       <div ref={videoWrapperRef} className="relative" style={{ minHeight: isMiniPlayer ? `${videoPlaceholderHeight.current}px` : 'auto', background: isMiniPlayer ? 'rgba(0,0,0,0.2)' : 'transparent' }}>
         {isMiniPlayer && <div className="absolute inset-0 flex items-center justify-center text-gray-500 text-sm">Video playing in mini player (bottom right)</div>}
-        <div ref={videoStickyRef} className={`${!isMiniPlayer ? 'aspect-video w-full' : ''}`} style={isMiniPlayer ? { position: 'fixed', bottom: `${miniPosition.bottom}px`, right: `${miniPosition.right}px`, width: `${miniSize.width}px`, height: `${miniSize.height}px`, borderRadius: '12px', boxShadow: '0 8px 32px rgba(0,0,0,0.4)', zIndex: 9999, background: 'black', overflow: 'hidden' } : { background: 'black', width: '100%' }}>
-          {isMiniPlayer && <div onPointerDown={(e) => onPointerDown(e, 'drag')} className="absolute inset-0 z-10" style={{ cursor: 'move' }} />}
-          <VideoWebRTC
-            ref={videoRef}
-            key={`video-${bookingId}`}
-            roomId={`lesson-${bookingId}`}
-            participantId={currentUser?.id || studentId}
-            participantName={currentUser?.name || 'Participant'}
-            isHost={isAdmin}
-            canJoin={active}
-            autoRecord={isAdmin && active}
-            className="block w-full h-full"
-            isMiniPlayer={isMiniPlayer}
-            onRecordingComplete={handleRecordingComplete}
-          />
-          {isMiniPlayer && <div onPointerDown={(e) => onPointerDown(e, 'resize')} className="absolute bottom-0 right-0 w-5 h-5 cursor-se-resize z-20" style={{ background: 'linear-gradient(135deg, transparent 50%, rgba(255,255,255,0.3) 50%)', borderBottomRightRadius: '12px' }} />}
-          {isMiniPlayer && <button onClick={() => { videoWrapperRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' }) }} className="absolute top-2 right-2 w-6 h-6 rounded-full bg-black/50 hover:bg-black/70 flex items-center justify-center text-white text-xs z-20" title="Return to full view">×</button>}
-        </div>
+        {/* When NOT mini player, render inline */}
+        {!isMiniPlayer && (
+          <div ref={videoStickyRef} className="aspect-video w-full" style={{ background: 'black', width: '100%' }}>
+            <VideoWebRTC
+              ref={videoRef}
+              key={`video-${bookingId}`}
+              roomId={`lesson-${bookingId}`}
+              participantId={currentUser?.id || studentId}
+              participantName={currentUser?.name || 'Participant'}
+              isHost={isAdmin}
+              canJoin={active}
+              autoRecord={isAdmin && active}
+              className="block w-full h-full"
+              isMiniPlayer={false}
+              onRecordingComplete={handleRecordingComplete}
+            />
+          </div>
+        )}
+        {/* When mini player, render via portal to escape scrollable container */}
+        {isMiniPlayer && typeof document !== 'undefined' && createPortal(
+          <div
+            ref={videoStickyRef}
+            style={{
+              position: 'fixed',
+              bottom: `${miniPosition.bottom}px`,
+              right: `${miniPosition.right}px`,
+              width: `${miniSize.width}px`,
+              height: `${miniSize.height}px`,
+              borderRadius: '12px',
+              boxShadow: '0 8px 32px rgba(0,0,0,0.4)',
+              zIndex: 99999,
+              background: 'black',
+              overflow: 'hidden'
+            }}
+          >
+            <div onPointerDown={(e) => onPointerDown(e, 'drag')} className="absolute inset-0 z-10" style={{ cursor: 'move' }} />
+            <VideoWebRTC
+              ref={videoRef}
+              key={`video-mini-${bookingId}`}
+              roomId={`lesson-${bookingId}`}
+              participantId={currentUser?.id || studentId}
+              participantName={currentUser?.name || 'Participant'}
+              isHost={isAdmin}
+              canJoin={active}
+              autoRecord={isAdmin && active}
+              className="block w-full h-full"
+              isMiniPlayer={true}
+              onRecordingComplete={handleRecordingComplete}
+            />
+            <div onPointerDown={(e) => onPointerDown(e, 'resize')} className="absolute bottom-0 right-0 w-5 h-5 cursor-se-resize z-20" style={{ background: 'linear-gradient(135deg, transparent 50%, rgba(255,255,255,0.3) 50%)', borderBottomRightRadius: '12px' }} />
+            <button onClick={() => { videoWrapperRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' }) }} className="absolute top-2 right-2 w-6 h-6 rounded-full bg-black/50 hover:bg-black/70 flex items-center justify-center text-white text-xs z-20" title="Return to full view">×</button>
+          </div>,
+          document.body
+        )}
       </div>
       {isAdmin ? (
         <div className="p-4 border-t border-white/10 flex items-center gap-2">

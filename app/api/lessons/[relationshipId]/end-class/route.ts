@@ -1,17 +1,14 @@
 import { createClient, getCurrentUser } from '@/lib/supabase-server'
+import { createSupabaseAdmin } from '@/lib/supabase-admin'
 import { NextRequest, NextResponse } from 'next/server'
 
 // Helper to get admin client for bypassing RLS
-async function getAdminClient() {
-  const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY
-  const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL
-
-  if (serviceRoleKey && supabaseUrl && serviceRoleKey.length > 10) {
-    const { createClient: createAdminClient } = await import('@supabase/supabase-js')
-    return createAdminClient(supabaseUrl, serviceRoleKey)
+function getAdminClient() {
+  try {
+    return createSupabaseAdmin()
+  } catch {
+    return null
   }
-
-  return null
 }
 
 // POST /api/lessons/[relationshipId]/end-class - End the class, archive notes, lock session
@@ -39,13 +36,16 @@ export async function POST(
       return NextResponse.json({ error: 'Lesson not found' }, { status: 404 })
     }
 
-    // Only teachers can end class
-    if (profile.id !== booking.instructor_id) {
+    // Only teachers (or admins with teacher privileges) can end class
+    const isInstructor = profile.id === booking.instructor_id
+    const isAdmin = profile.role === 'admin'
+
+    if (!isInstructor && !isAdmin) {
       return NextResponse.json({ error: 'Only teachers can end class' }, { status: 403 })
     }
 
     // Use admin client to bypass RLS for all DB operations
-    const adminClient = await getAdminClient()
+    const adminClient = getAdminClient()
     const dbClient = adminClient || supabase
 
     // Read the note content sent directly from the editor

@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { getOpenAIClient } from '@/lib/openai'
+import { createClient } from '@/lib/supabase-server'
 
 // ============================================================================
 // Song Search API - Uses Web Search + OpenAI for accurate key/BPM data
@@ -256,23 +257,63 @@ export async function GET(request: NextRequest) {
       })
     }
 
-    // First check local database for exact/close matches
+    // First, check our verified song keys cache (most accurate)
+    const supabase = await createClient()
+    let verifiedMatches: SongResult[] = []
+
+    try {
+      const { data: verified } = await supabase
+        .from('verified_song_keys')
+        .select('*')
+        .or(`title.ilike.%${query}%,artist.ilike.%${query}%`)
+        .order('confidence', { ascending: false })
+        .limit(5)
+
+      if (verified && verified.length > 0) {
+        verifiedMatches = verified.map((v: any, index: number) => ({
+          id: `verified_${v.id}`,
+          title: v.title.split(' ').map((w: string) => w.charAt(0).toUpperCase() + w.slice(1)).join(' '),
+          artist: v.artist.split(' ').map((w: string) => w.charAt(0).toUpperCase() + w.slice(1)).join(' '),
+          key: v.key,
+          bpm: v.bpm,
+          mode: v.mode as 'major' | 'minor'
+        }))
+      }
+    } catch (e) {
+      // Verified cache lookup failed, continue with other sources
+      console.log('Verified cache lookup failed:', e)
+    }
+
+    // Then check local hardcoded database
     const localMatches = SONG_DATABASE.filter(song =>
       song.title.toLowerCase().includes(query) ||
       song.artist.toLowerCase().includes(query)
     ).slice(0, 5)
 
-    // If we have good local matches, return them immediately
-    if (localMatches.length >= 3) {
-      return NextResponse.json({ songs: localMatches, source: 'database' })
+    // Combine verified (priority) + local, deduplicating
+    const combined: SongResult[] = [...verifiedMatches]
+    for (const song of localMatches) {
+      if (!combined.some(s =>
+        s.title.toLowerCase() === song.title.toLowerCase() &&
+        s.artist.toLowerCase() === song.artist.toLowerCase()
+      )) {
+        combined.push(song)
+      }
+    }
+
+    // If we have enough matches, return them
+    if (combined.length >= 3) {
+      return NextResponse.json({
+        songs: combined.slice(0, 10),
+        source: verifiedMatches.length > 0 ? 'verified+database' : 'database'
+      })
     }
 
     // Use Web Search + OpenAI to find songs not in our database
     const webResults = await searchWithWebAndOpenAI(query)
 
     if (webResults.length > 0) {
-      // Combine with any local matches, deduplicating
-      const combined = [...localMatches]
+      // Add web results, avoiding duplicates
       for (const song of webResults) {
         if (!combined.some(s =>
           s.title.toLowerCase() === song.title.toLowerCase() &&
@@ -284,9 +325,9 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({ songs: combined.slice(0, 10), source: 'web+openai' })
     }
 
-    // Fallback to local database only
-    if (localMatches.length > 0) {
-      return NextResponse.json({ songs: localMatches, source: 'database' })
+    // Return whatever we have
+    if (combined.length > 0) {
+      return NextResponse.json({ songs: combined, source: 'database' })
     }
 
     return NextResponse.json({

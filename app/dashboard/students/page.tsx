@@ -1,8 +1,8 @@
 'use client'
 
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useCallback } from 'react'
 import Link from 'next/link'
-import { Users, Clock, Calendar, Bell, ChevronRight, TrendingUp, TrendingDown, Flame, Music, Zap, Target, Sparkles } from 'lucide-react'
+import { Users, Clock, Calendar, Bell, ChevronRight, TrendingUp, TrendingDown, Flame, Music, Zap, Target, Sparkles, Search, X, SortAsc } from 'lucide-react'
 
 interface Student {
   id: string
@@ -82,6 +82,41 @@ function formatRecurringSchedule(dayOfWeek: number | null, time: string | null):
   const ampm = hour >= 12 ? 'PM' : 'AM'
   const hour12 = hour % 12 || 12
   return `Every ${day} at ${hour12}:${minutes} ${ampm}`
+}
+
+function getNextLessonText(dayOfWeek: number | null, time: string | null): { text: string; isToday: boolean; isSoon: boolean } {
+  if (dayOfWeek === null || !time) return { text: '', isToday: false, isSoon: false }
+
+  const now = new Date()
+  const currentDay = now.getDay()
+  const [hours, minutes] = time.split(':').map(Number)
+
+  let daysUntil = dayOfWeek - currentDay
+  if (daysUntil < 0) daysUntil += 7
+
+  // Check if it's today but already passed
+  if (daysUntil === 0) {
+    const lessonMinutes = hours * 60 + minutes
+    const currentMinutes = now.getHours() * 60 + now.getMinutes()
+    if (lessonMinutes <= currentMinutes) {
+      daysUntil = 7 // Next week
+    }
+  }
+
+  const isToday = daysUntil === 0
+  const isSoon = daysUntil <= 1
+
+  if (isToday) {
+    const hour12 = hours % 12 || 12
+    const ampm = hours >= 12 ? 'PM' : 'AM'
+    return { text: `Today at ${hour12}:${minutes.toString().padStart(2, '0')} ${ampm}`, isToday: true, isSoon: true }
+  } else if (daysUntil === 1) {
+    const hour12 = hours % 12 || 12
+    const ampm = hours >= 12 ? 'PM' : 'AM'
+    return { text: `Tomorrow at ${hour12}:${minutes.toString().padStart(2, '0')} ${ampm}`, isToday: false, isSoon: true }
+  } else {
+    return { text: `${DAYS_OF_WEEK[dayOfWeek]}`, isToday: false, isSoon: false }
+  }
 }
 
 function getEngagementColor(engagement: string): string {
@@ -213,11 +248,14 @@ export default function StudentsPage() {
   const [page, setPage] = useState(1)
   const [totalPages, setTotalPages] = useState(1)
   const [total, setTotal] = useState(0)
+  const [searchQuery, setSearchQuery] = useState('')
+  const [searchInput, setSearchInput] = useState('')
+  const [sortBy, setSortBy] = useState<'schedule' | 'name' | 'recent'>('schedule')
 
   useEffect(() => {
-    fetchStudents(page)
+    fetchStudents(page, searchQuery, sortBy)
     fetchPendingCount()
-  }, [page])
+  }, [page, searchQuery, sortBy])
 
   useEffect(() => {
     if (students.length > 0) {
@@ -225,10 +263,30 @@ export default function StudentsPage() {
     }
   }, [students])
 
-  const fetchStudents = async (pageNum: number) => {
+  // Debounced search
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      if (searchInput !== searchQuery) {
+        setSearchQuery(searchInput)
+        setPage(1) // Reset to first page on search
+      }
+    }, 300)
+    return () => clearTimeout(timer)
+  }, [searchInput, searchQuery])
+
+  const fetchStudents = useCallback(async (pageNum: number, search: string, sort: string) => {
     try {
       setLoading(true)
-      const response = await fetch(`/api/teachers/students?page=${pageNum}&limit=${STUDENTS_PER_PAGE}`)
+      const params = new URLSearchParams({
+        page: pageNum.toString(),
+        limit: STUDENTS_PER_PAGE.toString(),
+        sortBy: sort
+      })
+      if (search) {
+        params.set('search', search)
+      }
+
+      const response = await fetch(`/api/teachers/students?${params}`)
       const data = await response.json()
 
       if (!response.ok) {
@@ -245,7 +303,7 @@ export default function StudentsPage() {
     } finally {
       setLoading(false)
     }
-  }
+  }, [])
 
   const fetchStudentStats = async () => {
     try {
@@ -294,7 +352,7 @@ export default function StudentsPage() {
   return (
     <div className="space-y-6">
       {/* Header */}
-      <div className="flex items-center justify-between">
+      <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
         <div>
           <h1 className="text-2xl font-bold text-white">My Students</h1>
           <p className="text-gray-400 mt-1">Manage your students and track their progress</p>
@@ -302,7 +360,7 @@ export default function StudentsPage() {
         {pendingCount > 0 && (
           <Link
             href="/dashboard/students/requests"
-            className="flex items-center gap-2 px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg transition-colors"
+            className="flex items-center gap-2 px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg transition-colors w-fit"
           >
             <Bell className="w-4 h-4" />
             <span>
@@ -310,6 +368,51 @@ export default function StudentsPage() {
             </span>
           </Link>
         )}
+      </div>
+
+      {/* Search and Sort Controls */}
+      <div className="flex flex-col sm:flex-row gap-3">
+        {/* Search Input */}
+        <div className="relative flex-1 max-w-md">
+          <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-gray-400" />
+          <input
+            type="text"
+            placeholder="Search students by name..."
+            value={searchInput}
+            onChange={(e) => setSearchInput(e.target.value)}
+            className="w-full pl-10 pr-10 py-2.5 bg-white/5 border border-white/10 rounded-lg text-white placeholder-gray-500 focus:outline-none focus:border-[#CEB466]/50 focus:ring-1 focus:ring-[#CEB466]/50 transition-colors"
+          />
+          {searchInput && (
+            <button
+              onClick={() => {
+                setSearchInput('')
+                setSearchQuery('')
+              }}
+              className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-white transition-colors"
+            >
+              <X className="w-4 h-4" />
+            </button>
+          )}
+        </div>
+
+        {/* Sort Dropdown */}
+        <div className="relative">
+          <div className="flex items-center gap-2">
+            <SortAsc className="w-4 h-4 text-gray-400" />
+            <select
+              value={sortBy}
+              onChange={(e) => {
+                setSortBy(e.target.value as 'schedule' | 'name' | 'recent')
+                setPage(1)
+              }}
+              className="bg-white/5 border border-white/10 rounded-lg px-3 py-2.5 text-white focus:outline-none focus:border-[#CEB466]/50 appearance-none pr-8 cursor-pointer"
+            >
+              <option value="schedule" className="bg-gray-900">Next Class First</option>
+              <option value="name" className="bg-gray-900">Name (A-Z)</option>
+              <option value="recent" className="bg-gray-900">Recently Added</option>
+            </select>
+          </div>
+        </div>
       </div>
 
       {/* Summary Stats */}
@@ -369,13 +472,32 @@ export default function StudentsPage() {
       {students.length === 0 && !loading ? (
         <div className="text-center py-12 bg-white/5 backdrop-blur-sm rounded-xl border border-white/10">
           <Users className="w-12 h-12 text-gray-500 mx-auto mb-4" />
-          <h3 className="text-lg font-medium text-white mb-2">No students yet</h3>
-          <p className="text-gray-400">Students can find you and request to join your lessons.</p>
+          {searchQuery ? (
+            <>
+              <h3 className="text-lg font-medium text-white mb-2">No students found</h3>
+              <p className="text-gray-400">No students match &quot;{searchQuery}&quot;. Try a different search.</p>
+              <button
+                onClick={() => {
+                  setSearchInput('')
+                  setSearchQuery('')
+                }}
+                className="mt-4 px-4 py-2 bg-white/10 hover:bg-white/20 text-white rounded-lg transition-colors"
+              >
+                Clear search
+              </button>
+            </>
+          ) : (
+            <>
+              <h3 className="text-lg font-medium text-white mb-2">No students yet</h3>
+              <p className="text-gray-400">Students can find you and request to join your lessons.</p>
+            </>
+          )}
         </div>
       ) : (
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
           {students.map((booking) => {
             const stats = studentStats[booking.student_id]
+            const nextLesson = getNextLessonText(booking.lesson_day_of_week, booking.lesson_time)
 
             return (
               <div
@@ -397,7 +519,20 @@ export default function StudentsPage() {
                         )}
                       </div>
                     </div>
-                    <ChevronRight className="w-5 h-5 text-gray-500 group-hover:text-white transition-colors" />
+                    <div className="flex flex-col items-end gap-1">
+                      {nextLesson.text && (
+                        <span className={`text-xs px-2 py-0.5 rounded-full ${
+                          nextLesson.isToday
+                            ? 'bg-green-500/20 text-green-400 border border-green-500/30'
+                            : nextLesson.isSoon
+                              ? 'bg-blue-500/20 text-blue-400 border border-blue-500/30'
+                              : 'bg-gray-500/20 text-gray-400 border border-gray-500/30'
+                        }`}>
+                          {nextLesson.text}
+                        </span>
+                      )}
+                      <ChevronRight className="w-5 h-5 text-gray-500 group-hover:text-white transition-colors" />
+                    </div>
                   </div>
 
                   <div className="mt-4 space-y-2">

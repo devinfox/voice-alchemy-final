@@ -56,14 +56,48 @@ interface PeerConnection {
   ignoreOffer: boolean  // Track if we should ignore incoming offers
 }
 
-// ICE servers for NAT traversal
-const ICE_SERVERS: RTCConfiguration = {
-  iceServers: [
+// Optimized ICE configuration for best connectivity without TURN
+// Multiple STUN servers for redundancy, aggressive ICE settings
+const getIceServers = (): RTCConfiguration => {
+  const iceServers: RTCIceServer[] = [
+    // Google STUN servers (most reliable)
     { urls: 'stun:stun.l.google.com:19302' },
     { urls: 'stun:stun1.l.google.com:19302' },
     { urls: 'stun:stun2.l.google.com:19302' },
-  ],
+    { urls: 'stun:stun3.l.google.com:19302' },
+    { urls: 'stun:stun4.l.google.com:19302' },
+    // Additional public STUN servers for redundancy
+    { urls: 'stun:stun.cloudflare.com:3478' },
+    { urls: 'stun:stun.nextcloud.com:443' },
+  ]
+
+  // Add TURN server if configured (for NAT traversal behind strict firewalls)
+  const turnUrl = process.env.NEXT_PUBLIC_TURN_URL
+  const turnUsername = process.env.NEXT_PUBLIC_TURN_USERNAME
+  const turnCredential = process.env.NEXT_PUBLIC_TURN_CREDENTIAL
+
+  if (turnUrl && turnUsername && turnCredential) {
+    iceServers.push({
+      urls: turnUrl, // e.g., 'turn:your-server.com:3478' or 'turns:your-server.com:5349'
+      username: turnUsername,
+      credential: turnCredential,
+    })
+  }
+
+  return {
+    iceServers,
+    // Pre-fetch ICE candidates before creating offers (faster connection)
+    iceCandidatePoolSize: 10,
+    // Bundle all media into one connection (more efficient)
+    bundlePolicy: 'max-bundle',
+    // Require RTCP multiplexing (reduces ports needed)
+    rtcpMuxPolicy: 'require',
+    // Use all available ICE transport types
+    iceTransportPolicy: turnUrl ? 'all' : 'all',
+  }
 }
+
+const ICE_SERVERS: RTCConfiguration = getIceServers()
 
 const VideoWebRTC = forwardRef<VideoWebRTCHandle, VideoWebRTCProps>(function VideoWebRTC({
   roomId,
@@ -83,6 +117,7 @@ const VideoWebRTC = forwardRef<VideoWebRTCHandle, VideoWebRTCProps>(function Vid
   const peerConnectionsRef = useRef<Map<string, PeerConnection>>(new Map())
   const mediaRecorderRef = useRef<MediaRecorder | null>(null)
   const recordedChunksRef = useRef<Blob[]>([])
+  const audioContextRef = useRef<AudioContext | null>(null)
   const combinedStreamRef = useRef<MediaStream | null>(null)
   const canvasRef = useRef<HTMLCanvasElement | null>(null)
   const animationFrameRef = useRef<number | null>(null)
@@ -138,9 +173,47 @@ const VideoWebRTC = forwardRef<VideoWebRTCHandle, VideoWebRTCProps>(function Vid
   const chatContainerRef = useRef<HTMLDivElement>(null)
 
   // Determine if we should be the "polite" peer (yields to incoming offers on collision)
+  // Uses localeCompare for consistent ordering that works with both UUIDs and numeric IDs
   const isPolite = useCallback((remoteId: string) => {
-    return participantIdRef.current < remoteId
+    return participantIdRef.current.localeCompare(remoteId) < 0
   }, [])
+
+  // ICE restart - renegotiate connection when ICE fails
+  const restartIce = useCallback(async (remoteParticipantId: string) => {
+    const peer = peerConnectionsRef.current.get(remoteParticipantId)
+    if (!peer) return
+
+    const pc = peer.connection
+
+    // Don't restart if already closed
+    if (pc.connectionState === 'closed') return
+
+    // Only the impolite peer initiates ICE restart
+    if (isPolite(remoteParticipantId)) {
+      console.log(`[VideoWebRTC] Skipping ICE restart - we are polite peer for ${remoteParticipantId}`)
+      return
+    }
+
+    try {
+      console.log(`[VideoWebRTC] Initiating ICE restart with ${remoteParticipantId}`)
+      peer.makingOffer = true
+
+      // Create offer with ICE restart flag
+      const offer = await pc.createOffer({ iceRestart: true })
+      await pc.setLocalDescription(offer)
+
+      if (signalingRef.current && pc.localDescription) {
+        signalingRef.current.sendSignal(remoteParticipantId, 'offer', {
+          sdp: pc.localDescription.toJSON(),
+        })
+        console.log(`[VideoWebRTC] Sent ICE restart offer to ${remoteParticipantId}`)
+      }
+    } catch (err) {
+      console.error('[VideoWebRTC] ICE restart failed:', err)
+    } finally {
+      peer.makingOffer = false
+    }
+  }, [isPolite])
 
   // Create peer connection for a remote participant
   const createPeerConnection = useCallback((remoteParticipantId: string) => {
@@ -188,23 +261,38 @@ const VideoWebRTC = forwardRef<VideoWebRTCHandle, VideoWebRTCProps>(function Vid
       }
     }
 
-    // Connection state changes
+    // Connection state changes with auto-recovery
     pc.onconnectionstatechange = () => {
       console.log(`[VideoWebRTC] Connection state with ${remoteParticipantId}: ${pc.connectionState}`)
-      if (pc.connectionState === 'failed' || pc.connectionState === 'disconnected') {
-        setRemoteStreams(prev => {
-          const newMap = new Map(prev)
-          newMap.delete(remoteParticipantId)
-          return newMap
-        })
+      if (pc.connectionState === 'failed') {
+        console.log(`[VideoWebRTC] Connection failed with ${remoteParticipantId}, attempting ICE restart...`)
+        // Attempt ICE restart
+        restartIce(remoteParticipantId)
+      } else if (pc.connectionState === 'disconnected') {
+        // Wait briefly for reconnection before removing stream
+        setTimeout(() => {
+          if (pc.connectionState === 'disconnected' || pc.connectionState === 'failed') {
+            setRemoteStreams(prev => {
+              const newMap = new Map(prev)
+              newMap.delete(remoteParticipantId)
+              return newMap
+            })
+          }
+        }, 3000)
       }
     }
 
-    // ICE connection state changes (more detailed)
+    // ICE connection state changes with auto-recovery
     pc.oniceconnectionstatechange = () => {
       console.log(`[VideoWebRTC] ICE connection state with ${remoteParticipantId}: ${pc.iceConnectionState}`)
       if (pc.iceConnectionState === 'failed') {
-        console.error(`[VideoWebRTC] ICE connection failed with ${remoteParticipantId}. This may indicate NAT traversal issues.`)
+        console.log(`[VideoWebRTC] ICE failed with ${remoteParticipantId}, triggering ICE restart...`)
+        restartIce(remoteParticipantId)
+      } else if (pc.iceConnectionState === 'disconnected') {
+        // Give it time to recover naturally
+        console.log(`[VideoWebRTC] ICE disconnected with ${remoteParticipantId}, waiting for recovery...`)
+      } else if (pc.iceConnectionState === 'connected' || pc.iceConnectionState === 'completed') {
+        console.log(`[VideoWebRTC] ICE connected with ${remoteParticipantId}`)
       }
     }
 
@@ -254,7 +342,7 @@ const VideoWebRTC = forwardRef<VideoWebRTCHandle, VideoWebRTCProps>(function Vid
     }
 
     return pc
-  }, [isPolite])
+  }, [isPolite, restartIce])
 
   // Send offer to a remote participant
   const sendOffer = useCallback(async (remoteParticipantId: string) => {
@@ -431,7 +519,8 @@ const VideoWebRTC = forwardRef<VideoWebRTCHandle, VideoWebRTCProps>(function Vid
     })
   }, [])
 
-  // Create combined stream for recording
+  // Create combined stream for recording with PIP layout
+  // Teacher (host/local) = main view, Student (remote) = small PIP in bottom right
   const createCombinedStream = useCallback(() => {
     const canvas = document.createElement('canvas')
     canvas.width = 1280
@@ -440,46 +529,135 @@ const VideoWebRTC = forwardRef<VideoWebRTCHandle, VideoWebRTCProps>(function Vid
     const ctx = canvas.getContext('2d')
     if (!ctx) return null
 
+    // PIP dimensions and position (bottom right corner)
+    const pipWidth = 320  // 25% of canvas width
+    const pipHeight = 180 // 25% of canvas height (maintains 16:9)
+    const pipMargin = 20
+    const pipX = canvas.width - pipWidth - pipMargin
+    const pipY = canvas.height - pipHeight - pipMargin
+    const pipBorderRadius = 12
+
+    // Helper to draw rounded rectangle
+    const drawRoundedRect = (x: number, y: number, w: number, h: number, r: number) => {
+      ctx.beginPath()
+      ctx.moveTo(x + r, y)
+      ctx.lineTo(x + w - r, y)
+      ctx.quadraticCurveTo(x + w, y, x + w, y + r)
+      ctx.lineTo(x + w, y + h - r)
+      ctx.quadraticCurveTo(x + w, y + h, x + w - r, y + h)
+      ctx.lineTo(x + r, y + h)
+      ctx.quadraticCurveTo(x, y + h, x, y + h - r)
+      ctx.lineTo(x, y + r)
+      ctx.quadraticCurveTo(x, y, x + r, y)
+      ctx.closePath()
+    }
+
+    // Helper to find video element for a stream
+    const findVideoForStream = (stream: MediaStream): HTMLVideoElement | null => {
+      const videos = document.querySelectorAll('video')
+      for (const video of videos) {
+        if (video.srcObject === stream && video.readyState >= 2) {
+          return video
+        }
+      }
+      return null
+    }
+
+    // Helper to draw video maintaining aspect ratio (cover mode)
+    const drawVideoCover = (video: HTMLVideoElement, x: number, y: number, w: number, h: number) => {
+      const videoRatio = video.videoWidth / video.videoHeight
+      const targetRatio = w / h
+
+      let sourceX = 0, sourceY = 0, sourceW = video.videoWidth, sourceH = video.videoHeight
+
+      if (videoRatio > targetRatio) {
+        // Video is wider - crop sides
+        sourceW = video.videoHeight * targetRatio
+        sourceX = (video.videoWidth - sourceW) / 2
+      } else {
+        // Video is taller - crop top/bottom
+        sourceH = video.videoWidth / targetRatio
+        sourceY = (video.videoHeight - sourceH) / 2
+      }
+
+      ctx.drawImage(video, sourceX, sourceY, sourceW, sourceH, x, y, w, h)
+    }
+
     const drawFrame = () => {
       if (!mountedRef.current) return
 
+      // Clear canvas with dark background
       ctx.fillStyle = '#1a1a1a'
       ctx.fillRect(0, 0, canvas.width, canvas.height)
 
-      const allStreams = [localStreamRef.current, ...Array.from(remoteStreams.values())].filter(Boolean)
-      const count = allStreams.length
+      const localStream = localStreamRef.current
+      const remoteStreamsList = Array.from(remoteStreams.values())
+      const remoteStream = remoteStreamsList[0] // Primary remote participant
 
-      if (count === 0) {
-        animationFrameRef.current = requestAnimationFrame(drawFrame)
-        return
+      // Draw main view (teacher/host local stream - full canvas)
+      if (localStream) {
+        const localVideo = findVideoForStream(localStream)
+        const localVideoTrack = localStream.getVideoTracks()[0]
+
+        if (localVideo && localVideoTrack?.enabled) {
+          try {
+            drawVideoCover(localVideo, 0, 0, canvas.width, canvas.height)
+          } catch (e) {
+            // Video not ready
+          }
+        } else {
+          // Show placeholder for teacher
+          ctx.fillStyle = '#2a2a2a'
+          ctx.fillRect(0, 0, canvas.width, canvas.height)
+          ctx.fillStyle = '#666'
+          ctx.font = 'bold 48px sans-serif'
+          ctx.textAlign = 'center'
+          ctx.textBaseline = 'middle'
+          ctx.fillText('Teacher', canvas.width / 2, canvas.height / 2)
+        }
       }
 
-      const cols = count <= 1 ? 1 : count <= 4 ? 2 : 3
-      const rows = Math.ceil(count / cols)
-      const cellWidth = canvas.width / cols
-      const cellHeight = canvas.height / rows
+      // Draw PIP (student/remote stream - bottom right corner)
+      if (remoteStream) {
+        const remoteVideo = findVideoForStream(remoteStream)
+        const remoteVideoTrack = remoteStream.getVideoTracks()[0]
 
-      const videos = document.querySelectorAll('video')
-      allStreams.forEach((stream, index) => {
-        if (!stream) return
-        const videoTrack = stream.getVideoTracks()[0]
-        if (!videoTrack || !videoTrack.enabled) return
+        // Draw PIP border/shadow
+        ctx.save()
+        ctx.shadowColor = 'rgba(0, 0, 0, 0.5)'
+        ctx.shadowBlur = 10
+        ctx.shadowOffsetX = 2
+        ctx.shadowOffsetY = 2
 
-        videos.forEach(video => {
-          if (video.srcObject === stream) {
-            const col = index % cols
-            const row = Math.floor(index / cols)
-            const x = col * cellWidth
-            const y = row * cellHeight
+        // Clip to rounded rectangle for PIP
+        drawRoundedRect(pipX, pipY, pipWidth, pipHeight, pipBorderRadius)
+        ctx.clip()
 
-            try {
-              ctx.drawImage(video, x, y, cellWidth, cellHeight)
-            } catch (e) {
-              // Video might not be ready yet
-            }
+        if (remoteVideo && remoteVideoTrack?.enabled) {
+          try {
+            drawVideoCover(remoteVideo, pipX, pipY, pipWidth, pipHeight)
+          } catch (e) {
+            // Video not ready
           }
-        })
-      })
+        } else {
+          // Show placeholder for student
+          ctx.fillStyle = '#3a3a3a'
+          ctx.fillRect(pipX, pipY, pipWidth, pipHeight)
+          ctx.fillStyle = '#888'
+          ctx.font = 'bold 20px sans-serif'
+          ctx.textAlign = 'center'
+          ctx.textBaseline = 'middle'
+          ctx.fillText('Student', pipX + pipWidth / 2, pipY + pipHeight / 2)
+        }
+
+        ctx.restore()
+
+        // Draw PIP border
+        ctx.strokeStyle = 'rgba(255, 255, 255, 0.3)'
+        ctx.lineWidth = 2
+        drawRoundedRect(pipX, pipY, pipWidth, pipHeight, pipBorderRadius)
+        ctx.stroke()
+      }
 
       animationFrameRef.current = requestAnimationFrame(drawFrame)
     }
@@ -487,9 +665,17 @@ const VideoWebRTC = forwardRef<VideoWebRTCHandle, VideoWebRTCProps>(function Vid
     drawFrame()
 
     const canvasStream = canvas.captureStream(30)
+
+    // Close previous AudioContext if it exists to prevent memory leak
+    if (audioContextRef.current) {
+      audioContextRef.current.close().catch(() => {})
+    }
+
     const audioContext = new AudioContext()
+    audioContextRef.current = audioContext
     const destination = audioContext.createMediaStreamDestination()
 
+    // Mix audio from both streams
     const allStreams = [localStreamRef.current, ...Array.from(remoteStreams.values())].filter(Boolean)
     allStreams.forEach(stream => {
       if (stream) {
@@ -543,6 +729,12 @@ const VideoWebRTC = forwardRef<VideoWebRTCHandle, VideoWebRTCProps>(function Vid
     if (animationFrameRef.current) {
       cancelAnimationFrame(animationFrameRef.current)
       animationFrameRef.current = null
+    }
+
+    // Close AudioContext to prevent memory leak
+    if (audioContextRef.current) {
+      audioContextRef.current.close().catch(() => {})
+      audioContextRef.current = null
     }
 
     // Clear timeout ref
@@ -653,6 +845,12 @@ const VideoWebRTC = forwardRef<VideoWebRTCHandle, VideoWebRTCProps>(function Vid
     if (animationFrameRef.current) {
       cancelAnimationFrame(animationFrameRef.current)
       animationFrameRef.current = null
+    }
+
+    // Close AudioContext to prevent memory leak
+    if (audioContextRef.current) {
+      audioContextRef.current.close().catch(() => {})
+      audioContextRef.current = null
     }
 
     return recordingPromise
@@ -770,17 +968,22 @@ const VideoWebRTC = forwardRef<VideoWebRTCHandle, VideoWebRTCProps>(function Vid
       try {
         console.log('[VideoWebRTC] Starting initialization...')
 
-        // Request camera/mic access
+        // Request camera/mic access with optimized constraints
         console.log('[VideoWebRTC] Requesting media access...')
         const stream = await navigator.mediaDevices.getUserMedia({
           video: {
-            width: { ideal: 1280 },
-            height: { ideal: 720 },
+            width: { ideal: 1280, min: 640 },
+            height: { ideal: 720, min: 360 },
+            frameRate: { ideal: 30, max: 30 },
             facingMode: 'user',
           },
           audio: {
             echoCancellation: true,
             noiseSuppression: true,
+            autoGainControl: true,
+            // Prioritize voice frequencies
+            sampleRate: 48000,
+            channelCount: 1,
           },
         })
 

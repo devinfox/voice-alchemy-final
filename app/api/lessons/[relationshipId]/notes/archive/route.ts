@@ -84,8 +84,11 @@ export async function POST(
       return NextResponse.json({ error: 'Lesson not found' }, { status: 404 })
     }
 
-    // Only instructors can archive notes
-    if (profile.id !== booking.instructor_id) {
+    // Only instructors (or admins with teacher privileges) can archive notes
+    const isInstructor = profile.id === booking.instructor_id
+    const isAdmin = profile.role === 'admin'
+
+    if (!isInstructor && !isAdmin) {
       return NextResponse.json({ error: 'Only teachers can archive notes' }, { status: 403 })
     }
 

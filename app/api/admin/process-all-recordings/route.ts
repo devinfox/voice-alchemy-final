@@ -1,22 +1,37 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { createClient } from '@supabase/supabase-js'
+import { getCurrentUser } from '@/lib/supabase-server'
+import { createSupabaseAdmin } from '@/lib/supabase-admin'
 import { transcribeAudio, generateLessonSummary } from '@/lib/openai'
 
 // POST /api/admin/process-all-recordings - Process all unprocessed recordings
 export async function POST(request: NextRequest) {
-  const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL
-  const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY
+  // SECURITY: Require admin authentication OR internal secret
+  const internalSecret = request.headers.get('x-internal-secret')
+  const cronSecret = process.env.CRON_SECRET
 
-  if (!supabaseUrl || !serviceRoleKey) {
+  // Check if request is from internal cron job
+  const isInternalRequest = cronSecret && internalSecret === cronSecret
+
+  if (!isInternalRequest) {
+    // Must be authenticated admin user
+    const profile = await getCurrentUser()
+    if (!profile) {
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+    }
+    if (profile.role !== 'admin') {
+      return NextResponse.json({ error: 'Admin access required' }, { status: 403 })
+    }
+  }
+
+  let supabaseAdmin
+  try {
+    supabaseAdmin = createSupabaseAdmin()
+  } catch {
     return NextResponse.json(
       { error: 'Missing Supabase admin credentials' },
       { status: 500 }
     )
   }
-
-  const supabaseAdmin = createClient(supabaseUrl, serviceRoleKey, {
-    auth: { autoRefreshToken: false, persistSession: false }
-  })
 
   // Optional: limit processing (default 10, max 50)
   const url = new URL(request.url)
@@ -237,19 +252,24 @@ export async function POST(request: NextRequest) {
 
 // GET /api/admin/process-all-recordings - Get processing status
 export async function GET() {
-  const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL
-  const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY
+  // SECURITY: Require admin authentication
+  const profile = await getCurrentUser()
+  if (!profile) {
+    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+  }
+  if (profile.role !== 'admin') {
+    return NextResponse.json({ error: 'Admin access required' }, { status: 403 })
+  }
 
-  if (!supabaseUrl || !serviceRoleKey) {
+  let supabaseAdmin
+  try {
+    supabaseAdmin = createSupabaseAdmin()
+  } catch {
     return NextResponse.json(
       { error: 'Missing Supabase admin credentials' },
       { status: 500 }
     )
   }
-
-  const supabaseAdmin = createClient(supabaseUrl, serviceRoleKey, {
-    auth: { autoRefreshToken: false, persistSession: false }
-  })
 
   try {
     // Get counts by status

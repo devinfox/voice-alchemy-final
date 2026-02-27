@@ -1,17 +1,14 @@
 import { createClient, getCurrentUser } from '@/lib/supabase-server'
+import { createSupabaseAdmin } from '@/lib/supabase-admin'
 import { NextRequest, NextResponse } from 'next/server'
 
 // Helper to get admin client for bypassing RLS
-async function getAdminClient() {
-  const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY
-  const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL
-
-  if (serviceRoleKey && supabaseUrl && serviceRoleKey.length > 10) {
-    const { createClient: createAdminClient } = await import('@supabase/supabase-js')
-    return createAdminClient(supabaseUrl, serviceRoleKey)
+function getAdminClient() {
+  try {
+    return createSupabaseAdmin()
+  } catch {
+    return null
   }
-
-  return null
 }
 
 // POST /api/lessons/[relationshipId]/start-class - Start the class (teacher only)
@@ -47,9 +44,12 @@ export async function POST(
 
     console.log('[Start Class API] Booking found:', booking.id, 'instructor:', booking.instructor_id)
 
-    // Only teachers can start class
-    if (profile.id !== booking.instructor_id) {
-      console.log('[Start Class API] Not instructor:', profile.id, '!=', booking.instructor_id)
+    // Only teachers (or admins with teacher privileges) can start class
+    const isInstructor = profile.id === booking.instructor_id
+    const isAdmin = profile.role === 'admin'
+
+    if (!isInstructor && !isAdmin) {
+      console.log('[Start Class API] Not instructor or admin:', profile.id, '!=', booking.instructor_id, 'role:', profile.role)
       return NextResponse.json({ error: 'Only teachers can start class' }, { status: 403 })
     }
 
@@ -74,7 +74,7 @@ export async function POST(
     console.log('[Start Class API] Week:', weekStartStr, '-', weekEndStr)
 
     // Use admin client to bypass RLS for session notes operations
-    const adminClient = await getAdminClient()
+    const adminClient = getAdminClient()
     const dbClient = adminClient || supabase
 
     // Get or create session notes for this week
@@ -84,11 +84,11 @@ export async function POST(
       .select('*')
       .eq('booking_id', bookingId)
       .eq('week_start', weekStartStr)
-      .single()
+      .maybeSingle()
 
     console.log('[Start Class API] Existing notes:', notes?.id, 'Error:', notesError?.code)
 
-    if (notesError && notesError.code === 'PGRST116') {
+    if (!notes && !notesError) {
       // Create new notes for this week
       console.log('[Start Class API] Creating new session notes...')
       const { data: newNotes, error: createError } = await dbClient

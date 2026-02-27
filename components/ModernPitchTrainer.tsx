@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect, useRef, useCallback } from 'react'
+import { useState, useEffect, useRef, useCallback, useMemo } from 'react'
 import { Music, X, Maximize2, Minimize2, Circle, Piano, Mic, MicOff, TrendingUp, Save } from 'lucide-react'
 import Script from 'next/script'
 import { getSharedMicStream, subscribeSharedMicStream } from '@/lib/shared-mic-stream'
@@ -19,6 +19,10 @@ const BUFFER_SIZE = 4096
 
 // In-tune threshold (cents)
 const IN_TUNE_THRESHOLD = 15
+
+// Maximum semitone range to track (±4 semitones = major third)
+// Notes outside this range are likely mistakes, not actual attempts
+const TRACKING_RANGE_SEMITONES = 4
 
 declare global {
   interface Window {
@@ -44,6 +48,7 @@ interface NoteAttempt {
   targetFrequency: number
   startTime: number
   samples: PitchSample[]
+  // Legacy fields (kept for API compatibility)
   pitchAccuracy: number
   pitchOnsetSpeedMs: number
   pitchStability: number
@@ -54,13 +59,32 @@ interface NoteAttempt {
   minCentsDeviation: number
   attemptNumber: number
   isComplete: boolean
+  // NEW: Separate metrics for singing students
+  targetAccuracy: number        // How close to the target note (0-100, considers semitones)
+  voiceStability: number        // How steady the voice is regardless of target (0-100)
+  avgSemitoneDeviation: number  // Average semitones away from target (can be negative = flat)
+  mostSungNote: string | null   // The note they sang most often
+  mostSungOctave: number | null // The octave they sang most often
+  pitchDirection: 'sharp' | 'flat' | 'on-target' // Tendency
+  timeToFirstSound: number      // Time until any pitch was detected (ms)
 }
 
-interface PitchSample {
+interface BasePitchSample {
   frequency: number
   cents: number
   timestamp: number
   isInTune: boolean
+}
+
+interface PitchSample extends BasePitchSample {
+  // New fields to track what was actually sung (added in handleSampleRecorded)
+  detectedNoteName: string
+  detectedOctave: number
+  detectedNoteValue: number
+  // Distance from target (in semitones, can be negative)
+  semitoneDeviationFromTarget: number
+  // Cents deviation from the detected note's perfect pitch
+  centsFromDetectedNote: number
 }
 
 interface SessionMetrics {
@@ -108,29 +132,73 @@ function calculateNoteMetrics(attempt: NoteAttempt): NoteAttempt {
   const samples = attempt.samples
   if (samples.length === 0) return attempt
 
-  // Calculate average cents deviation
-  const centsDeviations = samples.map(s => s.cents)
+  // === CENTS DEVIATION (from detected note's perfect pitch) ===
+  const centsDeviations = samples.map(s => s.centsFromDetectedNote)
   const avgCentsDeviation = centsDeviations.reduce((a, b) => a + b, 0) / centsDeviations.length
   const maxCentsDeviation = Math.max(...centsDeviations.map(Math.abs))
   const minCentsDeviation = Math.min(...centsDeviations.map(Math.abs))
 
-  // Pitch Accuracy: 100% at 0 cents, decreasing as deviation increases
-  // At 50 cents off, accuracy is 0%
-  const pitchAccuracy = Math.max(0, 100 - (Math.abs(avgCentsDeviation) * 2))
+  // === SEMITONE DEVIATION (from target note) ===
+  const semitoneDeviations = samples.map(s => s.semitoneDeviationFromTarget)
+  const avgSemitoneDeviation = semitoneDeviations.reduce((a, b) => a + b, 0) / semitoneDeviations.length
 
-  // Pitch Onset Speed: Time to first in-tune sample
+  // === MOST SUNG NOTE (mode of detected notes) ===
+  const noteCount: Record<string, number> = {}
+  samples.forEach(s => {
+    const key = `${s.detectedNoteName}-${s.detectedOctave}`
+    noteCount[key] = (noteCount[key] || 0) + 1
+  })
+  const mostSungKey = Object.entries(noteCount).sort((a, b) => b[1] - a[1])[0]?.[0]
+  const [mostSungNote, mostSungOctaveStr] = mostSungKey?.split('-') || [null, null]
+  const mostSungOctave = mostSungOctaveStr ? parseInt(mostSungOctaveStr) : null
+
+  // === PITCH DIRECTION (tendency) ===
+  const sharpCount = semitoneDeviations.filter(d => d > 0).length
+  const flatCount = semitoneDeviations.filter(d => d < 0).length
+  const onTargetCount = semitoneDeviations.filter(d => d === 0).length
+  let pitchDirection: 'sharp' | 'flat' | 'on-target' = 'on-target'
+  if (sharpCount > flatCount && sharpCount > onTargetCount) pitchDirection = 'sharp'
+  else if (flatCount > sharpCount && flatCount > onTargetCount) pitchDirection = 'flat'
+
+  // === TARGET ACCURACY (NEW - considers semitone distance) ===
+  // 100% = hit target note with <15 cents deviation
+  // Decreases by 25% per semitone away, plus cents penalty
+  // This means singing 1 semitone off = max 75%, 2 semitones = max 50%, etc.
+  const avgAbsSemitones = Math.abs(avgSemitoneDeviation)
+  const semitonePenalty = avgAbsSemitones * 25 // 25% per semitone
+  const avgAbsCents = Math.abs(avgCentsDeviation)
+  const centsPenalty = Math.min(25, avgAbsCents * 0.5) // Max 25% for cents, 0.5% per cent
+  const targetAccuracy = Math.max(0, Math.min(100, 100 - semitonePenalty - centsPenalty))
+
+  // === VOICE STABILITY (NEW - independent of target) ===
+  // Measures how steady their pitch is, regardless of which note they're singing
+  // Based on variance of their detected frequencies
+  const frequencies = samples.map(s => s.frequency)
+  const avgFreq = frequencies.reduce((a, b) => a + b, 0) / frequencies.length
+  const freqVariance = frequencies.reduce((sum, f) => sum + Math.pow(f - avgFreq, 2), 0) / frequencies.length
+  const freqStdDev = Math.sqrt(freqVariance)
+  // Convert to percentage: 0 stdDev = 100%, 50Hz stdDev = 0%
+  // (50Hz stdDev would mean their pitch is all over the place)
+  const voiceStability = Math.max(0, Math.min(100, 100 - (freqStdDev * 2)))
+
+  // === LEGACY: Pitch Accuracy (old formula for API compatibility) ===
+  const pitchAccuracy = Math.max(0, Math.min(100, 100 - (Math.abs(avgCentsDeviation) * 2)))
+
+  // === PITCH ONSET SPEED (time to first in-tune sample) ===
   const firstInTuneIndex = samples.findIndex(s => s.isInTune)
   const pitchOnsetSpeedMs = firstInTuneIndex >= 0
     ? samples[firstInTuneIndex].timestamp - attempt.startTime
     : samples.length > 0 ? samples[samples.length - 1].timestamp - attempt.startTime : 5000
 
-  // Pitch Stability: Based on variance of cents
+  // === TIME TO FIRST SOUND ===
+  const timeToFirstSound = samples.length > 0 ? samples[0].timestamp - attempt.startTime : 5000
+
+  // === LEGACY: Pitch Stability (old formula for API compatibility) ===
   const variance = centsDeviations.reduce((sum, c) => sum + Math.pow(c - avgCentsDeviation, 2), 0) / centsDeviations.length
   const stdDev = Math.sqrt(variance)
-  // Lower stdDev = higher stability. At stdDev of 0, stability is 100%. At 30+, stability is 0%
-  const pitchStability = Math.max(0, 100 - (stdDev * 3.33))
+  const pitchStability = Math.max(0, Math.min(100, 100 - (stdDev * 3.33)))
 
-  // In-Tune Sustain: Total duration of consecutive in-tune samples
+  // === IN-TUNE SUSTAIN ===
   let maxSustain = 0
   let currentSustain = 0
   for (let i = 1; i < samples.length; i++) {
@@ -143,11 +211,12 @@ function calculateNoteMetrics(attempt: NoteAttempt): NoteAttempt {
   }
   const inTuneSustainMs = maxSustain
 
-  // Average detected frequency
-  const avgDetectedFrequency = samples.reduce((sum, s) => sum + s.frequency, 0) / samples.length
+  // === AVERAGE DETECTED FREQUENCY ===
+  const avgDetectedFrequency = avgFreq
 
   return {
     ...attempt,
+    // Legacy metrics
     pitchAccuracy,
     pitchOnsetSpeedMs,
     pitchStability,
@@ -156,7 +225,15 @@ function calculateNoteMetrics(attempt: NoteAttempt): NoteAttempt {
     avgCentsDeviation,
     maxCentsDeviation,
     minCentsDeviation,
-    isComplete: true
+    isComplete: true,
+    // New singer-focused metrics
+    targetAccuracy,
+    voiceStability,
+    avgSemitoneDeviation,
+    mostSungNote,
+    mostSungOctave,
+    pitchDirection,
+    timeToFirstSound,
   }
 }
 
@@ -168,7 +245,7 @@ interface UsePitchDetectionOptions {
   sensitivity: number
   externalMicStream?: MediaStream | null
   onNoteDetected?: (note: DetectedNote) => void
-  onSampleRecorded?: (sample: PitchSample) => void
+  onSampleRecorded?: (sample: BasePitchSample) => void
 }
 
 function usePitchDetection({ sensitivity, externalMicStream, onNoteDetected, onSampleRecorded }: UsePitchDetectionOptions) {
@@ -363,21 +440,43 @@ export default function ModernPitchTrainer({ variant = 'floating' }: ModernPitch
 
   const availableOctaves = [0, 2, 3, 4, 5, 6, 7, 8]
 
-  // Handle sample recording for current attempt
-  const handleSampleRecorded = useCallback((sample: PitchSample) => {
-    if (!currentAttempt || !selectedNote) return
+  // Handle sample recording for current attempt - RECORDS PITCHES WITHIN RANGE
+  const handleSampleRecorded = useCallback((sample: BasePitchSample) => {
+    if (!currentAttempt || !selectedNote || !detectedNote) return
 
-    // Check if detected note matches target
+    // Calculate target note value for comparison
     const targetNoteName = selectedNote.replace('#', '♯')
-    if (detectedNote?.name === targetNoteName && detectedNote?.octave === selectedOctave) {
-      setCurrentAttempt(prev => {
-        if (!prev) return prev
-        return {
-          ...prev,
-          samples: [...prev.samples, sample]
-        }
-      })
+    const targetNoteIndex = NOTE_STRINGS.indexOf(targetNoteName)
+    const targetNoteValue = (selectedOctave + 1) * 12 + targetNoteIndex
+
+    // Calculate semitone deviation from target
+    const semitoneDeviationFromTarget = detectedNote.value - targetNoteValue
+
+    // RANGE FILTER: Only track notes within ±TRACKING_RANGE_SEMITONES of target
+    // Notes outside this range are likely mistakes, background noise, or speech
+    if (Math.abs(semitoneDeviationFromTarget) > TRACKING_RANGE_SEMITONES) {
+      return // Skip this sample - too far from target
     }
+
+    // Enrich sample with detected note info
+    const enrichedSample: PitchSample = {
+      ...sample,
+      detectedNoteName: detectedNote.name,
+      detectedOctave: detectedNote.octave,
+      detectedNoteValue: detectedNote.value,
+      semitoneDeviationFromTarget,
+      centsFromDetectedNote: detectedNote.cents,
+      // Update isInTune to consider being on the target note AND within cents threshold
+      isInTune: semitoneDeviationFromTarget === 0 && Math.abs(detectedNote.cents) <= IN_TUNE_THRESHOLD,
+    }
+
+    setCurrentAttempt(prev => {
+      if (!prev) return prev
+      return {
+        ...prev,
+        samples: [...prev.samples, enrichedSample]
+      }
+    })
   }, [currentAttempt, selectedNote, detectedNote, selectedOctave])
 
   const {
@@ -417,6 +516,7 @@ export default function ModernPitchTrainer({ variant = 'floating' }: ModernPitch
       targetFrequency: getNoteFrequency(noteName, octave),
       startTime: Date.now(),
       samples: [],
+      // Legacy metrics
       pitchAccuracy: 0,
       pitchOnsetSpeedMs: 0,
       pitchStability: 0,
@@ -426,7 +526,15 @@ export default function ModernPitchTrainer({ variant = 'floating' }: ModernPitch
       maxCentsDeviation: 0,
       minCentsDeviation: 0,
       attemptNumber: existingAttempt ? existingAttempt.attemptNumber + 1 : 1,
-      isComplete: false
+      isComplete: false,
+      // New singer-focused metrics
+      targetAccuracy: 0,
+      voiceStability: 0,
+      avgSemitoneDeviation: 0,
+      mostSungNote: null,
+      mostSungOctave: null,
+      pitchDirection: 'on-target',
+      timeToFirstSound: 0,
     }
 
     setCurrentAttempt(newAttempt)
@@ -471,6 +579,7 @@ export default function ModernPitchTrainer({ variant = 'floating' }: ModernPitch
 
     try {
       const noteMetrics = Array.from(session.noteAttempts.values()).map(attempt => ({
+        // Legacy metrics
         noteName: attempt.noteName,
         octave: attempt.octave,
         targetFrequency: attempt.targetFrequency,
@@ -482,7 +591,16 @@ export default function ModernPitchTrainer({ variant = 'floating' }: ModernPitch
         avgCentsDeviation: attempt.avgCentsDeviation,
         maxCentsDeviation: attempt.maxCentsDeviation,
         minCentsDeviation: attempt.minCentsDeviation,
-        attemptNumber: attempt.attemptNumber
+        attemptNumber: attempt.attemptNumber,
+        // New singer-focused metrics
+        targetAccuracy: attempt.targetAccuracy,
+        voiceStability: attempt.voiceStability,
+        avgSemitoneDeviation: attempt.avgSemitoneDeviation,
+        mostSungNote: attempt.mostSungNote,
+        mostSungOctave: attempt.mostSungOctave,
+        pitchDirection: attempt.pitchDirection,
+        timeToFirstSound: attempt.timeToFirstSound,
+        sampleCount: attempt.samples.length,
       }))
 
       const response = await fetch('/api/pitch-training/session', {
@@ -628,16 +746,37 @@ export default function ModernPitchTrainer({ variant = 'floating' }: ModernPitch
   // Calculate meter rotation
   const meterDegree = detectedNote ? getMeterDegree(detectedNote.cents) : 0
 
-  // Get session stats
-  const sessionStats = {
-    notesAttempted: session.noteAttempts.size,
-    avgAccuracy: session.noteAttempts.size > 0
-      ? Array.from(session.noteAttempts.values()).reduce((sum, n) => sum + n.pitchAccuracy, 0) / session.noteAttempts.size
-      : 0,
-    totalDuration: session.startedAt
-      ? Math.round((Date.now() - session.startedAt.getTime()) / 1000)
-      : 0
-  }
+  // Get session stats - now with separate accuracy and stability
+  const sessionStats = useMemo(() => {
+    const attempts = Array.from(session.noteAttempts.values())
+    const completedAttempts = attempts.filter(a => a.isComplete)
+
+    return {
+      notesAttempted: session.noteAttempts.size,
+      // New: separate target accuracy and voice stability
+      avgTargetAccuracy: completedAttempts.length > 0
+        ? completedAttempts.reduce((sum, n) => sum + n.targetAccuracy, 0) / completedAttempts.length
+        : 0,
+      avgVoiceStability: completedAttempts.length > 0
+        ? completedAttempts.reduce((sum, n) => sum + n.voiceStability, 0) / completedAttempts.length
+        : 0,
+      // Legacy: combined accuracy
+      avgAccuracy: completedAttempts.length > 0
+        ? completedAttempts.reduce((sum, n) => sum + n.pitchAccuracy, 0) / completedAttempts.length
+        : 0,
+      totalDuration: session.startedAt
+        ? Math.round((Date.now() - session.startedAt.getTime()) / 1000)
+        : 0,
+      // Pitch tendency across session
+      overallDirection: (() => {
+        if (completedAttempts.length === 0) return 'on-target'
+        const avgSemitones = completedAttempts.reduce((sum, n) => sum + n.avgSemitoneDeviation, 0) / completedAttempts.length
+        if (avgSemitones > 0.3) return 'sharp'
+        if (avgSemitones < -0.3) return 'flat'
+        return 'on-target'
+      })() as 'sharp' | 'flat' | 'on-target'
+    }
+  }, [session])
 
   // Render the pitch meter
   const renderMeter = () => (
@@ -833,22 +972,39 @@ export default function ModernPitchTrainer({ variant = 'floating' }: ModernPitch
         </button>
       </div>
 
-      <div className="grid grid-cols-3 gap-4">
+      <div className="grid grid-cols-4 gap-3">
         <div className="text-center">
           <p className="text-2xl font-bold text-white">{sessionStats.notesAttempted}</p>
-          <p className="text-xs text-slate-400">Notes Tried</p>
+          <p className="text-xs text-slate-400">Notes</p>
         </div>
         <div className="text-center">
-          <p className="text-2xl font-bold text-white">{sessionStats.avgAccuracy.toFixed(1)}%</p>
-          <p className="text-xs text-slate-400">Avg Accuracy</p>
+          <p className={`text-2xl font-bold ${sessionStats.avgTargetAccuracy >= 70 ? 'text-green-400' : sessionStats.avgTargetAccuracy >= 40 ? 'text-yellow-400' : 'text-white'}`}>
+            {sessionStats.avgTargetAccuracy.toFixed(0)}%
+          </p>
+          <p className="text-xs text-slate-400">Target Acc</p>
+        </div>
+        <div className="text-center">
+          <p className={`text-2xl font-bold ${sessionStats.avgVoiceStability >= 70 ? 'text-green-400' : sessionStats.avgVoiceStability >= 40 ? 'text-yellow-400' : 'text-white'}`}>
+            {sessionStats.avgVoiceStability.toFixed(0)}%
+          </p>
+          <p className="text-xs text-slate-400">Stability</p>
         </div>
         <div className="text-center">
           <p className="text-2xl font-bold text-white">
             {Math.floor(sessionStats.totalDuration / 60)}:{(sessionStats.totalDuration % 60).toString().padStart(2, '0')}
           </p>
-          <p className="text-xs text-slate-400">Duration</p>
+          <p className="text-xs text-slate-400">Time</p>
         </div>
       </div>
+
+      {/* Pitch Tendency Indicator */}
+      {sessionStats.notesAttempted > 0 && sessionStats.overallDirection !== 'on-target' && (
+        <div className={`mt-3 text-center text-xs px-3 py-1.5 rounded-lg ${
+          sessionStats.overallDirection === 'sharp' ? 'bg-orange-500/20 text-orange-300' : 'bg-blue-500/20 text-blue-300'
+        }`}>
+          Tendency: singing {sessionStats.overallDirection === 'sharp' ? '↑ sharp' : '↓ flat'}
+        </div>
+      )}
 
       {saveMessage && (
         <div className={`mt-3 text-center text-sm ${
@@ -860,11 +1016,47 @@ export default function ModernPitchTrainer({ variant = 'floating' }: ModernPitch
 
       {currentAttempt && currentAttempt.samples.length > 0 && (
         <div className="mt-3 pt-3 border-t border-slate-700/50">
-          <p className="text-xs text-slate-400 mb-1">Current Note: {currentAttempt.noteName}{currentAttempt.octave}</p>
+          <div className="flex items-center justify-between mb-2">
+            <p className="text-xs text-slate-400">Target: <span className="text-white font-medium">{currentAttempt.noteName}{currentAttempt.octave}</span></p>
+            {(() => {
+              // Calculate live stats from current samples
+              const samples = currentAttempt.samples
+              if (samples.length === 0) return null
+
+              // Find most sung note
+              const noteCount: Record<string, number> = {}
+              samples.forEach(s => {
+                const key = `${s.detectedNoteName}${s.detectedOctave}`
+                noteCount[key] = (noteCount[key] || 0) + 1
+              })
+              const mostSung = Object.entries(noteCount).sort((a, b) => b[1] - a[1])[0]?.[0]
+
+              // Calculate average semitone deviation
+              const avgSemitones = samples.reduce((sum, s) => sum + s.semitoneDeviationFromTarget, 0) / samples.length
+
+              const isOnTarget = Math.abs(avgSemitones) < 0.5
+              const direction = avgSemitones > 0.5 ? 'sharp' : avgSemitones < -0.5 ? 'flat' : 'on-target'
+
+              return (
+                <div className="text-xs">
+                  {isOnTarget ? (
+                    <span className="text-green-400 font-medium">On target!</span>
+                  ) : (
+                    <span className={direction === 'sharp' ? 'text-orange-400' : 'text-blue-400'}>
+                      Singing {mostSung} ({Math.abs(avgSemitones).toFixed(1)} semitones {direction})
+                    </span>
+                  )}
+                </div>
+              )
+            })()}
+          </div>
           <div className="flex gap-4 text-xs">
             <span className="text-slate-300">Samples: {currentAttempt.samples.length}</span>
             <span className="text-green-400">
               In-tune: {currentAttempt.samples.filter(s => s.isInTune).length}
+            </span>
+            <span className="text-slate-300">
+              In range: {currentAttempt.samples.filter(s => Math.abs(s.semitoneDeviationFromTarget) <= 1).length}
             </span>
           </div>
         </div>
@@ -877,7 +1069,7 @@ export default function ModernPitchTrainer({ variant = 'floating' }: ModernPitch
       {variant === 'floating' ? (
         <button
           onClick={() => setIsOpen(true)}
-          className="fixed bottom-4 right-4 w-12 h-12 lg:bottom-6 lg:right-8 lg:w-14 lg:h-14 bg-gradient-to-br from-indigo-600 to-violet-600 rounded-full shadow-lg flex items-center justify-center text-white hover:scale-110 active:scale-95 transition-all duration-300 z-50"
+          className="fixed bottom-4 right-[76px] w-12 h-12 lg:bottom-6 lg:right-24 lg:w-14 lg:h-14 bg-gradient-to-br from-indigo-600 to-violet-600 rounded-full shadow-lg flex items-center justify-center text-white hover:scale-110 active:scale-95 transition-all duration-300 z-50"
           style={{ boxShadow: '0 8px 24px rgba(99, 102, 241, 0.4)' }}
           title="Perfect Pitch"
         >

@@ -1,7 +1,7 @@
 'use client'
 
 import { useState, useEffect } from 'react'
-import { TrendingUp, TrendingDown, Minus, Calendar, Target, Clock, Zap, Award, RefreshCw, Sparkles, Music2, Mic2, Activity, Brain } from 'lucide-react'
+import { TrendingUp, TrendingDown, Minus, Calendar, Target, Clock, Zap, Award, RefreshCw, Sparkles, Music2, Mic2, Activity, Brain, FileText, BookOpen, ChevronRight } from 'lucide-react'
 import AIAnalysisPanel from '@/components/AIAnalysisPanel'
 
 interface WeeklyProgress {
@@ -19,6 +19,37 @@ interface WeeklyProgress {
   pitch_onset_speed_change: number | null
   pitch_stability_change: number | null
   in_tune_sustain_change: number | null
+  // New singer-focused metrics
+  avg_target_accuracy: number | null
+  avg_voice_stability: number | null
+  target_accuracy_change: number | null
+  voice_stability_change: number | null
+  predominant_tendency: 'sharp' | 'flat' | 'on-target' | null
+}
+
+interface SingerMetrics {
+  avgTargetAccuracy: number
+  avgVoiceStability: number
+  avgSemitoneDeviation: number
+  predominantTendency: 'sharp' | 'flat' | 'on-target'
+  hasNewMetrics: boolean
+  targetAccuracyTrend: number
+  voiceStabilityTrend: number
+  overallScoreTrend: number
+}
+
+interface ProgressHistoryEntry {
+  id: string
+  period_start: string
+  period_end: string
+  target_accuracy: number | null
+  voice_stability: number | null
+  overall_score: number | null
+  target_accuracy_delta: number | null
+  voice_stability_delta: number | null
+  overall_score_delta: number | null
+  total_sessions: number
+  total_notes_attempted: number | null
 }
 
 interface SongWeeklyProgress {
@@ -94,6 +125,8 @@ interface RhythmStats {
   avgConsistency: number
   bestOnBeatPercent: number
   daysThisWeek: number
+  predominantTendency?: 'early' | 'late' | 'on-time'
+  avgTimingOffset?: number
 }
 
 interface RhythmSession {
@@ -102,6 +135,23 @@ interface RhythmSession {
   bpm: number
   time_signature: string
   best_streak: number
+}
+
+interface LessonNote {
+  id: string
+  class_started_at: string
+  class_ended_at: string
+  content: string
+  content_html: string
+  ai_summary: {
+    summary?: string
+    keyTopicsCovered?: string[]
+    exercisesPracticed?: string[]
+    teacherFeedback?: string[]
+    studentProgress?: string[]
+    homeworkAssignments?: string[]
+    notesHighlights?: string[]
+  } | null
 }
 
 interface ProgressData {
@@ -114,6 +164,10 @@ interface ProgressData {
   rhythmStats: RhythmStats
   recentSongSessions: SongSession[]
   recentRhythmSessions: RhythmSession[]
+  recentLessonNotes?: LessonNote[]
+  // New singer-focused data
+  singerMetrics?: SingerMetrics
+  progressHistory?: ProgressHistoryEntry[]
 }
 
 function formatChange(change: number | null, inverted: boolean = false): { text: string; color: string; icon: typeof TrendingUp } {
@@ -156,15 +210,25 @@ export default function PitchTrainingProgressPage() {
   const [loading, setLoading] = useState(true)
   const [generatingFeedback, setGeneratingFeedback] = useState(false)
   const [error, setError] = useState<string | null>(null)
-  const [activeTab, setActiveTab] = useState<'pitch-trainer' | 'song-trainer' | 'rhythm-trainer'>('pitch-trainer')
+  const [activeTab, setActiveTab] = useState<'overview' | 'pitch-trainer' | 'song-trainer' | 'rhythm-trainer'>('overview')
   const [showAIPanel, setShowAIPanel] = useState(false)
 
   const fetchProgress = async () => {
     try {
       setLoading(true)
-      const response = await fetch('/api/pitch-training/progress?weeks=8&includeFeedback=true')
-      if (!response.ok) throw new Error('Failed to fetch progress')
-      const result = await response.json()
+      const [progressRes, notesRes] = await Promise.all([
+        fetch('/api/pitch-training/progress?weeks=8&includeFeedback=true'),
+        fetch('/api/pitch-training/recent-notes')
+      ])
+      if (!progressRes.ok) throw new Error('Failed to fetch progress')
+      const result = await progressRes.json()
+
+      // Add lesson notes if available
+      if (notesRes.ok) {
+        const notesData = await notesRes.json()
+        result.recentLessonNotes = notesData.notes || []
+      }
+
       setData(result)
     } catch (err) {
       setError('Failed to load progress data')
@@ -256,7 +320,18 @@ export default function PitchTrainingProgressPage() {
       />
 
       {/* Tab Navigation */}
-      <div className="flex gap-2 glass-card-subtle border border-white/[0.08] p-1 rounded-xl w-fit">
+      <div className="flex gap-2 glass-card-subtle border border-white/[0.08] p-1 rounded-xl w-fit flex-wrap">
+        <button
+          onClick={() => setActiveTab('overview')}
+          className={`flex items-center gap-2 px-4 py-2.5 rounded-lg font-medium transition-all ${
+            activeTab === 'overview'
+              ? 'bg-gradient-to-r from-[#a855f7] to-[#7c3aed] text-white shadow-lg shadow-[#a855f7]/20'
+              : 'text-slate-400 hover:text-white hover:bg-white/[0.08]'
+          }`}
+        >
+          <BookOpen className="w-4 h-4" />
+          Overview
+        </button>
         <button
           onClick={() => setActiveTab('pitch-trainer')}
           className={`flex items-center gap-2 px-4 py-2.5 rounded-lg font-medium transition-all ${
@@ -266,7 +341,7 @@ export default function PitchTrainingProgressPage() {
           }`}
         >
           <Mic2 className="w-4 h-4" />
-          Pitch Trainer Pro
+          Pitch Trainer
         </button>
         <button
           onClick={() => setActiveTab('song-trainer')}
@@ -277,7 +352,7 @@ export default function PitchTrainingProgressPage() {
           }`}
         >
           <Music2 className="w-4 h-4" />
-          Song Pitch Trainer
+          Song Trainer
         </button>
         <button
           onClick={() => setActiveTab('rhythm-trainer')}
@@ -291,6 +366,338 @@ export default function PitchTrainingProgressPage() {
           Rhythm Trainer
         </button>
       </div>
+
+      {/* Overview Tab */}
+      {activeTab === 'overview' && (
+        <>
+          {/* Quick Stats Overview */}
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+            <div className="glass-card-subtle rounded-xl p-4 border-white/[0.08]">
+              <div className="flex items-center gap-2 text-[#c4b5fd] mb-2">
+                <Mic2 className="w-4 h-4" />
+                <span className="text-xs font-medium">
+                  {data.singerMetrics?.hasNewMetrics ? 'Target Accuracy' : 'Pitch Accuracy'}
+                </span>
+              </div>
+              <p className="text-2xl font-bold text-white">
+                {data.singerMetrics?.hasNewMetrics
+                  ? data.singerMetrics.avgTargetAccuracy.toFixed(0)
+                  : currentWeek?.avg_pitch_accuracy?.toFixed(0) || '--'}%
+              </p>
+              <p className="text-xs text-slate-400">
+                {data.singerMetrics?.hasNewMetrics ? 'recent sessions' : 'this week'}
+              </p>
+            </div>
+
+            <div className="glass-card-subtle rounded-xl p-4 border-white/[0.08]">
+              <div className="flex items-center gap-2 text-emerald-400 mb-2">
+                <Music2 className="w-4 h-4" />
+                <span className="text-xs font-medium">Song Accuracy</span>
+              </div>
+              <p className="text-2xl font-bold text-white">{currentSongWeek?.avg_accuracy_percent?.toFixed(0) || '--'}%</p>
+              <p className="text-xs text-slate-400">in-key rate</p>
+            </div>
+
+            <div className="glass-card-subtle rounded-xl p-4 border-white/[0.08]">
+              <div className="flex items-center gap-2 text-amber-400 mb-2">
+                <Activity className="w-4 h-4" />
+                <span className="text-xs font-medium">Rhythm Accuracy</span>
+              </div>
+              <p className="text-2xl font-bold text-white">{data.rhythmWeeklyProgress?.[0]?.avg_on_beat_percent?.toFixed(0) || '--'}%</p>
+              <p className="text-xs text-slate-400">on-beat</p>
+            </div>
+
+            <div className="glass-card-subtle rounded-xl p-4 border-white/[0.08]">
+              <div className="flex items-center gap-2 text-blue-400 mb-2">
+                <FileText className="w-4 h-4" />
+                <span className="text-xs font-medium">Recent Lessons</span>
+              </div>
+              <p className="text-2xl font-bold text-white">{data.recentLessonNotes?.length || 0}</p>
+              <p className="text-xs text-slate-400">with notes</p>
+            </div>
+          </div>
+
+          {/* Combined Progress Card */}
+          <div className="glass-card-subtle rounded-2xl p-6 border-white/[0.08]">
+            <h2 className="text-xl font-semibold text-white mb-6 flex items-center gap-2">
+              <TrendingUp className="w-5 h-5 text-[#c4b5fd]" />
+              Your Training Summary
+            </h2>
+
+            <div className="grid md:grid-cols-3 gap-6">
+              {/* Pitch Training Summary */}
+              <div className="bg-indigo-500/10 rounded-xl p-4 border border-indigo-500/20">
+                <div className="flex items-center justify-between mb-3">
+                  <h3 className="font-semibold text-indigo-300 flex items-center gap-2">
+                    <Mic2 className="w-4 h-4" />
+                    Pitch Training
+                  </h3>
+                  <button
+                    onClick={() => setActiveTab('pitch-trainer')}
+                    className="text-xs text-indigo-400 hover:text-indigo-300 flex items-center gap-1"
+                  >
+                    Details <ChevronRight className="w-3 h-3" />
+                  </button>
+                </div>
+                <div className="space-y-2 text-sm">
+                  {data.singerMetrics?.hasNewMetrics ? (
+                    <>
+                      <div className="flex justify-between">
+                        <span className="text-slate-400">Target Accuracy</span>
+                        <span className="text-white">{data.singerMetrics.avgTargetAccuracy}%</span>
+                      </div>
+                      <div className="flex justify-between">
+                        <span className="text-slate-400">Voice Stability</span>
+                        <span className="text-white">{data.singerMetrics.avgVoiceStability}%</span>
+                      </div>
+                      <div className="flex justify-between">
+                        <span className="text-slate-400">Tendency</span>
+                        <span className={`flex items-center gap-1 ${
+                          data.singerMetrics.predominantTendency === 'sharp' ? 'text-amber-400' :
+                          data.singerMetrics.predominantTendency === 'flat' ? 'text-blue-400' :
+                          'text-green-400'
+                        }`}>
+                          {data.singerMetrics.predominantTendency === 'sharp' ? '♯ Sharp' :
+                           data.singerMetrics.predominantTendency === 'flat' ? '♭ Flat' : '✓ On Target'}
+                        </span>
+                      </div>
+                    </>
+                  ) : (
+                    <>
+                      <div className="flex justify-between">
+                        <span className="text-slate-400">Sessions</span>
+                        <span className="text-white">{data.stats.totalSessions}</span>
+                      </div>
+                      <div className="flex justify-between">
+                        <span className="text-slate-400">Best Score</span>
+                        <span className="text-white">{data.stats.bestScore}%</span>
+                      </div>
+                      <div className="flex justify-between">
+                        <span className="text-slate-400">Current Streak</span>
+                        <span className="text-white">{data.stats.currentStreak} days</span>
+                      </div>
+                    </>
+                  )}
+                </div>
+              </div>
+
+              {/* Song Training Summary */}
+              <div className="bg-emerald-500/10 rounded-xl p-4 border border-emerald-500/20">
+                <div className="flex items-center justify-between mb-3">
+                  <h3 className="font-semibold text-emerald-300 flex items-center gap-2">
+                    <Music2 className="w-4 h-4" />
+                    Song Training
+                  </h3>
+                  <button
+                    onClick={() => setActiveTab('song-trainer')}
+                    className="text-xs text-emerald-400 hover:text-emerald-300 flex items-center gap-1"
+                  >
+                    Details <ChevronRight className="w-3 h-3" />
+                  </button>
+                </div>
+                <div className="space-y-2 text-sm">
+                  <div className="flex justify-between">
+                    <span className="text-slate-400">Sessions</span>
+                    <span className="text-white">{data.songStats.totalSessions}</span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span className="text-slate-400">Best Accuracy</span>
+                    <span className="text-white">{data.songStats.bestAccuracy}%</span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span className="text-slate-400">Songs Practiced</span>
+                    <span className="text-white">{data.songStats.uniqueSongs}</span>
+                  </div>
+                </div>
+              </div>
+
+              {/* Rhythm Training Summary */}
+              <div className="bg-amber-500/10 rounded-xl p-4 border border-amber-500/20">
+                <div className="flex items-center justify-between mb-3">
+                  <h3 className="font-semibold text-amber-300 flex items-center gap-2">
+                    <Activity className="w-4 h-4" />
+                    Rhythm Training
+                  </h3>
+                  <button
+                    onClick={() => setActiveTab('rhythm-trainer')}
+                    className="text-xs text-amber-400 hover:text-amber-300 flex items-center gap-1"
+                  >
+                    Details <ChevronRight className="w-3 h-3" />
+                  </button>
+                </div>
+                <div className="space-y-2 text-sm">
+                  <div className="flex justify-between">
+                    <span className="text-slate-400">On-Beat Rate</span>
+                    <span className="text-white">{data.rhythmStats?.avgOnBeatPercent || 0}%</span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span className="text-slate-400">Consistency</span>
+                    <span className="text-white">{data.rhythmStats?.avgConsistency?.toFixed(0) || 0}%</span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span className="text-slate-400">Tendency</span>
+                    <span className={`flex items-center gap-1 ${
+                      data.rhythmStats?.predominantTendency === 'early' ? 'text-blue-400' :
+                      data.rhythmStats?.predominantTendency === 'late' ? 'text-orange-400' :
+                      'text-green-400'
+                    }`}>
+                      {data.rhythmStats?.predominantTendency === 'early' ? '⏪ Early' :
+                       data.rhythmStats?.predominantTendency === 'late' ? '⏩ Late' : '✓ On Time'}
+                    </span>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          {/* Recent Lesson Notes */}
+          {data.recentLessonNotes && data.recentLessonNotes.length > 0 && (
+            <div className="glass-card-subtle rounded-2xl p-6 border-white/[0.08]">
+              <div className="flex items-center justify-between mb-6">
+                <h2 className="text-xl font-semibold text-white flex items-center gap-2">
+                  <FileText className="w-5 h-5 text-cyan-400" />
+                  Recent Lesson Notes
+                </h2>
+                <span className="text-xs text-slate-400">From your live classes</span>
+              </div>
+
+              <div className="space-y-4">
+                {data.recentLessonNotes.slice(0, 5).map((note) => (
+                  <div key={note.id} className="bg-white/[0.03] rounded-xl p-4 border border-white/[0.06]">
+                    <div className="flex items-center justify-between mb-3">
+                      <span className="text-sm font-medium text-white">
+                        {new Date(note.class_started_at).toLocaleDateString('en-US', {
+                          weekday: 'short',
+                          month: 'short',
+                          day: 'numeric'
+                        })}
+                      </span>
+                      {note.ai_summary?.summary && (
+                        <span className="text-xs px-2 py-1 bg-cyan-500/20 text-cyan-300 rounded-lg">AI Summary</span>
+                      )}
+                    </div>
+
+                    {/* AI Summary if available */}
+                    {note.ai_summary?.summary && (
+                      <p className="text-sm text-slate-300 mb-3">{note.ai_summary.summary}</p>
+                    )}
+
+                    {/* Key Topics */}
+                    {note.ai_summary?.keyTopicsCovered && note.ai_summary.keyTopicsCovered.length > 0 && (
+                      <div className="mb-3">
+                        <span className="text-xs text-slate-500 uppercase tracking-wider">Topics Covered</span>
+                        <div className="flex flex-wrap gap-1.5 mt-1">
+                          {note.ai_summary.keyTopicsCovered.slice(0, 4).map((topic, i) => (
+                            <span key={i} className="text-xs px-2 py-1 bg-indigo-500/20 text-indigo-300 rounded-lg">
+                              {topic}
+                            </span>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+
+                    {/* Teacher Feedback */}
+                    {note.ai_summary?.teacherFeedback && note.ai_summary.teacherFeedback.length > 0 && (
+                      <div className="mb-3">
+                        <span className="text-xs text-slate-500 uppercase tracking-wider">Teacher Feedback</span>
+                        <ul className="mt-1 space-y-1">
+                          {note.ai_summary.teacherFeedback.slice(0, 2).map((feedback, i) => (
+                            <li key={i} className="text-xs text-slate-300 pl-3 border-l-2 border-green-500/30">
+                              {feedback}
+                            </li>
+                          ))}
+                        </ul>
+                      </div>
+                    )}
+
+                    {/* Homework */}
+                    {note.ai_summary?.homeworkAssignments && note.ai_summary.homeworkAssignments.length > 0 && (
+                      <div>
+                        <span className="text-xs text-slate-500 uppercase tracking-wider">Homework</span>
+                        <ul className="mt-1 space-y-1">
+                          {note.ai_summary.homeworkAssignments.map((hw, i) => (
+                            <li key={i} className="text-xs text-amber-300 pl-3 border-l-2 border-amber-500/30">
+                              {hw}
+                            </li>
+                          ))}
+                        </ul>
+                      </div>
+                    )}
+
+                    {/* Fallback to plain notes if no AI summary */}
+                    {!note.ai_summary?.summary && note.content && (
+                      <p className="text-sm text-slate-400 italic">
+                        {note.content.slice(0, 200)}{note.content.length > 200 ? '...' : ''}
+                      </p>
+                    )}
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {/* AI Coach Analysis Card */}
+          {latestFeedback && (
+            <div className="glass-card-subtle rounded-2xl p-6 border-white/[0.08]">
+              <div className="flex items-center justify-between mb-6">
+                <h2 className="text-xl font-semibold text-white flex items-center gap-2">
+                  <Sparkles className="w-5 h-5 text-amber-400" />
+                  AI Coach Insights
+                </h2>
+                <button
+                  onClick={() => setShowAIPanel(true)}
+                  className="text-xs text-[#c4b5fd] hover:text-white flex items-center gap-1"
+                >
+                  Full Analysis <ChevronRight className="w-3 h-3" />
+                </button>
+              </div>
+
+              <div className="bg-white/[0.03] rounded-xl p-4 border border-white/[0.06] mb-4">
+                <p className="text-slate-300 leading-relaxed">{latestFeedback.summary}</p>
+              </div>
+
+              <div className="grid md:grid-cols-2 gap-4">
+                {/* Strengths */}
+                {latestFeedback.strengths.length > 0 && (
+                  <div>
+                    <h3 className="text-sm font-semibold text-green-400 mb-2">Strengths</h3>
+                    <ul className="space-y-1">
+                      {latestFeedback.strengths.slice(0, 3).map((s, i) => (
+                        <li key={i} className="text-xs text-slate-300 pl-3 border-l-2 border-green-500/30">{s}</li>
+                      ))}
+                    </ul>
+                  </div>
+                )}
+
+                {/* Areas to Improve */}
+                {latestFeedback.areas_for_improvement.length > 0 && (
+                  <div>
+                    <h3 className="text-sm font-semibold text-amber-400 mb-2">Focus Areas</h3>
+                    <ul className="space-y-1">
+                      {latestFeedback.areas_for_improvement.slice(0, 3).map((a, i) => (
+                        <li key={i} className="text-xs text-slate-300 pl-3 border-l-2 border-amber-500/30">{a}</li>
+                      ))}
+                    </ul>
+                  </div>
+                )}
+              </div>
+            </div>
+          )}
+
+          {/* Empty State */}
+          {!currentWeek && !currentSongWeek && (!data.recentLessonNotes || data.recentLessonNotes.length === 0) && (
+            <div className="text-center py-12 glass-card-subtle rounded-2xl border-white/[0.08]">
+              <div className="w-16 h-16 mx-auto mb-4 bg-[#a855f7]/20 rounded-full flex items-center justify-center">
+                <BookOpen className="w-8 h-8 text-[#c4b5fd]" />
+              </div>
+              <h3 className="text-xl font-semibold text-white mb-2">Start Your Training Journey</h3>
+              <p className="text-slate-400 max-w-md mx-auto">
+                Use the training tools to practice pitch, song singing, and rhythm. Your progress and lesson notes will be combined here for a complete overview.
+              </p>
+            </div>
+          )}
+        </>
+      )}
 
       {/* Pitch Trainer Pro Tab */}
       {activeTab === 'pitch-trainer' && (
@@ -352,6 +759,262 @@ export default function PitchTrainingProgressPage() {
             </div>
           </div>
 
+          {/* Singer-Focused Metrics Card */}
+          {data.singerMetrics?.hasNewMetrics && (
+            <div className="glass-card-subtle rounded-2xl p-6 border-white/[0.08]">
+              <h2 className="text-xl font-semibold text-white mb-6 flex items-center gap-2">
+                <Mic2 className="w-5 h-5 text-[#c4b5fd]" />
+                Singer Performance Insights
+                <span className="ml-2 px-2 py-0.5 bg-[#a855f7]/20 text-[#c4b5fd] text-xs rounded-full">New</span>
+              </h2>
+
+              <div className="grid grid-cols-2 md:grid-cols-4 gap-6">
+                {/* Target Accuracy */}
+                <div className="space-y-2">
+                  <div className="flex items-center justify-between">
+                    <span className="text-sm text-slate-400">Target Accuracy</span>
+                    {(() => {
+                      const trend = data.singerMetrics!.targetAccuracyTrend
+                      if (Math.abs(trend) < 1) return null
+                      const isPositive = trend > 0
+                      return (
+                        <span className={`flex items-center gap-1 text-xs ${isPositive ? 'text-green-400' : 'text-red-400'}`}>
+                          {isPositive ? <TrendingUp className="w-3 h-3" /> : <TrendingDown className="w-3 h-3" />}
+                          {trend > 0 ? '+' : ''}{trend.toFixed(1)}%
+                        </span>
+                      )
+                    })()}
+                  </div>
+                  <p className="text-3xl font-bold text-white">
+                    {data.singerMetrics.avgTargetAccuracy.toFixed(1)}%
+                  </p>
+                  <div className="h-2 bg-slate-700 rounded-full overflow-hidden">
+                    <div
+                      className="h-full bg-gradient-to-r from-indigo-500 to-purple-500 rounded-full transition-all"
+                      style={{ width: `${data.singerMetrics.avgTargetAccuracy}%` }}
+                    />
+                  </div>
+                  <p className="text-xs text-slate-500">How close to the target note</p>
+                </div>
+
+                {/* Voice Stability */}
+                <div className="space-y-2">
+                  <div className="flex items-center justify-between">
+                    <span className="text-sm text-slate-400">Voice Stability</span>
+                    {(() => {
+                      const trend = data.singerMetrics!.voiceStabilityTrend
+                      if (Math.abs(trend) < 1) return null
+                      const isPositive = trend > 0
+                      return (
+                        <span className={`flex items-center gap-1 text-xs ${isPositive ? 'text-green-400' : 'text-red-400'}`}>
+                          {isPositive ? <TrendingUp className="w-3 h-3" /> : <TrendingDown className="w-3 h-3" />}
+                          {trend > 0 ? '+' : ''}{trend.toFixed(1)}%
+                        </span>
+                      )
+                    })()}
+                  </div>
+                  <p className="text-3xl font-bold text-white">
+                    {data.singerMetrics.avgVoiceStability.toFixed(1)}%
+                  </p>
+                  <div className="h-2 bg-slate-700 rounded-full overflow-hidden">
+                    <div
+                      className="h-full bg-gradient-to-r from-green-500 to-emerald-500 rounded-full transition-all"
+                      style={{ width: `${data.singerMetrics.avgVoiceStability}%` }}
+                    />
+                  </div>
+                  <p className="text-xs text-slate-500">How steady your pitch is</p>
+                </div>
+
+                {/* Semitone Deviation */}
+                <div className="space-y-2">
+                  <span className="text-sm text-slate-400">Avg Deviation</span>
+                  <p className="text-3xl font-bold text-white">
+                    {Math.abs(data.singerMetrics.avgSemitoneDeviation).toFixed(2)}
+                    <span className="text-lg text-slate-400"> ST</span>
+                  </p>
+                  <p className="text-xs text-slate-500">
+                    {data.singerMetrics.avgSemitoneDeviation === 0
+                      ? 'Perfect centering'
+                      : data.singerMetrics.avgSemitoneDeviation > 0
+                        ? 'Slightly sharp on average'
+                        : 'Slightly flat on average'}
+                  </p>
+                </div>
+
+                {/* Pitch Tendency */}
+                <div className="space-y-2">
+                  <span className="text-sm text-slate-400">Pitch Tendency</span>
+                  <div className="flex items-center gap-2">
+                    <span className={`text-3xl font-bold ${
+                      data.singerMetrics.predominantTendency === 'sharp' ? 'text-amber-400' :
+                      data.singerMetrics.predominantTendency === 'flat' ? 'text-blue-400' :
+                      'text-green-400'
+                    }`}>
+                      {data.singerMetrics.predominantTendency === 'sharp' ? '♯' :
+                       data.singerMetrics.predominantTendency === 'flat' ? '♭' : '✓'}
+                    </span>
+                    <span className="text-xl font-semibold text-white capitalize">
+                      {data.singerMetrics.predominantTendency === 'on-target' ? 'On Target' : data.singerMetrics.predominantTendency}
+                    </span>
+                  </div>
+                  <p className="text-xs text-slate-500">
+                    {data.singerMetrics.predominantTendency === 'sharp'
+                      ? 'You tend to sing slightly sharp'
+                      : data.singerMetrics.predominantTendency === 'flat'
+                        ? 'You tend to sing slightly flat'
+                        : 'Great pitch centering!'}
+                  </p>
+                </div>
+              </div>
+
+              {/* Overall Trend */}
+              {Math.abs(data.singerMetrics.overallScoreTrend) >= 1 && (
+                <div className={`mt-6 p-4 rounded-xl ${
+                  data.singerMetrics.overallScoreTrend > 0
+                    ? 'bg-green-500/10 border border-green-500/20'
+                    : 'bg-amber-500/10 border border-amber-500/20'
+                }`}>
+                  <div className="flex items-center gap-3">
+                    {data.singerMetrics.overallScoreTrend > 0 ? (
+                      <TrendingUp className="w-5 h-5 text-green-400" />
+                    ) : (
+                      <TrendingDown className="w-5 h-5 text-amber-400" />
+                    )}
+                    <div>
+                      <p className={`font-medium ${
+                        data.singerMetrics.overallScoreTrend > 0 ? 'text-green-400' : 'text-amber-400'
+                      }`}>
+                        {data.singerMetrics.overallScoreTrend > 0 ? 'Improving!' : 'Room for improvement'}
+                      </p>
+                      <p className="text-sm text-slate-400">
+                        Your overall score has {data.singerMetrics.overallScoreTrend > 0 ? 'increased' : 'decreased'} by{' '}
+                        <span className="font-medium">{Math.abs(data.singerMetrics.overallScoreTrend).toFixed(1)}%</span>{' '}
+                        over your recent sessions
+                      </p>
+                    </div>
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* Progress Evolution Chart */}
+          {data.progressHistory && data.progressHistory.length >= 3 && (
+            <div className="glass-card-subtle rounded-2xl p-6 border-white/[0.08]">
+              <h2 className="text-xl font-semibold text-white mb-6 flex items-center gap-2">
+                <Activity className="w-5 h-5 text-cyan-400" />
+                Progress Evolution
+                <span className="text-sm font-normal text-slate-400 ml-2">
+                  Last {data.progressHistory.length} sessions
+                </span>
+              </h2>
+
+              {/* Visual progress timeline */}
+              <div className="space-y-4">
+                {/* Target Accuracy Timeline */}
+                <div className="space-y-2">
+                  <div className="flex items-center justify-between">
+                    <span className="text-sm text-slate-400">Target Accuracy Trend</span>
+                    <span className="text-sm text-white">
+                      {data.progressHistory[0]?.target_accuracy?.toFixed(1) || '--'}%
+                    </span>
+                  </div>
+                  <div className="flex items-end gap-1 h-16">
+                    {data.progressHistory.slice(0, 14).reverse().map((entry, i) => {
+                      const value = entry.target_accuracy || 0
+                      const height = Math.max(4, (value / 100) * 100)
+                      return (
+                        <div
+                          key={entry.id}
+                          className="flex-1 bg-gradient-to-t from-indigo-600 to-purple-500 rounded-t transition-all hover:from-indigo-500 hover:to-purple-400"
+                          style={{ height: `${height}%` }}
+                          title={`${new Date(entry.period_start).toLocaleDateString()}: ${value.toFixed(1)}%`}
+                        />
+                      )
+                    })}
+                  </div>
+                </div>
+
+                {/* Voice Stability Timeline */}
+                <div className="space-y-2">
+                  <div className="flex items-center justify-between">
+                    <span className="text-sm text-slate-400">Voice Stability Trend</span>
+                    <span className="text-sm text-white">
+                      {data.progressHistory[0]?.voice_stability?.toFixed(1) || '--'}%
+                    </span>
+                  </div>
+                  <div className="flex items-end gap-1 h-16">
+                    {data.progressHistory.slice(0, 14).reverse().map((entry, i) => {
+                      const value = entry.voice_stability || 0
+                      const height = Math.max(4, (value / 100) * 100)
+                      return (
+                        <div
+                          key={entry.id}
+                          className="flex-1 bg-gradient-to-t from-green-600 to-emerald-500 rounded-t transition-all hover:from-green-500 hover:to-emerald-400"
+                          style={{ height: `${height}%` }}
+                          title={`${new Date(entry.period_start).toLocaleDateString()}: ${value.toFixed(1)}%`}
+                        />
+                      )
+                    })}
+                  </div>
+                </div>
+
+                {/* Overall Score Timeline */}
+                <div className="space-y-2">
+                  <div className="flex items-center justify-between">
+                    <span className="text-sm text-slate-400">Overall Score Trend</span>
+                    <span className="text-sm text-white">
+                      {data.progressHistory[0]?.overall_score?.toFixed(1) || '--'}%
+                    </span>
+                  </div>
+                  <div className="flex items-end gap-1 h-16">
+                    {data.progressHistory.slice(0, 14).reverse().map((entry, i) => {
+                      const value = entry.overall_score || 0
+                      const height = Math.max(4, (value / 100) * 100)
+                      return (
+                        <div
+                          key={entry.id}
+                          className="flex-1 bg-gradient-to-t from-[#a855f7] to-[#c084fc] rounded-t transition-all hover:from-[#9333ea] hover:to-[#a855f7]"
+                          style={{ height: `${height}%` }}
+                          title={`${new Date(entry.period_start).toLocaleDateString()}: ${value.toFixed(1)}%`}
+                        />
+                      )
+                    })}
+                  </div>
+                </div>
+              </div>
+
+              {/* Progress Summary */}
+              <div className="mt-6 grid grid-cols-3 gap-4 pt-4 border-t border-white/[0.08]">
+                <div className="text-center">
+                  <p className="text-sm text-slate-400">First Session</p>
+                  <p className="text-lg font-semibold text-white">
+                    {data.progressHistory[data.progressHistory.length - 1]?.overall_score?.toFixed(0) || '--'}%
+                  </p>
+                </div>
+                <div className="text-center">
+                  <p className="text-sm text-slate-400">Latest Session</p>
+                  <p className="text-lg font-semibold text-white">
+                    {data.progressHistory[0]?.overall_score?.toFixed(0) || '--'}%
+                  </p>
+                </div>
+                <div className="text-center">
+                  <p className="text-sm text-slate-400">Total Change</p>
+                  {(() => {
+                    const first = data.progressHistory[data.progressHistory.length - 1]?.overall_score || 0
+                    const last = data.progressHistory[0]?.overall_score || 0
+                    const change = last - first
+                    return (
+                      <p className={`text-lg font-semibold ${change >= 0 ? 'text-green-400' : 'text-red-400'}`}>
+                        {change >= 0 ? '+' : ''}{change.toFixed(0)}%
+                      </p>
+                    )
+                  })()}
+                </div>
+              </div>
+            </div>
+          )}
+
           {/* Current Week Metrics */}
           {currentWeek && (
             <div className="glass-card-subtle rounded-2xl p-6 border-white/[0.08]">
@@ -364,12 +1027,14 @@ export default function PitchTrainingProgressPage() {
               </h2>
 
               <div className="grid grid-cols-2 md:grid-cols-4 gap-6">
-                {/* Pitch Accuracy */}
+                {/* Target Accuracy (New) or Pitch Accuracy (Legacy) */}
                 <div className="space-y-2">
                   <div className="flex items-center justify-between">
-                    <span className="text-sm text-slate-400">Pitch Accuracy</span>
+                    <span className="text-sm text-slate-400">
+                      {currentWeek.avg_target_accuracy !== null ? 'Target Accuracy' : 'Pitch Accuracy'}
+                    </span>
                     {(() => {
-                      const change = formatChange(currentWeek.pitch_accuracy_change)
+                      const change = formatChange(currentWeek.target_accuracy_change ?? currentWeek.pitch_accuracy_change)
                       return (
                         <span className={`flex items-center gap-1 text-xs ${change.color}`}>
                           <change.icon className="w-3 h-3" />
@@ -379,22 +1044,27 @@ export default function PitchTrainingProgressPage() {
                     })()}
                   </div>
                   <p className="text-3xl font-bold text-white">
-                    {currentWeek.avg_pitch_accuracy?.toFixed(1) || '--'}%
+                    {(currentWeek.avg_target_accuracy ?? currentWeek.avg_pitch_accuracy)?.toFixed(1) || '--'}%
                   </p>
                   <div className="h-2 bg-slate-700 rounded-full overflow-hidden">
                     <div
                       className="h-full bg-gradient-to-r from-indigo-500 to-purple-500 rounded-full transition-all"
-                      style={{ width: `${currentWeek.avg_pitch_accuracy || 0}%` }}
+                      style={{ width: `${currentWeek.avg_target_accuracy ?? currentWeek.avg_pitch_accuracy ?? 0}%` }}
                     />
                   </div>
+                  {currentWeek.avg_target_accuracy !== null && (
+                    <p className="text-xs text-slate-500">How close to target note</p>
+                  )}
                 </div>
 
-                {/* Pitch Onset Speed */}
+                {/* Voice Stability (New) or Pitch Stability (Legacy) */}
                 <div className="space-y-2">
                   <div className="flex items-center justify-between">
-                    <span className="text-sm text-slate-400">Onset Speed</span>
+                    <span className="text-sm text-slate-400">
+                      {currentWeek.avg_voice_stability !== null ? 'Voice Stability' : 'Pitch Stability'}
+                    </span>
                     {(() => {
-                      const change = formatChange(currentWeek.pitch_onset_speed_change, true)
+                      const change = formatChange(currentWeek.voice_stability_change ?? currentWeek.pitch_stability_change)
                       return (
                         <span className={`flex items-center gap-1 text-xs ${change.color}`}>
                           <change.icon className="w-3 h-3" />
@@ -404,42 +1074,67 @@ export default function PitchTrainingProgressPage() {
                     })()}
                   </div>
                   <p className="text-3xl font-bold text-white">
-                    {currentWeek.avg_pitch_onset_speed_ms || '--'}
-                    <span className="text-lg text-slate-400">ms</span>
-                  </p>
-                  <p className="text-xs text-slate-500">Lower is better</p>
-                </div>
-
-                {/* Pitch Stability */}
-                <div className="space-y-2">
-                  <div className="flex items-center justify-between">
-                    <span className="text-sm text-slate-400">Pitch Stability</span>
-                    {(() => {
-                      const change = formatChange(currentWeek.pitch_stability_change)
-                      return (
-                        <span className={`flex items-center gap-1 text-xs ${change.color}`}>
-                          <change.icon className="w-3 h-3" />
-                          {change.text}
-                        </span>
-                      )
-                    })()}
-                  </div>
-                  <p className="text-3xl font-bold text-white">
-                    {currentWeek.avg_pitch_stability?.toFixed(1) || '--'}%
+                    {(currentWeek.avg_voice_stability ?? currentWeek.avg_pitch_stability)?.toFixed(1) || '--'}%
                   </p>
                   <div className="h-2 bg-slate-700 rounded-full overflow-hidden">
                     <div
                       className="h-full bg-gradient-to-r from-green-500 to-emerald-500 rounded-full transition-all"
-                      style={{ width: `${currentWeek.avg_pitch_stability || 0}%` }}
+                      style={{ width: `${currentWeek.avg_voice_stability ?? currentWeek.avg_pitch_stability ?? 0}%` }}
                     />
                   </div>
+                  {currentWeek.avg_voice_stability !== null && (
+                    <p className="text-xs text-slate-500">How steady your pitch</p>
+                  )}
                 </div>
 
-                {/* In-Tune Sustain */}
+                {/* Pitch Tendency (New) or Onset Speed (Legacy) */}
+                {currentWeek.predominant_tendency ? (
+                  <div className="space-y-2">
+                    <span className="text-sm text-slate-400">Pitch Tendency</span>
+                    <div className="flex items-center gap-2">
+                      <span className={`text-3xl font-bold ${
+                        currentWeek.predominant_tendency === 'sharp' ? 'text-amber-400' :
+                        currentWeek.predominant_tendency === 'flat' ? 'text-blue-400' :
+                        'text-green-400'
+                      }`}>
+                        {currentWeek.predominant_tendency === 'sharp' ? '♯' :
+                         currentWeek.predominant_tendency === 'flat' ? '♭' : '✓'}
+                      </span>
+                      <span className="text-lg font-semibold text-white capitalize">
+                        {currentWeek.predominant_tendency === 'on-target' ? 'On Target' : currentWeek.predominant_tendency}
+                      </span>
+                    </div>
+                    <p className="text-xs text-slate-500">Your typical pitch direction</p>
+                  </div>
+                ) : (
+                  <div className="space-y-2">
+                    <div className="flex items-center justify-between">
+                      <span className="text-sm text-slate-400">Onset Speed</span>
+                      {(() => {
+                        const change = formatChange(currentWeek.pitch_onset_speed_change, true)
+                        return (
+                          <span className={`flex items-center gap-1 text-xs ${change.color}`}>
+                            <change.icon className="w-3 h-3" />
+                            {change.text}
+                          </span>
+                        )
+                      })()}
+                    </div>
+                    <p className="text-3xl font-bold text-white">
+                      {currentWeek.avg_pitch_onset_speed_ms || '--'}
+                      <span className="text-lg text-slate-400">ms</span>
+                    </p>
+                    <p className="text-xs text-slate-500">Lower is better</p>
+                  </div>
+                )}
+
+                {/* Overall Score or In-Tune Sustain */}
                 <div className="space-y-2">
                   <div className="flex items-center justify-between">
-                    <span className="text-sm text-slate-400">In-Tune Sustain</span>
-                    {(() => {
+                    <span className="text-sm text-slate-400">
+                      {currentWeek.predominant_tendency ? 'Overall Score' : 'In-Tune Sustain'}
+                    </span>
+                    {!currentWeek.predominant_tendency && (() => {
                       const change = formatChange(currentWeek.in_tune_sustain_change)
                       return (
                         <span className={`flex items-center gap-1 text-xs ${change.color}`}>
@@ -450,9 +1145,17 @@ export default function PitchTrainingProgressPage() {
                     })()}
                   </div>
                   <p className="text-3xl font-bold text-white">
-                    {formatDuration(currentWeek.avg_in_tune_sustain_ms)}
+                    {currentWeek.predominant_tendency
+                      ? `${currentWeek.avg_overall_score?.toFixed(1) || '--'}%`
+                      : formatDuration(currentWeek.avg_in_tune_sustain_ms)
+                    }
                   </p>
-                  <p className="text-xs text-slate-500">Longest sustained in-tune</p>
+                  <p className="text-xs text-slate-500">
+                    {currentWeek.predominant_tendency
+                      ? 'Combined performance score'
+                      : 'Longest sustained in-tune'
+                    }
+                  </p>
                 </div>
               </div>
 

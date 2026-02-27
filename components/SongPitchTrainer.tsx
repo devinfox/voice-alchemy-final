@@ -1,7 +1,7 @@
 'use client'
 
 import { useState, useEffect, useRef, useCallback } from 'react'
-import { Music, X, Maximize2, Minimize2, Mic, MicOff, Search, Loader2, TrendingUp, Save, Music2, ChevronRight, Volume2, Zap } from 'lucide-react'
+import { Music, X, Maximize2, Minimize2, Mic, MicOff, Search, Loader2, TrendingUp, Save, Music2, ChevronRight, Volume2, Zap, RefreshCw, Check, AlertCircle } from 'lucide-react'
 import Script from 'next/script'
 
 // ============================================================================
@@ -11,6 +11,7 @@ import Script from 'next/script'
 const NOTE_STRINGS = ['C', 'C♯', 'D', 'D♯', 'E', 'F', 'F♯', 'G', 'G♯', 'A', 'A♯', 'B']
 
 const SCALE_NOTES: Record<string, string[]> = {
+  // Major scales
   'C': ['C', 'D', 'E', 'F', 'G', 'A', 'B'],
   'C#': ['C♯', 'D♯', 'F', 'F♯', 'G♯', 'A♯', 'C'],
   'Db': ['C♯', 'D♯', 'F', 'F♯', 'G♯', 'A♯', 'C'],
@@ -28,14 +29,24 @@ const SCALE_NOTES: Record<string, string[]> = {
   'A#': ['A♯', 'C', 'D', 'D♯', 'F', 'G', 'A'],
   'Bb': ['A♯', 'C', 'D', 'D♯', 'F', 'G', 'A'],
   'B': ['B', 'C♯', 'D♯', 'E', 'F♯', 'G♯', 'A♯'],
-  // Minor keys
+  // Minor scales (natural minor)
   'Am': ['A', 'B', 'C', 'D', 'E', 'F', 'G'],
+  'A#m': ['A♯', 'C', 'C♯', 'D♯', 'F', 'F♯', 'G♯'],
+  'Bbm': ['A♯', 'C', 'C♯', 'D♯', 'F', 'F♯', 'G♯'],
   'Bm': ['B', 'C♯', 'D', 'E', 'F♯', 'G', 'A'],
   'Cm': ['C', 'D', 'D♯', 'F', 'G', 'G♯', 'A♯'],
+  'C#m': ['C♯', 'D♯', 'E', 'F♯', 'G♯', 'A', 'B'],
+  'Dbm': ['C♯', 'D♯', 'E', 'F♯', 'G♯', 'A', 'B'],
   'Dm': ['D', 'E', 'F', 'G', 'A', 'A♯', 'C'],
+  'D#m': ['D♯', 'F', 'F♯', 'G♯', 'A♯', 'B', 'C♯'],
+  'Ebm': ['D♯', 'F', 'F♯', 'G♯', 'A♯', 'B', 'C♯'],
   'Em': ['E', 'F♯', 'G', 'A', 'B', 'C', 'D'],
   'Fm': ['F', 'G', 'G♯', 'A♯', 'C', 'C♯', 'D♯'],
+  'F#m': ['F♯', 'G♯', 'A', 'B', 'C♯', 'D', 'E'],
+  'Gbm': ['F♯', 'G♯', 'A', 'B', 'C♯', 'D', 'E'],
   'Gm': ['G', 'A', 'A♯', 'C', 'D', 'D♯', 'F'],
+  'G#m': ['G♯', 'A♯', 'B', 'C♯', 'D♯', 'E', 'F♯'],
+  'Abm': ['G♯', 'A♯', 'B', 'C♯', 'D♯', 'E', 'F♯'],
 }
 
 const MIDDLE_A = 440
@@ -190,6 +201,10 @@ export default function SongPitchTrainer({ variant = 'floating' }: SongPitchTrai
   const [isSaving, setIsSaving] = useState(false)
   const [startTime, setStartTime] = useState<Date | null>(null)
 
+  // Key verification
+  const [isVerifying, setIsVerifying] = useState(false)
+  const [verificationStatus, setVerificationStatus] = useState<'none' | 'verified' | 'updated' | 'error'>('none')
+
   const { isListening, setAubioLoaded, startListening, stopListening } = usePitchDetection(sensitivity, setDetectedNote)
 
   // Check if note is in key
@@ -234,6 +249,50 @@ export default function SongPitchTrainer({ variant = 'floating' }: SongPitchTrai
     setInKeyNotes(0)
     setRecentHistory([])
     setStartTime(null)
+    setVerificationStatus('none')
+  }
+
+  // Verify song key with OpenAI
+  const verifyKey = async () => {
+    if (!selectedSong) return
+    setIsVerifying(true)
+    setVerificationStatus('none')
+    try {
+      const res = await fetch('/api/pitch-training/verify-key', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          title: selectedSong.title,
+          artist: selectedSong.artist,
+          currentKey: selectedSong.key,
+          currentMode: selectedSong.mode
+        })
+      })
+      const data = await res.json()
+
+      if (data.error) {
+        setVerificationStatus('error')
+        return
+      }
+
+      // Check if the key changed
+      if (data.key !== selectedSong.key || data.mode !== selectedSong.mode) {
+        setSelectedSong({
+          ...selectedSong,
+          key: data.key,
+          mode: data.mode,
+          bpm: data.bpm || selectedSong.bpm
+        })
+        setVerificationStatus('updated')
+      } else {
+        setVerificationStatus('verified')
+      }
+    } catch (e) {
+      console.error('Verify error:', e)
+      setVerificationStatus('error')
+    } finally {
+      setIsVerifying(false)
+    }
   }
 
   // Save session
@@ -376,6 +435,50 @@ export default function SongPitchTrainer({ variant = 'floating' }: SongPitchTrai
                           <p className="text-2xl font-bold text-white">{selectedSong.bpm}</p>
                           <p className="text-xs text-slate-500">BPM</p>
                         </div>
+                      </div>
+
+                      {/* Verify Key Button */}
+                      <div className="mt-3 pt-3 border-t border-emerald-500/20">
+                        <button
+                          onClick={verifyKey}
+                          disabled={isVerifying}
+                          className={`w-full flex items-center justify-center gap-2 px-3 py-2 rounded-lg text-xs font-medium transition-all ${
+                            verificationStatus === 'verified'
+                              ? 'bg-green-500/20 text-green-400 border border-green-500/30'
+                              : verificationStatus === 'updated'
+                              ? 'bg-amber-500/20 text-amber-400 border border-amber-500/30'
+                              : verificationStatus === 'error'
+                              ? 'bg-red-500/20 text-red-400 border border-red-500/30'
+                              : 'bg-slate-700/50 hover:bg-slate-700 text-slate-300 border border-slate-600'
+                          }`}
+                        >
+                          {isVerifying ? (
+                            <>
+                              <Loader2 className="w-3 h-3 animate-spin" />
+                              Verifying with AI...
+                            </>
+                          ) : verificationStatus === 'verified' ? (
+                            <>
+                              <Check className="w-3 h-3" />
+                              Key Verified
+                            </>
+                          ) : verificationStatus === 'updated' ? (
+                            <>
+                              <Check className="w-3 h-3" />
+                              Key Updated!
+                            </>
+                          ) : verificationStatus === 'error' ? (
+                            <>
+                              <AlertCircle className="w-3 h-3" />
+                              Verification Failed
+                            </>
+                          ) : (
+                            <>
+                              <RefreshCw className="w-3 h-3" />
+                              Verify Key with AI
+                            </>
+                          )}
+                        </button>
                       </div>
                     </div>
 

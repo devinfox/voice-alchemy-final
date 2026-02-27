@@ -20,6 +20,10 @@ interface RhythmSessionInput {
   timingConsistency: number
   onBeatPercent: number
   bestStreak: number
+  // New singer-focused metrics
+  rhythmTendency?: 'early' | 'late' | 'on-time'
+  avgEarlyMs?: number
+  avgLateMs?: number
   beatMetrics?: {
     beatNumber: number
     expectedTimeMs: number
@@ -28,6 +32,9 @@ interface RhythmSessionInput {
     timingResult: string
   }[]
 }
+
+// Timing thresholds (matching the component)
+const TIMING_WINDOW_MS = 200
 
 // ============================================================================
 // POST - Save a rhythm training session
@@ -58,6 +65,9 @@ export async function POST(request: NextRequest) {
       timingConsistency,
       onBeatPercent,
       bestStreak,
+      rhythmTendency,
+      avgEarlyMs,
+      avgLateMs,
       beatMetrics,
     } = body
 
@@ -65,16 +75,35 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'No beats recorded' }, { status: 400 })
     }
 
-    // Calculate overall score (weighted average)
-    // Higher on-beat percentage = better
-    // Higher consistency = better
-    // Lower average offset = better
-    const offsetScore = Math.max(0, 100 - Math.abs(avgTimingOffsetMs))
-    const overallScore = (
-      onBeatPercent * 0.5 +
-      timingConsistency * 0.3 +
-      offsetScore * 0.2
-    )
+    // Validate input data consistency
+    const sumOfCounts = onBeatCount + earlyCount + lateCount + missedCount
+    if (sumOfCounts !== totalBeats) {
+      console.warn(`Beat counts don't sum to total: ${sumOfCounts} vs ${totalBeats}`)
+      // Don't fail, but log the discrepancy
+    }
+
+    // Calculate overall score with improved formula for singers
+    // 1. Offset score: scale based on timing window (200ms), not arbitrary 100ms
+    const offsetScore = Math.max(0, 100 - (Math.abs(avgTimingOffsetMs) / TIMING_WINDOW_MS * 100))
+
+    // 2. Missed beat penalty: missing beats should hurt the score significantly
+    const missedRatio = totalBeats > 0 ? missedCount / totalBeats : 0
+    const missedPenalty = missedRatio * 30 // Up to -30 points for missing all beats
+
+    // 3. Accuracy: use actual on-beat percentage (this already accounts for hits)
+    // 4. Consistency: how steady the timing is (already calculated by component)
+
+    // Weighted score formula:
+    // - On-beat accuracy: 45% (most important for singers)
+    // - Timing consistency: 30% (steady rhythm is crucial)
+    // - Offset closeness: 15% (being close even when not perfect)
+    // - Minus missed beat penalty
+    const overallScore = Math.max(0, Math.min(100,
+      onBeatPercent * 0.45 +
+      timingConsistency * 0.30 +
+      offsetScore * 0.15 +
+      (100 - missedPenalty) * 0.10 // 10% for actually hitting beats
+    ))
 
     const startTime = new Date(startedAt)
     const sessionDate = startTime.toISOString().split('T')[0]
@@ -100,6 +129,10 @@ export async function POST(request: NextRequest) {
         on_beat_percent: onBeatPercent,
         best_streak: bestStreak,
         overall_score: overallScore,
+        // New singer-focused metrics
+        rhythm_tendency: rhythmTendency || 'on-time',
+        avg_early_ms: avgEarlyMs || 0,
+        avg_late_ms: avgLateMs || 0,
       })
       .select()
       .single()

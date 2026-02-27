@@ -214,7 +214,7 @@ export async function GET(request: NextRequest) {
       .eq('feedback_type', 'notes_analysis')
       .order('generated_at', { ascending: false })
       .limit(1)
-      .single()
+      .maybeSingle()
 
     if (!latestAnalysis) {
       return NextResponse.json({ analysis: null })

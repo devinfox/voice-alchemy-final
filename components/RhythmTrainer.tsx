@@ -39,6 +39,10 @@ interface SessionStats {
   onBeatPercent: number
   bestStreak: number
   currentStreak: number
+  // New singer-focused metrics
+  rhythmTendency: 'early' | 'late' | 'on-time' // Overall tendency
+  avgEarlyMs: number // Average early offset (negative values)
+  avgLateMs: number // Average late offset (positive values)
 }
 
 // ============================================================================
@@ -72,10 +76,13 @@ const TIME_SIGNATURES: { value: TimeSignature; label: string; beats: number }[] 
 function createMetronomeSound(
   audioContext: AudioContext,
   soundType: MetronomeSound,
-  isAccent: boolean = false
+  isAccent: boolean = false,
+  volumePercent: number = 70
 ): void {
   const now = audioContext.currentTime
-  const volume = isAccent ? 0.8 : 0.5
+  // Apply user volume (0-100) to base volume (accent: 0.8, normal: 0.5)
+  const baseVolume = isAccent ? 0.8 : 0.5
+  const volume = baseVolume * (volumePercent / 100)
 
   switch (soundType) {
     case 'click': {
@@ -304,14 +311,17 @@ function calculateStats(timings: BeatTiming[]): SessionStats {
     : 0
 
   // Calculate consistency (inverse of standard deviation)
+  // For singers: scale appropriately - 0ms stdDev = 100%, 150ms stdDev = 0%
+  // This is more forgiving than the original 100ms scale
   let consistency = 100
   if (completedTimings.length > 1) {
     const offsets = completedTimings.map(t => t.offsetMs || 0)
     const mean = offsets.reduce((a, b) => a + b, 0) / offsets.length
     const variance = offsets.reduce((sum, x) => sum + Math.pow(x - mean, 2), 0) / offsets.length
     const stdDev = Math.sqrt(variance)
-    // 0 stdDev = 100% consistency, 100ms stdDev = 0% consistency
-    consistency = Math.max(0, 100 - stdDev)
+    // 0ms stdDev = 100% consistency, 150ms stdDev = 0% consistency
+    // This gives more credit for "pretty good" timing common in singers
+    consistency = Math.max(0, 100 - (stdDev / 1.5))
   }
 
   // Calculate streaks
@@ -329,6 +339,33 @@ function calculateStats(timings: BeatTiming[]): SessionStats {
   const totalBeats = timings.length
   const onBeatPercent = totalBeats > 0 ? (onBeatCount / totalBeats) * 100 : 0
 
+  // Calculate rhythm tendency (early/late bias) - important for singers
+  const earlyTimings = completedTimings.filter(t => t.result === 'early')
+  const lateTimings = completedTimings.filter(t => t.result === 'late')
+
+  const avgEarlyMs = earlyTimings.length > 0
+    ? earlyTimings.reduce((sum, t) => sum + (t.offsetMs || 0), 0) / earlyTimings.length
+    : 0
+
+  const avgLateMs = lateTimings.length > 0
+    ? lateTimings.reduce((sum, t) => sum + (t.offsetMs || 0), 0) / lateTimings.length
+    : 0
+
+  // Determine overall tendency based on count and average offset
+  let rhythmTendency: 'early' | 'late' | 'on-time' = 'on-time'
+  if (completedTimings.length > 0) {
+    // If more than 40% of non-on-beat hits are one direction, that's the tendency
+    const nonOnBeat = earlyCount + lateCount
+    if (nonOnBeat > 0) {
+      const earlyRatio = earlyCount / nonOnBeat
+      if (earlyRatio > 0.6) {
+        rhythmTendency = 'early'
+      } else if (earlyRatio < 0.4) {
+        rhythmTendency = 'late'
+      }
+    }
+  }
+
   return {
     totalBeats,
     onBeatCount,
@@ -340,6 +377,9 @@ function calculateStats(timings: BeatTiming[]): SessionStats {
     onBeatPercent,
     bestStreak,
     currentStreak,
+    rhythmTendency,
+    avgEarlyMs,
+    avgLateMs,
   }
 }
 
@@ -392,6 +432,15 @@ export default function RhythmTrainer({ variant = 'floating' }: RhythmTrainerPro
   const sessionRef = useRef(session)
   const expectedBeatTimesRef = useRef<number[]>([])
   const lastProcessedBeatRef = useRef(-1)
+  // Time synchronization refs - store reference points for both time bases
+  const audioContextStartTimeRef = useRef(0) // audioContext.currentTime at start
+  const dateNowStartTimeRef = useRef(0) // Date.now() at start
+  const volumeRef = useRef(volume) // Volume ref for use in callbacks
+
+  // Keep volume ref in sync
+  useEffect(() => {
+    volumeRef.current = volume
+  }, [volume])
 
   // Keep session ref in sync
   useEffect(() => {
@@ -462,14 +511,18 @@ export default function RhythmTrainer({ variant = 'floating' }: RhythmTrainerPro
 
       // Schedule the sound
       const beatTime = nextBeatTimeRef.current
+      const currentVolume = volumeRef.current
       setTimeout(() => {
         if (audioContextRef.current) {
-          createMetronomeSound(audioContextRef.current, metronomeSound, isAccent)
+          createMetronomeSound(audioContextRef.current, metronomeSound, isAccent, currentVolume)
         }
       }, (beatTime - audioContextRef.current.currentTime) * 1000)
 
       // Track expected beat time for onset detection
-      const expectedTimeMs = Date.now() + (beatTime - currentTime) * 1000
+      // Use synchronized time bases to avoid drift between audioContext.currentTime and Date.now()
+      // Calculate: dateNow at beat = dateNowStart + (beatTime - audioContextStart) * 1000
+      const expectedTimeMs = dateNowStartTimeRef.current +
+        (beatTime - audioContextStartTimeRef.current) * 1000
       expectedBeatTimesRef.current.push(expectedTimeMs)
       // Keep only last 32 beats
       if (expectedBeatTimesRef.current.length > 32) {
@@ -494,6 +547,11 @@ export default function RhythmTrainer({ variant = 'floating' }: RhythmTrainerPro
     if (!audioContextRef.current) {
       audioContextRef.current = new (window.AudioContext || (window as any).webkitAudioContext)()
     }
+
+    // Initialize synchronized time references
+    // This ensures Date.now() and audioContext.currentTime stay in sync throughout the session
+    audioContextStartTimeRef.current = audioContextRef.current.currentTime
+    dateNowStartTimeRef.current = Date.now()
 
     beatCounterRef.current = 0
     nextBeatTimeRef.current = audioContextRef.current.currentTime
@@ -557,6 +615,15 @@ export default function RhythmTrainer({ variant = 'floating' }: RhythmTrainerPro
         ? Math.round((session.endedAt.getTime() - session.startedAt.getTime()) / 1000)
         : Math.round((Date.now() - session.startedAt.getTime()) / 1000)
 
+      // Prepare beat metrics for saving
+      const beatMetrics = session.beatTimings.map((bt, index) => ({
+        beatNumber: bt.beatNumber,
+        expectedTimeMs: bt.expectedTime,
+        actualTimeMs: bt.actualTime,
+        timingOffsetMs: bt.offsetMs,
+        timingResult: bt.result,
+      }))
+
       const response = await fetch('/api/pitch-training/rhythm-session', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -575,6 +642,12 @@ export default function RhythmTrainer({ variant = 'floating' }: RhythmTrainerPro
           timingConsistency: stats.consistency,
           onBeatPercent: stats.onBeatPercent,
           bestStreak: stats.bestStreak,
+          // New singer-focused metrics
+          rhythmTendency: stats.rhythmTendency,
+          avgEarlyMs: stats.avgEarlyMs,
+          avgLateMs: stats.avgLateMs,
+          // Include detailed beat metrics
+          beatMetrics,
         }),
       })
 
@@ -745,7 +818,7 @@ export default function RhythmTrainer({ variant = 'floating' }: RhythmTrainerPro
         </div>
       </div>
 
-      <div className="grid grid-cols-3 gap-3 mt-3 pt-3 border-t border-slate-700/50 text-center">
+      <div className="grid grid-cols-4 gap-3 mt-3 pt-3 border-t border-slate-700/50 text-center">
         <div>
           <p className="text-lg font-semibold text-white">{stats.avgOffsetMs.toFixed(0)}ms</p>
           <p className="text-xs text-slate-400">Avg Offset</p>
@@ -757,6 +830,18 @@ export default function RhythmTrainer({ variant = 'floating' }: RhythmTrainerPro
         <div>
           <p className="text-lg font-semibold text-white">{stats.bestStreak}</p>
           <p className="text-xs text-slate-400">Best Streak</p>
+        </div>
+        <div>
+          <p className={`text-lg font-semibold ${
+            stats.rhythmTendency === 'early' ? 'text-blue-400' :
+            stats.rhythmTendency === 'late' ? 'text-orange-400' :
+            'text-green-400'
+          }`}>
+            {stats.rhythmTendency === 'early' ? '⏪ Early' :
+             stats.rhythmTendency === 'late' ? '⏩ Late' :
+             '✓ On Time'}
+          </p>
+          <p className="text-xs text-slate-400">Tendency</p>
         </div>
       </div>
 

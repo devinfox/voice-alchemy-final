@@ -43,7 +43,7 @@ export async function POST(request: NextRequest) {
       .eq('user_id', user.id)
       .eq('session_date', sessionDate)
       .eq('song_key', songKey)
-      .single()
+      .maybeSingle()
 
     // Only save if this session is better than existing or no existing session
     if (existingSession && existingSession.in_key_percentage >= inKeyPercentage) {

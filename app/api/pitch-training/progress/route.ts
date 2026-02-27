@@ -19,13 +19,22 @@ export async function GET(request: NextRequest) {
     const weeks = parseInt(searchParams.get('weeks') || '8')
     const includeAIFeedback = searchParams.get('includeFeedback') !== 'false'
 
-    // Get weekly progress data
+    // Get weekly progress data (includes new singer-focused metrics)
     const { data: weeklyProgress, error: progressError } = await supabase
       .from('pitch_training_weekly_progress')
       .select('*')
       .eq('user_id', user.id)
       .order('week_start_date', { ascending: false })
       .limit(weeks)
+
+    // Get progress history for evolution tracking
+    const { data: progressHistory } = await supabase
+      .from('pitch_training_progress_history')
+      .select('*')
+      .eq('user_id', user.id)
+      .eq('period_type', 'daily')
+      .order('period_start', { ascending: false })
+      .limit(30)
 
     if (progressError) {
       console.error('Weekly progress fetch error:', progressError)
@@ -45,15 +54,16 @@ export async function GET(request: NextRequest) {
       aiFeedback = feedback
     }
 
-    // Calculate streaks and achievements for pitch trainer
+    // Calculate streaks and achievements for pitch trainer (includes new singer-focused metrics)
     const { data: recentSessions } = await supabase
       .from('pitch_training_sessions')
-      .select('session_date, overall_score')
+      .select('session_date, overall_score, avg_target_accuracy, avg_voice_stability, avg_semitone_deviation, pitch_tendency')
       .eq('user_id', user.id)
       .order('session_date', { ascending: false })
       .limit(30)
 
     const stats = calculateStats(recentSessions || [])
+    const singerMetrics = calculateSingerMetrics(recentSessions || [])
 
     // Get song pitch training data
     const { data: songWeeklyProgress } = await supabase
@@ -82,7 +92,7 @@ export async function GET(request: NextRequest) {
 
     const { data: recentRhythmSessions } = await supabase
       .from('rhythm_training_sessions')
-      .select('session_date, on_beat_percent, bpm, time_signature, best_streak')
+      .select('session_date, on_beat_percent, bpm, time_signature, best_streak, timing_consistency, rhythm_tendency, avg_timing_offset_ms')
       .eq('user_id', user.id)
       .order('session_date', { ascending: false })
       .limit(30)
@@ -94,6 +104,9 @@ export async function GET(request: NextRequest) {
       weeklyProgress: weeklyProgress || [],
       aiFeedback: aiFeedback || [],
       stats,
+      // New singer-focused metrics
+      singerMetrics,
+      progressHistory: progressHistory || [],
       // Song Pitch Trainer data
       songWeeklyProgress: songWeeklyProgress || [],
       songStats,
@@ -380,23 +393,132 @@ function calculateSongStats(sessions: { session_date: string; accuracy_percent: 
 // Helper: Calculate rhythm stats
 // ============================================================================
 
-function calculateRhythmStats(sessions: { session_date: string; on_beat_percent: number; bpm?: number }[]) {
+// ============================================================================
+// Helper: Calculate singer-focused metrics
+// ============================================================================
+
+interface SessionWithSingerMetrics {
+  session_date: string
+  overall_score: number
+  avg_target_accuracy?: number | null
+  avg_voice_stability?: number | null
+  avg_semitone_deviation?: number | null
+  pitch_tendency?: string | null
+}
+
+function calculateSingerMetrics(sessions: SessionWithSingerMetrics[]) {
+  if (sessions.length === 0) {
+    return {
+      avgTargetAccuracy: 0,
+      avgVoiceStability: 0,
+      avgSemitoneDeviation: 0,
+      predominantTendency: 'on-target' as const,
+      hasNewMetrics: false,
+      // Evolution tracking
+      targetAccuracyTrend: 0,
+      voiceStabilityTrend: 0,
+      overallScoreTrend: 0
+    }
+  }
+
+  // Check if sessions have the new metrics
+  const sessionsWithMetrics = sessions.filter(s => s.avg_target_accuracy !== null && s.avg_target_accuracy !== undefined)
+  const hasNewMetrics = sessionsWithMetrics.length > 0
+
+  if (!hasNewMetrics) {
+    return {
+      avgTargetAccuracy: 0,
+      avgVoiceStability: 0,
+      avgSemitoneDeviation: 0,
+      predominantTendency: 'on-target' as const,
+      hasNewMetrics: false,
+      targetAccuracyTrend: 0,
+      voiceStabilityTrend: 0,
+      overallScoreTrend: 0
+    }
+  }
+
+  // Calculate averages from sessions with new metrics
+  const avgTargetAccuracy = sessionsWithMetrics.reduce((sum, s) => sum + (s.avg_target_accuracy || 0), 0) / sessionsWithMetrics.length
+  const avgVoiceStability = sessionsWithMetrics.reduce((sum, s) => sum + (s.avg_voice_stability || 0), 0) / sessionsWithMetrics.length
+  const avgSemitoneDeviation = sessionsWithMetrics.reduce((sum, s) => sum + (s.avg_semitone_deviation || 0), 0) / sessionsWithMetrics.length
+
+  // Calculate predominant tendency
+  const tendencyCounts = { sharp: 0, flat: 0, 'on-target': 0 }
+  sessionsWithMetrics.forEach(s => {
+    const tendency = (s.pitch_tendency || 'on-target') as keyof typeof tendencyCounts
+    if (tendency in tendencyCounts) {
+      tendencyCounts[tendency]++
+    }
+  })
+  const predominantTendency = Object.entries(tendencyCounts).sort((a, b) => b[1] - a[1])[0][0] as 'sharp' | 'flat' | 'on-target'
+
+  // Calculate trends (compare first half vs second half of sessions)
+  let targetAccuracyTrend = 0
+  let voiceStabilityTrend = 0
+  let overallScoreTrend = 0
+
+  if (sessionsWithMetrics.length >= 4) {
+    const midpoint = Math.floor(sessionsWithMetrics.length / 2)
+    const recentHalf = sessionsWithMetrics.slice(0, midpoint) // Most recent
+    const olderHalf = sessionsWithMetrics.slice(midpoint) // Older
+
+    const recentAvgTarget = recentHalf.reduce((sum, s) => sum + (s.avg_target_accuracy || 0), 0) / recentHalf.length
+    const olderAvgTarget = olderHalf.reduce((sum, s) => sum + (s.avg_target_accuracy || 0), 0) / olderHalf.length
+    targetAccuracyTrend = recentAvgTarget - olderAvgTarget
+
+    const recentAvgStability = recentHalf.reduce((sum, s) => sum + (s.avg_voice_stability || 0), 0) / recentHalf.length
+    const olderAvgStability = olderHalf.reduce((sum, s) => sum + (s.avg_voice_stability || 0), 0) / olderHalf.length
+    voiceStabilityTrend = recentAvgStability - olderAvgStability
+
+    const recentAvgScore = recentHalf.reduce((sum, s) => sum + (s.overall_score || 0), 0) / recentHalf.length
+    const olderAvgScore = olderHalf.reduce((sum, s) => sum + (s.overall_score || 0), 0) / olderHalf.length
+    overallScoreTrend = recentAvgScore - olderAvgScore
+  }
+
+  return {
+    avgTargetAccuracy: Math.round(avgTargetAccuracy * 10) / 10,
+    avgVoiceStability: Math.round(avgVoiceStability * 10) / 10,
+    avgSemitoneDeviation: Math.round(avgSemitoneDeviation * 100) / 100,
+    predominantTendency,
+    hasNewMetrics: true,
+    targetAccuracyTrend: Math.round(targetAccuracyTrend * 10) / 10,
+    voiceStabilityTrend: Math.round(voiceStabilityTrend * 10) / 10,
+    overallScoreTrend: Math.round(overallScoreTrend * 10) / 10
+  }
+}
+
+interface RhythmSession {
+  session_date: string
+  on_beat_percent: number
+  bpm?: number
+  timing_consistency?: number | null
+  rhythm_tendency?: string | null
+  avg_timing_offset_ms?: number | null
+}
+
+function calculateRhythmStats(sessions: RhythmSession[]) {
   if (sessions.length === 0) {
     return {
       totalSessions: 0,
       avgOnBeatPercent: 0,
       avgConsistency: 0,
       bestOnBeatPercent: 0,
-      daysThisWeek: 0
+      daysThisWeek: 0,
+      predominantTendency: 'on-time' as const,
+      avgTimingOffset: 0
     }
   }
 
   const today = new Date()
   today.setHours(0, 0, 0, 0)
 
-  // Calculate days this week
+  // Calculate days this week (use Monday as week start for consistency with PostgreSQL)
   const weekStart = new Date(today)
-  weekStart.setDate(weekStart.getDate() - weekStart.getDay())
+  const dayOfWeek = weekStart.getDay()
+  const mondayOffset = dayOfWeek === 0 ? -6 : 1 - dayOfWeek
+  weekStart.setDate(weekStart.getDate() + mondayOffset)
+
   const daysThisWeek = sessions.filter(s => {
     const d = new Date(s.session_date)
     return d >= weekStart
@@ -407,11 +529,36 @@ function calculateRhythmStats(sessions: { session_date: string; on_beat_percent:
   const avgOnBeatPercent = onBeatPercentages.reduce((a, b) => a + b, 0) / onBeatPercentages.length
   const bestOnBeatPercent = Math.max(...onBeatPercentages)
 
+  // Calculate average consistency from sessions that have it
+  const sessionsWithConsistency = sessions.filter(s => s.timing_consistency != null)
+  const avgConsistency = sessionsWithConsistency.length > 0
+    ? sessionsWithConsistency.reduce((sum, s) => sum + (s.timing_consistency || 0), 0) / sessionsWithConsistency.length
+    : 0
+
+  // Calculate predominant tendency
+  const tendencyCounts = { early: 0, late: 0, 'on-time': 0 }
+  sessions.forEach(s => {
+    const tendency = (s.rhythm_tendency || 'on-time') as keyof typeof tendencyCounts
+    if (tendency in tendencyCounts) {
+      tendencyCounts[tendency]++
+    }
+  })
+  const predominantTendency = Object.entries(tendencyCounts)
+    .sort((a, b) => b[1] - a[1])[0][0] as 'early' | 'late' | 'on-time'
+
+  // Calculate average timing offset
+  const sessionsWithOffset = sessions.filter(s => s.avg_timing_offset_ms != null)
+  const avgTimingOffset = sessionsWithOffset.length > 0
+    ? sessionsWithOffset.reduce((sum, s) => sum + (s.avg_timing_offset_ms || 0), 0) / sessionsWithOffset.length
+    : 0
+
   return {
     totalSessions: sessions.length,
     avgOnBeatPercent: Math.round(avgOnBeatPercent * 10) / 10,
-    avgConsistency: 0, // Would need timing_consistency from sessions
+    avgConsistency: Math.round(avgConsistency * 10) / 10,
     bestOnBeatPercent: Math.round(bestOnBeatPercent * 10) / 10,
-    daysThisWeek
+    daysThisWeek,
+    predominantTendency,
+    avgTimingOffset: Math.round(avgTimingOffset * 10) / 10
   }
 }

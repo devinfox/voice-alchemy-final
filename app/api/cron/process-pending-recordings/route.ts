@@ -107,7 +107,7 @@ export async function GET(request: NextRequest) {
           .from('notes_archive')
           .select('content_html, content')
           .eq('recording_id', recording.id)
-          .single()
+          .maybeSingle()
 
         const { data: previousRecordings } = await admin
           .from('lesson_recordings')
