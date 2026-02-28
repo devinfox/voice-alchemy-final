@@ -4,6 +4,7 @@ import { Sidebar } from '@/components/sidebar'
 import { Header } from '@/components/header'
 import { MobileNav } from '@/components/mobile-nav'
 import { DashboardFloatingButtons } from '@/components/dashboard-floating-buttons'
+import { RecordingRetryInit } from '@/components/RecordingRetryInit'
 
 export default async function DashboardLayout({
   children,
@@ -58,6 +59,9 @@ export default async function DashboardLayout({
       {profile && (
         <DashboardFloatingButtons currentUserId={profile.id} />
       )}
+
+      {/* Initialize recording retry service */}
+      <RecordingRetryInit />
     </div>
   )
 }

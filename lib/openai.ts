@@ -361,18 +361,53 @@ export async function transcribeAudio(
   }
 }
 
+export interface DiarizedTranscriptInput {
+  text: string
+  utterances: {
+    speaker: 'TEACHER' | 'STUDENT'
+    text: string
+  }[]
+}
+
 /**
  * Generate a comprehensive lesson summary from transcript and notes
+ *
+ * @param transcript - Plain text transcript (fallback if no diarized transcript)
+ * @param studentNotes - Optional notes taken during the lesson
+ * @param previousLessons - Optional summaries from previous lessons for context
+ * @param diarizedTranscript - Optional speaker-labeled transcript from AssemblyAI
  */
 export async function generateLessonSummary(
   transcript: string,
   studentNotes?: string,
-  previousLessons?: string[]
+  previousLessons?: string[],
+  diarizedTranscript?: DiarizedTranscriptInput
 ): Promise<LessonSummary> {
   const openai = getOpenAIClient()
 
+  // Check if we have diarized transcript
+  const hasDiarization = diarizedTranscript && diarizedTranscript.utterances.length > 0
+
+  // Format transcript with speaker labels if available
+  let formattedTranscript: string
+  if (hasDiarization) {
+    formattedTranscript = diarizedTranscript.utterances
+      .map((u) => `[${u.speaker}]: ${u.text}`)
+      .join('\n\n')
+  } else {
+    formattedTranscript = transcript
+  }
+
   const systemPrompt = `You are an expert vocal coach assistant that summarizes voice lessons.
 You analyze lesson transcripts AND handwritten notes from both students and teachers to create helpful summaries.
+
+${hasDiarization ? `IMPORTANT: The transcript includes speaker labels ([TEACHER] and [STUDENT]) to help you:
+- Distinguish between teacher instructions and student responses
+- Identify when the teacher is giving feedback vs. when the student is asking questions
+- Track the back-and-forth dialogue and student engagement
+- Better attribute who said what in your summary
+
+Use these speaker labels to provide more accurate and nuanced summaries.` : ''}
 
 Your summaries should:
 - Highlight key techniques and concepts discussed
@@ -391,8 +426,8 @@ Be specific and actionable in your summaries.`
 
 IMPORTANT: Pay special attention to the HANDWRITTEN CLASS NOTES below - these contain real-time observations from both the student and teacher during the lesson. Extract and highlight the most important points from these notes.
 
-LESSON TRANSCRIPT (Audio recording):
-${transcript.slice(0, 12000)}
+LESSON TRANSCRIPT (Audio recording)${hasDiarization ? ' - Speaker labeled' : ''}:
+${formattedTranscript.slice(0, 12000)}
 
 ${studentNotes ? `HANDWRITTEN CLASS NOTES (Written by student and/or teacher during class):
 ${studentNotes.slice(0, 3000)}

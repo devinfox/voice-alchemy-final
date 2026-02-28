@@ -4,6 +4,7 @@ import React, { useEffect, useMemo, useRef, useState, useCallback } from 'react'
 import { createPortal } from 'react-dom'
 import { getSupabaseClient } from '@/lib/supabase'
 import VideoWebRTC, { VideoWebRTCHandle } from './VideoWebRTC'
+import VideoPlayer from './VideoPlayer'
 import { useEditor, EditorContent } from '@tiptap/react'
 import type { Editor } from '@tiptap/react'
 import StarterKit from '@tiptap/starter-kit'
@@ -11,7 +12,13 @@ import Placeholder from '@tiptap/extension-placeholder'
 import Collaboration from '@tiptap/extension-collaboration'
 import * as Y from 'yjs'
 import { YjsSupabaseProvider, AwarenessUser } from '@/lib/yjs-supabase-provider'
-import { Trash2, ChevronDown, ChevronRight, Video, PlayCircle, StopCircle, Bold, Italic, List, ListOrdered, Heading1, Heading2, Quote, Undo, Redo } from 'lucide-react'
+import { Trash2, ChevronDown, ChevronRight, Video, PlayCircle, StopCircle, Bold, Italic, List, ListOrdered, Heading1, Heading2, Quote, Undo, Redo, Film, RefreshCw, Upload, CheckCircle, AlertCircle, Loader2 } from 'lucide-react'
+import { saveRecordingBackup, deleteRecordingBackup } from '@/lib/recording-backup'
+import {
+  uploadRecordingWithRetry,
+  subscribeToProgress,
+  type UploadProgress,
+} from '@/lib/recording-retry-service'
 
 type Props = {
   studentId: string
@@ -479,46 +486,70 @@ const VideoSection = React.memo(function VideoSection({
   currentUser?: { id: string; name: string }
   videoRef: React.RefObject<VideoWebRTCHandle | null>
 }) {
-  // Handle recording upload
+  // Upload status state
+  const [uploadStatus, setUploadStatus] = useState<UploadProgress | null>(null)
+
+  // Subscribe to upload progress
+  useEffect(() => {
+    return subscribeToProgress((progress) => {
+      setUploadStatus(progress)
+      // Clear success status after 5 seconds
+      if (progress.status === 'success') {
+        setTimeout(() => setUploadStatus(null), 5000)
+      }
+    })
+  }, [])
+
+  // Handle recording upload with IndexedDB backup and retry
   const handleRecordingComplete = useCallback(async (blob: Blob) => {
-    console.log('[VideoSection] handleRecordingComplete called, blob:', blob ? `${blob.size} bytes` : 'null')
+    console.log(`\n${'='.repeat(50)}`)
+    console.log(`[Recording Upload] 🎬 RECORDING COMPLETE - Starting Upload`)
+    console.log(`[Recording Upload] Booking ID: ${bookingId}`)
+    console.log(`[Recording Upload] Blob size: ${blob ? `${(blob.size / 1024 / 1024).toFixed(2)} MB` : 'null'}`)
+    console.log(`[Recording Upload] Class started at: ${startedAt?.toISOString() || 'not set'}`)
+    console.log(`${'='.repeat(50)}\n`)
 
     if (!blob || blob.size === 0) {
-      console.error('[VideoSection] No recording data to upload - blob is empty or null')
+      console.error('[Recording Upload] ❌ No recording data - blob is empty or null')
       return
     }
 
-    console.log('[VideoSection] Uploading recording, size:', blob.size, 'bookingId:', bookingId)
+    const roomName = `lesson-${bookingId}`
+    const classStartedAtStr = startedAt?.toISOString() || null
 
+    // Step 1: Save to IndexedDB as backup before attempting upload
+    console.log('[Recording Upload] 💾 Step 1: Saving backup to IndexedDB...')
+    let backupId: string | null = null
     try {
-      const formData = new FormData()
-      formData.append('recording', blob, `lesson-${bookingId}-${Date.now()}.webm`)
-      formData.append('roomName', `lesson-${bookingId}`)
-      if (startedAt) {
-        formData.append('classStartedAt', startedAt.toISOString())
+      backupId = await saveRecordingBackup(bookingId, blob, roomName, classStartedAtStr)
+      console.log(`[Recording Upload] ✅ Backup saved successfully`)
+      console.log(`[Recording Upload]    Backup ID: ${backupId}`)
+    } catch (backupErr) {
+      console.warn('[Recording Upload] ⚠️ Failed to save backup (continuing with upload):', backupErr)
+    }
+
+    // Step 2: Upload with retry logic
+    console.log('[Recording Upload] 📤 Step 2: Starting upload with retry logic...')
+    try {
+      const success = await uploadRecordingWithRetry(
+        bookingId,
+        blob,
+        roomName,
+        classStartedAtStr,
+        backupId || `${bookingId}-${Date.now()}`
+      )
+
+      if (success) {
+        console.log(`\n[Recording Upload] ✅ SUCCESS - Recording uploaded!`)
+        console.log(`[Recording Upload] The server will now process AI analysis in the background.`)
+        console.log(`[Recording Upload] Check server logs for: [Recording AI] messages\n`)
+      } else {
+        console.error(`\n[Recording Upload] ❌ FAILED - Recording upload failed after all retries`)
+        console.error(`[Recording Upload] Backup remains in IndexedDB for future retry`)
+        console.error(`[Recording Upload] Backup ID: ${backupId}\n`)
       }
-
-      console.log('[VideoSection] Sending POST to /api/lessons/' + bookingId + '/recordings')
-      const response = await fetch(`/api/lessons/${bookingId}/recordings`, {
-        method: 'POST',
-        body: formData,
-      })
-
-      const responseText = await response.text()
-      console.log('[VideoSection] Recording upload response status:', response.status, 'body:', responseText)
-
-      if (!response.ok) {
-        console.error('[VideoSection] Recording upload failed:', response.status, responseText)
-        // Show user-visible error for upload failures
-        alert(`Recording upload failed: ${responseText}`)
-        return
-      }
-
-      const result = JSON.parse(responseText)
-      console.log('[VideoSection] Recording uploaded successfully:', result)
     } catch (err) {
-      console.error('[VideoSection] Error uploading recording:', err)
-      alert(`Recording upload error: ${err instanceof Error ? err.message : 'Unknown error'}`)
+      console.error('[Recording Upload] ❌ Error during recording upload:', err)
     }
   }, [bookingId, startedAt])
 
@@ -618,12 +649,43 @@ const VideoSection = React.memo(function VideoSection({
           <Video className="w-4 h-4" />
           <span className="text-sm font-medium">Video Room</span>
         </div>
-        {active && (
-          <span className="flex items-center gap-1 text-xs text-green-400">
-            <span className="w-2 h-2 bg-green-500 rounded-full animate-pulse"></span>
-            Live
-          </span>
-        )}
+        <div className="flex items-center gap-3">
+          {/* Upload Status Indicator */}
+          {uploadStatus && (
+            <div className="flex items-center gap-2 text-xs">
+              {uploadStatus.status === 'uploading' && (
+                <>
+                  <Loader2 className="w-3 h-3 animate-spin text-[#CEB466]" />
+                  <span className="text-[#CEB466]">Uploading...</span>
+                </>
+              )}
+              {uploadStatus.status === 'retrying' && (
+                <>
+                  <RefreshCw className="w-3 h-3 animate-spin text-yellow-400" />
+                  <span className="text-yellow-400">Retry {uploadStatus.attempts}/{uploadStatus.maxRetries}</span>
+                </>
+              )}
+              {uploadStatus.status === 'success' && (
+                <>
+                  <CheckCircle className="w-3 h-3 text-green-400" />
+                  <span className="text-green-400">Uploaded!</span>
+                </>
+              )}
+              {uploadStatus.status === 'error' && (
+                <>
+                  <AlertCircle className="w-3 h-3 text-red-400" />
+                  <span className="text-red-400">Upload failed</span>
+                </>
+              )}
+            </div>
+          )}
+          {active && (
+            <span className="flex items-center gap-1 text-xs text-green-400">
+              <span className="w-2 h-2 bg-green-500 rounded-full animate-pulse"></span>
+              Live
+            </span>
+          )}
+        </div>
       </div>
       <div ref={videoWrapperRef} className="relative aspect-video" style={{ background: 'black' }}>
         {/* Video rendered via portal to escape backdrop-blur containing block */}
@@ -775,11 +837,15 @@ function ArchivedNoteAccordion({ id, bookingId, title, subtitle, isAdmin, onDele
   const [editing, setEditing] = useState(false)
   const [saving, setSaving] = useState<'idle' | 'saving' | 'saved' | 'error'>('idle')
   const [loaded, setLoaded] = useState(false)
-  const [activeTab, setActiveTab] = useState<'notes' | 'ai'>('notes')
+  const [activeTab, setActiveTab] = useState<'notes' | 'ai' | 'recording'>('notes')
   const [aiSummary, setAiSummary] = useState<AISummary | null>(null)
   const [aiStatus, setAiStatus] = useState<string | null>(null)
   const [recordingId, setRecordingId] = useState<string | null>(null)
   const [reprocessing, setReprocessing] = useState(false)
+  // Recording playback state
+  const [recordingUrl, setRecordingUrl] = useState<string | null>(null)
+  const [recordingLoading, setRecordingLoading] = useState(false)
+  const [hasRecording, setHasRecording] = useState(false)
 
   const refreshAiStatus = useCallback(async (targetRecordingId: string) => {
     try {
@@ -828,6 +894,33 @@ function ArchivedNoteAccordion({ id, bookingId, title, subtitle, isAdmin, onDele
     }
   }, [bookingId, refreshAiStatus])
 
+  // Fetch recording URL when recording tab is selected
+  const fetchRecordingUrl = useCallback(async () => {
+    if (!recordingId) return
+    setRecordingLoading(true)
+    try {
+      const res = await fetch(`/api/lessons/${bookingId}/recordings`)
+      if (res.ok) {
+        const { recordings } = await res.json()
+        const recording = recordings?.find((r: { id: string }) => r.id === recordingId)
+        if (recording?.storage_url) {
+          setRecordingUrl(recording.storage_url)
+        }
+      }
+    } catch (err) {
+      console.warn('[ArchivedNoteAccordion] Failed to fetch recording URL:', err)
+    } finally {
+      setRecordingLoading(false)
+    }
+  }, [bookingId, recordingId])
+
+  // Fetch recording URL when switching to recording tab
+  useEffect(() => {
+    if (activeTab === 'recording' && recordingId && !recordingUrl) {
+      fetchRecordingUrl()
+    }
+  }, [activeTab, recordingId, recordingUrl, fetchRecordingUrl])
+
   useEffect(() => {
     if (!isOpen || loaded) return
     let on = true
@@ -840,12 +933,18 @@ function ArchivedNoteAccordion({ id, bookingId, title, subtitle, isAdmin, onDele
       setText(plain)
       setOriginal(plain)
 
+      // Check if there's a recording associated
+      if (data?.recording_id) {
+        setHasRecording(true)
+      }
+
       // Set AI summary if available
       if (data?.ai_summary) {
         setAiSummary(data.ai_summary as AISummary)
         setAiStatus('completed')
       } else if (data?.recording_id) {
         setRecordingId(data.recording_id)
+        setHasRecording(true)
         // Check recording AI processing status via API to avoid RLS issues
         try {
           const res = await fetch(`/api/lessons/${bookingId}/process-recording?recordingId=${data.recording_id}`)
@@ -895,6 +994,7 @@ function ArchivedNoteAccordion({ id, bookingId, title, subtitle, isAdmin, onDele
               // Accept nearest match only if it's reasonably close to this class.
               if (best && best.deltaMs <= 3 * 60 * 60 * 1000) {
                 setRecordingId(best.recording.id)
+                setHasRecording(true)
                 if (best.recording.ai_summary) {
                   setAiSummary(best.recording.ai_summary as AISummary)
                   setAiStatus('completed')
@@ -971,6 +1071,15 @@ function ArchivedNoteAccordion({ id, bookingId, title, subtitle, isAdmin, onDele
             >
               AI Summary {aiStatus === 'processing' && '⏳'}
             </button>
+            {(hasRecording || recordingId) && (
+              <button
+                onClick={() => setActiveTab('recording')}
+                className={`flex-1 px-4 py-2 text-sm font-medium transition-colors flex items-center justify-center gap-1.5 ${activeTab === 'recording' ? 'text-[#CEB466] border-b-2 border-[#CEB466]' : 'text-gray-400 hover:text-white'}`}
+              >
+                <Film className="w-3.5 h-3.5" />
+                Recording
+              </button>
+            )}
           </div>
 
           <div className="p-3">
@@ -998,7 +1107,7 @@ function ArchivedNoteAccordion({ id, bookingId, title, subtitle, isAdmin, onDele
                   </div>
                 </>
               )
-            ) : (
+            ) : activeTab === 'ai' ? (
               /* AI Summary Tab */
               <div className="space-y-4">
                 {aiStatus === 'processing' && (
@@ -1125,7 +1234,46 @@ function ArchivedNoteAccordion({ id, bookingId, title, subtitle, isAdmin, onDele
                   <p className="text-sm text-gray-500">No recording available for this lesson.</p>
                 )}
               </div>
-            )}
+            ) : activeTab === 'recording' ? (
+              /* Recording Tab */
+              <div className="space-y-4">
+                {recordingLoading ? (
+                  <div className="flex items-center justify-center py-12">
+                    <div className="w-8 h-8 border-2 border-[#CEB466] border-t-transparent rounded-full animate-spin" />
+                  </div>
+                ) : recordingUrl ? (
+                  <div className="space-y-3">
+                    <VideoPlayer
+                      src={recordingUrl}
+                      onUrlExpired={fetchRecordingUrl}
+                      className="aspect-video rounded-lg"
+                    />
+                    <div className="flex justify-end">
+                      <button
+                        onClick={fetchRecordingUrl}
+                        className="flex items-center gap-1.5 px-3 py-1.5 text-xs text-gray-400 hover:text-white transition-colors"
+                      >
+                        <RefreshCw className="w-3 h-3" />
+                        Refresh URL
+                      </button>
+                    </div>
+                  </div>
+                ) : (
+                  <div className="text-center py-8 text-gray-500">
+                    <Film className="w-12 h-12 mx-auto mb-3 opacity-50" />
+                    <p className="text-sm">Recording not available</p>
+                    {recordingId && (
+                      <button
+                        onClick={fetchRecordingUrl}
+                        className="mt-3 px-4 py-2 bg-[#CEB466]/20 text-[#CEB466] rounded-lg text-sm hover:bg-[#CEB466]/30 transition-colors"
+                      >
+                        Try Loading Recording
+                      </button>
+                    )}
+                  </div>
+                )}
+              </div>
+            ) : null}
           </div>
         </div>
       )}

@@ -896,10 +896,22 @@ const VideoWebRTC = forwardRef<VideoWebRTCHandle, VideoWebRTCProps>(function Vid
   // Start recording
   const startRecordingInternal = useCallback(() => {
     try {
-      console.log('[VideoWebRTC] startRecordingInternal called, localStream exists:', !!localStreamRef.current)
+      console.log(`\n${'='.repeat(50)}`)
+      console.log('[VideoWebRTC] 🎬 startRecordingInternal called')
+      console.log('[VideoWebRTC] localStream exists:', !!localStreamRef.current)
+      console.log('[VideoWebRTC] Current mediaRecorder state:', mediaRecorderRef.current?.state || 'none')
+      console.log('[VideoWebRTC] Current chunks:', recordedChunksRef.current.length)
+
+      // CRITICAL: Don't start a new recording if one is already in progress!
+      if (mediaRecorderRef.current && mediaRecorderRef.current.state === 'recording') {
+        console.log('[VideoWebRTC] ⚠️ Recording already in progress - skipping duplicate start')
+        console.log(`${'='.repeat(50)}\n`)
+        return
+      }
+
       const stream = createCombinedStream()
       if (!stream) {
-        console.error('[VideoWebRTC] createCombinedStream returned null - cannot start recording')
+        console.error('[VideoWebRTC] ❌ createCombinedStream returned null - cannot start recording')
         return
       }
       console.log('[VideoWebRTC] Combined stream created with', stream.getTracks().length, 'tracks')
@@ -907,6 +919,7 @@ const VideoWebRTC = forwardRef<VideoWebRTCHandle, VideoWebRTCProps>(function Vid
       const options = { mimeType: 'video/webm;codecs=vp9,opus' }
       if (!MediaRecorder.isTypeSupported(options.mimeType)) {
         options.mimeType = 'video/webm'
+        console.log('[VideoWebRTC] Using fallback mimeType: video/webm')
       }
 
       const recorder = new MediaRecorder(stream, options)
@@ -915,16 +928,20 @@ const VideoWebRTC = forwardRef<VideoWebRTCHandle, VideoWebRTCProps>(function Vid
       recorder.ondataavailable = (event) => {
         if (event.data.size > 0) {
           recordedChunksRef.current.push(event.data)
-          // Log every 10 chunks to confirm data is being captured
-          if (recordedChunksRef.current.length % 10 === 0) {
-            const totalSize = recordedChunksRef.current.reduce((sum, chunk) => sum + chunk.size, 0)
-            console.log(`[VideoWebRTC] Recording progress: ${recordedChunksRef.current.length} chunks, ${(totalSize / 1024 / 1024).toFixed(2)} MB`)
+          // Log progress to confirm data is being captured
+          const totalSize = recordedChunksRef.current.reduce((sum, chunk) => sum + chunk.size, 0)
+          const chunkCount = recordedChunksRef.current.length
+          // Log every 10 chunks or first 3 chunks
+          if (chunkCount <= 3 || chunkCount % 10 === 0) {
+            console.log(`[VideoWebRTC] 📹 Recording chunk #${chunkCount}: +${(event.data.size / 1024).toFixed(1)}KB, total: ${(totalSize / 1024 / 1024).toFixed(2)} MB`)
           }
         }
       }
 
       recorder.onstop = () => {
+        console.log('[VideoWebRTC] recorder.onstop fired (from startRecordingInternal handler)')
         const blob = new Blob(recordedChunksRef.current, { type: 'video/webm' })
+        console.log('[VideoWebRTC] Created blob:', blob.size, 'bytes from', recordedChunksRef.current.length, 'chunks')
         recordedChunksRef.current = []
         onRecordingComplete?.(blob)
 
@@ -933,11 +950,17 @@ const VideoWebRTC = forwardRef<VideoWebRTCHandle, VideoWebRTCProps>(function Vid
         }
       }
 
-      recorder.start(1000)
+      recorder.onerror = (event) => {
+        console.error('[VideoWebRTC] ❌ MediaRecorder error:', event)
+      }
+
+      recorder.start(1000) // Capture in 1-second intervals
       mediaRecorderRef.current = recorder
       recordingStartTimeRef.current = Date.now()
       setIsRecording(true)
-      console.log('[VideoWebRTC] Recording started')
+      console.log('[VideoWebRTC] ✅ Recording started successfully')
+      console.log('[VideoWebRTC] Chunk interval: 1000ms')
+      console.log(`${'='.repeat(50)}\n`)
 
       // Set up 2-hour auto-stop timer
       if (recordingTimeoutRef.current) {
@@ -951,44 +974,65 @@ const VideoWebRTC = forwardRef<VideoWebRTCHandle, VideoWebRTCProps>(function Vid
 
       signalingRef.current?.updateRecordingStatus(true)
     } catch (err) {
-      console.error('[VideoWebRTC] Error starting recording:', err)
+      console.error('[VideoWebRTC] ❌ Error starting recording:', err)
     }
   }, [createCombinedStream, onRecordingComplete, autoStopRecording])
 
   // Stop recording and return the blob (without disconnecting)
   const stopRecordingAndGetBlob = useCallback(async (): Promise<Blob | null> => {
+    console.log(`\n${'='.repeat(50)}`)
+    console.log('[VideoWebRTC] 🛑 stopRecordingAndGetBlob called')
+
     // Clear the 2-hour auto-stop timer
     if (recordingTimeoutRef.current) {
       clearTimeout(recordingTimeoutRef.current)
       recordingTimeoutRef.current = null
+      console.log('[VideoWebRTC] Cleared auto-stop timer')
     }
+
+    // Calculate recording duration
+    const recordingDuration = recordingStartTimeRef.current
+      ? ((Date.now() - recordingStartTimeRef.current) / 1000).toFixed(1)
+      : 'unknown'
+    console.log('[VideoWebRTC] Recording duration:', recordingDuration, 'seconds')
     recordingStartTimeRef.current = null
 
     if (!mediaRecorderRef.current || mediaRecorderRef.current.state === 'inactive') {
-      console.log('[VideoWebRTC] No active recording to stop - mediaRecorder:', mediaRecorderRef.current ? `state=${mediaRecorderRef.current.state}` : 'null')
+      console.log('[VideoWebRTC] ⚠️ No active recording to stop')
+      console.log('[VideoWebRTC] mediaRecorder:', mediaRecorderRef.current ? `state=${mediaRecorderRef.current.state}` : 'null')
+      console.log(`${'='.repeat(50)}\n`)
       return null
     }
 
-    console.log('[VideoWebRTC] Stopping recording... chunks collected:', recordedChunksRef.current.length)
+    const chunksBeforeStop = recordedChunksRef.current.length
+    const sizeBeforeStop = recordedChunksRef.current.reduce((sum, chunk) => sum + chunk.size, 0)
+    console.log('[VideoWebRTC] Chunks collected:', chunksBeforeStop)
+    console.log('[VideoWebRTC] Total size before stop:', (sizeBeforeStop / 1024 / 1024).toFixed(2), 'MB')
 
     // Create a promise that resolves when recording stops, with timeout
     const recordingPromise = new Promise<Blob | null>((resolve) => {
       const recorder = mediaRecorderRef.current!
       const timeoutId = setTimeout(() => {
-        console.warn('[VideoWebRTC] Recording stop timed out after 10s')
+        console.warn('[VideoWebRTC] ⚠️ Recording stop timed out after 10s')
+        console.log('[VideoWebRTC] Chunks at timeout:', recordedChunksRef.current.length)
         resolve(null)
       }, 10000)
 
       recorder.onstop = () => {
         clearTimeout(timeoutId)
+        const finalChunks = recordedChunksRef.current.length
         const blob = new Blob(recordedChunksRef.current, { type: 'video/webm' })
-        console.log('[VideoWebRTC] Recording stopped, blob size:', blob.size)
+        console.log('[VideoWebRTC] ✅ Recording stopped successfully')
+        console.log('[VideoWebRTC] Final chunk count:', finalChunks)
+        console.log('[VideoWebRTC] Final blob size:', (blob.size / 1024 / 1024).toFixed(2), 'MB')
         recordedChunksRef.current = []
         setIsRecording(false)
         signalingRef.current?.updateRecordingStatus(false)
+        console.log(`${'='.repeat(50)}\n`)
         resolve(blob)
       }
 
+      console.log('[VideoWebRTC] Calling recorder.stop()...')
       recorder.stop()
     })
 
@@ -1345,16 +1389,23 @@ const VideoWebRTC = forwardRef<VideoWebRTCHandle, VideoWebRTCProps>(function Vid
         }, 3000)
 
         // Auto-record immediately if host and autoRecord is enabled
-        console.log('[VideoWebRTC] Checking auto-record conditions:', {
-          isHost: isHostRef.current,
-          autoRecord,
-          shouldAutoRecord: isHostRef.current && autoRecord
-        })
+        console.log(`\n${'*'.repeat(50)}`)
+        console.log('[VideoWebRTC] 🎯 AUTO-RECORD CHECK')
+        console.log('[VideoWebRTC] isHost:', isHostRef.current)
+        console.log('[VideoWebRTC] autoRecord prop:', autoRecord)
+        console.log('[VideoWebRTC] Should auto-record:', isHostRef.current && autoRecord)
+        console.log(`${'*'.repeat(50)}\n`)
+
         if (isHostRef.current && autoRecord) {
-          console.log('[VideoWebRTC] Auto-starting recording for host')
-          startRecordingInternal()
+          console.log('[VideoWebRTC] ▶️ Auto-starting recording for host...')
+          // Small delay to ensure streams are fully ready
+          setTimeout(() => {
+            if (mountedRef.current) {
+              startRecordingInternal()
+            }
+          }, 500)
         } else {
-          console.log('[VideoWebRTC] Skipping auto-record - conditions not met')
+          console.log('[VideoWebRTC] ⏭️ Skipping auto-record - conditions not met')
         }
       } catch (err) {
         console.error('[VideoWebRTC] Error initializing:', err)
