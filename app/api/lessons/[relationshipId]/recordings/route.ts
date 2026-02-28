@@ -154,50 +154,67 @@ export async function POST(
       )
     }
 
-    // FIX #2 & #5: Improved recording-notes linking with atomic update and tighter time window
+    // Link recording to notes using booking_id (exact match) instead of fuzzy time-based matching
     // This handles race conditions where class is ended before upload completes.
     try {
-      const { data: unlinkedNotes } = await supabaseAdmin
+      // First try exact match by booking_id (preferred - no ambiguity)
+      const { data: bookingNote } = await supabaseAdmin
         .from('notes_archive')
-        .select('id, class_started_at, class_ended_at, recording_id')
-        .eq('student_id', booking.student_id)
+        .select('id')
+        .eq('booking_id', bookingId)
         .is('recording_id', null)
         .order('class_ended_at', { ascending: false })
-        .limit(10)
+        .limit(1)
+        .maybeSingle()
 
-      const recordingStartMs = new Date(classStartedAt || recording.started_at || new Date().toISOString()).getTime()
-
-      const bestNote = (unlinkedNotes || [])
-        .map((note) => {
-          const noteStartMs = note.class_started_at ? new Date(note.class_started_at).getTime() : null
-          const noteEndMs = note.class_ended_at ? new Date(note.class_ended_at).getTime() : null
-          const deltaStart = noteStartMs ? Math.abs(noteStartMs - recordingStartMs) : Number.POSITIVE_INFINITY
-          const deltaEnd = noteEndMs ? Math.abs(noteEndMs - recordingStartMs) : Number.POSITIVE_INFINITY
-          return {
-            id: note.id,
-            deltaMs: Math.min(deltaStart, deltaEnd),
-          }
-        })
-        .sort((a, b) => a.deltaMs - b.deltaMs)[0]
-
-      // FIX #5: Tightened from 3 hours to 1 hour for more precise matching
-      const ONE_HOUR_MS = 60 * 60 * 1000
-      if (bestNote && bestNote.deltaMs <= ONE_HOUR_MS) {
-        // FIX #2: Atomic update - only update if recording_id is still NULL (prevents race condition)
+      if (bookingNote) {
+        // Atomic update - only update if recording_id is still NULL (prevents race condition)
         const { data: updatedNote, error: linkError } = await supabaseAdmin
           .from('notes_archive')
           .update({ recording_id: recording.id })
-          .eq('id', bestNote.id)
+          .eq('id', bookingNote.id)
           .is('recording_id', null)
           .select('id')
           .maybeSingle()
 
         if (updatedNote) {
-          console.log(`[Recording Upload] Linked recording ${recording.id} to notes_archive ${bestNote.id}`)
+          console.log(`[Recording Upload] Linked recording ${recording.id} to notes_archive ${bookingNote.id} via booking_id`)
         } else if (linkError) {
           console.warn(`[Recording Upload] Failed to link recording:`, linkError.message)
         } else {
-          console.log(`[Recording Upload] Note ${bestNote.id} was already linked by another process`)
+          console.log(`[Recording Upload] Note ${bookingNote.id} was already linked by another process`)
+        }
+      } else {
+        // Fallback: try time-based matching for older notes without booking_id
+        const { data: unlinkedNotes } = await supabaseAdmin
+          .from('notes_archive')
+          .select('id, class_started_at, class_ended_at')
+          .eq('student_id', booking.student_id)
+          .is('recording_id', null)
+          .is('booking_id', null)  // Only match notes without booking_id (legacy)
+          .order('class_ended_at', { ascending: false })
+          .limit(5)
+
+        const recordingStartMs = new Date(classStartedAt || recording.started_at || new Date().toISOString()).getTime()
+
+        const bestNote = (unlinkedNotes || [])
+          .map((note) => {
+            const noteStartMs = note.class_started_at ? new Date(note.class_started_at).getTime() : null
+            const noteEndMs = note.class_ended_at ? new Date(note.class_ended_at).getTime() : null
+            const deltaStart = noteStartMs ? Math.abs(noteStartMs - recordingStartMs) : Number.POSITIVE_INFINITY
+            const deltaEnd = noteEndMs ? Math.abs(noteEndMs - recordingStartMs) : Number.POSITIVE_INFINITY
+            return { id: note.id, deltaMs: Math.min(deltaStart, deltaEnd) }
+          })
+          .sort((a, b) => a.deltaMs - b.deltaMs)[0]
+
+        const ONE_HOUR_MS = 60 * 60 * 1000
+        if (bestNote && bestNote.deltaMs <= ONE_HOUR_MS) {
+          await supabaseAdmin
+            .from('notes_archive')
+            .update({ recording_id: recording.id, booking_id: bookingId })  // Also set booking_id for future
+            .eq('id', bestNote.id)
+            .is('recording_id', null)
+          console.log(`[Recording Upload] Linked recording via time-based fallback to note ${bestNote.id}`)
         }
       }
     } catch (linkError) {

@@ -79,6 +79,7 @@ export async function POST(
       .from('notes_archive')
       .insert({
         student_id: booking.student_id,
+        booking_id: bookingId,  // Link to specific class/booking
         content: plainText,
         content_html: contentHtml,
         class_started_at: classStartedAt,

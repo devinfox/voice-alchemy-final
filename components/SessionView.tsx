@@ -157,7 +157,8 @@ export default function SessionView({ studentId, bookingId, isAdmin = false, cur
     ;(async () => {
       const [{ data: s }, { data: a }] = await Promise.all([
         supabase.from('class_sessions').select('is_active, started_at').eq('student_id', studentId).maybeSingle(),
-        supabase.from('notes_archive').select('id, class_started_at, class_ended_at').eq('student_id', studentId).order('class_started_at', { ascending: false }),
+        // Filter by booking_id to only show notes from THIS class, not all student notes
+        supabase.from('notes_archive').select('id, class_started_at, class_ended_at').eq('booking_id', bookingId).order('class_started_at', { ascending: false }),
       ])
       if (!mounted) return
       setActive(!!s?.is_active)
@@ -165,7 +166,7 @@ export default function SessionView({ studentId, bookingId, isAdmin = false, cur
       setArchive(a ?? [])
     })()
     return () => { mounted = false }
-  }, [studentId, supabase])
+  }, [studentId, bookingId, supabase])
 
   // Realtime: class_sessions changes
   useEffect(() => {
@@ -208,7 +209,8 @@ export default function SessionView({ studentId, bookingId, isAdmin = false, cur
 
   // Realtime: notes_archive changes (so student sees archive instantly when teacher ends class)
   useEffect(() => {
-    const channel = supabase.channel(`notes_archive:${studentId}`).on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'notes_archive', filter: `student_id=eq.${studentId}` }, (payload) => {
+    // Filter by booking_id to only receive notifications for THIS class
+    const channel = supabase.channel(`notes_archive:${bookingId}`).on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'notes_archive', filter: `booking_id=eq.${bookingId}` }, (payload) => {
       const row = payload.new as { id: string; class_started_at: string; class_ended_at: string }
       setArchive(prev => {
         if (prev.some(a => a.id === row.id)) return prev
@@ -216,7 +218,7 @@ export default function SessionView({ studentId, bookingId, isAdmin = false, cur
       })
     }).subscribe()
     return () => { supabase.removeChannel(channel) }
-  }, [studentId, supabase])
+  }, [bookingId, supabase])
 
   // Yjs Initialization
   useEffect(() => {
