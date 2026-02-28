@@ -41,15 +41,24 @@ export async function POST(
       )
     }
 
-    // Verify booking exists and user has access
+    // FIX #3: Verify booking exists, is confirmed, and user has access
     const { data: booking, error: bookingError } = await supabase
       .from('bookings')
-      .select('id, student_id, instructor_id')
+      .select('id, student_id, instructor_id, status')
       .eq('id', bookingId)
       .single()
 
     if (bookingError || !booking) {
       return NextResponse.json({ error: 'Booking not found' }, { status: 404 })
+    }
+
+    // Only allow recording upload for confirmed bookings
+    if (booking.status !== 'confirmed') {
+      console.warn(`[Recording Upload] Rejected - booking ${bookingId} status is "${booking.status}", not "confirmed"`)
+      return NextResponse.json(
+        { error: 'Recording upload only allowed for confirmed bookings' },
+        { status: 400 }
+      )
     }
 
     // Check if user is the instructor (host)
@@ -145,7 +154,7 @@ export async function POST(
       )
     }
 
-    // Best-effort: link this recording to the most recent unlinked archived note for this student.
+    // FIX #2 & #5: Improved recording-notes linking with atomic update and tighter time window
     // This handles race conditions where class is ended before upload completes.
     try {
       const { data: unlinkedNotes } = await supabaseAdmin
@@ -171,12 +180,25 @@ export async function POST(
         })
         .sort((a, b) => a.deltaMs - b.deltaMs)[0]
 
-      // Only auto-link when times are reasonably close (3 hours).
-      if (bestNote && bestNote.deltaMs <= 3 * 60 * 60 * 1000) {
-        await supabaseAdmin
+      // FIX #5: Tightened from 3 hours to 1 hour for more precise matching
+      const ONE_HOUR_MS = 60 * 60 * 1000
+      if (bestNote && bestNote.deltaMs <= ONE_HOUR_MS) {
+        // FIX #2: Atomic update - only update if recording_id is still NULL (prevents race condition)
+        const { data: updatedNote, error: linkError } = await supabaseAdmin
           .from('notes_archive')
           .update({ recording_id: recording.id })
           .eq('id', bestNote.id)
+          .is('recording_id', null)
+          .select('id')
+          .maybeSingle()
+
+        if (updatedNote) {
+          console.log(`[Recording Upload] Linked recording ${recording.id} to notes_archive ${bestNote.id}`)
+        } else if (linkError) {
+          console.warn(`[Recording Upload] Failed to link recording:`, linkError.message)
+        } else {
+          console.log(`[Recording Upload] Note ${bestNote.id} was already linked by another process`)
+        }
       }
     } catch (linkError) {
       console.warn('[Recording Upload] Failed to auto-link recording to notes_archive:', linkError)
@@ -188,11 +210,56 @@ export async function POST(
       try {
         console.log(`[Recording Upload] Starting AI processing for recording ${recording.id}`)
 
-        // Update status to processing
-        await supabaseAdmin
+        // FIX #1: Idempotency check - skip if already processing or completed
+        const { data: currentRecord } = await supabaseAdmin
+          .from('lesson_recordings')
+          .select('ai_processing_status, ai_processed_at')
+          .eq('id', recording.id)
+          .single()
+
+        if (currentRecord?.ai_processing_status === 'completed') {
+          console.log(`[Recording AI] Skipping - already completed at ${currentRecord.ai_processed_at}`)
+          return
+        }
+
+        if (currentRecord?.ai_processing_status === 'processing') {
+          console.log(`[Recording AI] Skipping - already being processed by another worker`)
+          return
+        }
+
+        // FIX #4: Check for and cleanup stuck recordings (processing > 10 minutes)
+        const TEN_MINUTES_AGO = new Date(Date.now() - 10 * 60 * 1000).toISOString()
+        const { data: stuckRecordings } = await supabaseAdmin
+          .from('lesson_recordings')
+          .select('id')
+          .eq('ai_processing_status', 'processing')
+          .lt('updated_at', TEN_MINUTES_AGO)
+          .limit(10)
+
+        if (stuckRecordings && stuckRecordings.length > 0) {
+          console.log(`[Recording AI] Found ${stuckRecordings.length} stuck recording(s) - marking as failed`)
+          await supabaseAdmin
+            .from('lesson_recordings')
+            .update({
+              ai_processing_status: 'failed',
+              ai_processing_error: 'Processing timeout after 10 minutes',
+            })
+            .in('id', stuckRecordings.map(r => r.id))
+        }
+
+        // Update status to processing (with atomic check to prevent race condition)
+        const { data: updatedRecord } = await supabaseAdmin
           .from('lesson_recordings')
           .update({ ai_processing_status: 'processing' })
           .eq('id', recording.id)
+          .eq('ai_processing_status', 'pending')
+          .select('id')
+          .maybeSingle()
+
+        if (!updatedRecord) {
+          console.log(`[Recording AI] Skipping - status was changed by another process`)
+          return
+        }
 
         // Download the recording
         const { data: fileData, error: downloadError } = await supabaseAdmin.storage
