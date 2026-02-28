@@ -2,12 +2,6 @@ import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase-server'
 import { createClient as createAdminClient } from '@supabase/supabase-js'
 import { transcribeAudio, generateLessonSummary } from '@/lib/openai'
-import {
-  transcribeWithDiarization,
-  formatDiarizedTranscript,
-  isAssemblyAIAvailable,
-  type DiarizedTranscript,
-} from '@/lib/assemblyai'
 
 function getSchemaHint(errorMessage?: string) {
   if (!errorMessage) return null
@@ -47,24 +41,15 @@ export async function POST(
       )
     }
 
-    // FIX #3: Verify booking exists, is confirmed, and user has access
+    // Verify booking exists and user has access
     const { data: booking, error: bookingError } = await supabase
       .from('bookings')
-      .select('id, student_id, instructor_id, status')
+      .select('id, student_id, instructor_id')
       .eq('id', bookingId)
       .single()
 
     if (bookingError || !booking) {
       return NextResponse.json({ error: 'Booking not found' }, { status: 404 })
-    }
-
-    // Only allow recording upload for confirmed bookings
-    if (booking.status !== 'confirmed') {
-      console.warn(`[Recording Upload] Rejected - booking ${bookingId} status is "${booking.status}", not "confirmed"`)
-      return NextResponse.json(
-        { error: 'Recording upload only allowed for confirmed bookings' },
-        { status: 400 }
-      )
     }
 
     // Check if user is the instructor (host)
@@ -160,7 +145,7 @@ export async function POST(
       )
     }
 
-    // FIX #2 & #5: Improved recording-notes linking with atomic update and tighter time window
+    // Best-effort: link this recording to the most recent unlinked archived note for this student.
     // This handles race conditions where class is ended before upload completes.
     try {
       const { data: unlinkedNotes } = await supabaseAdmin
@@ -186,27 +171,12 @@ export async function POST(
         })
         .sort((a, b) => a.deltaMs - b.deltaMs)[0]
 
-      // FIX #5: Tightened from 3 hours to 1 hour for more precise matching
-      const ONE_HOUR_MS = 60 * 60 * 1000
-      if (bestNote && bestNote.deltaMs <= ONE_HOUR_MS) {
-        // FIX #2: Atomic update - only update if recording_id is still NULL (prevents race condition)
-        const { data: updatedNote, error: linkError } = await supabaseAdmin
+      // Only auto-link when times are reasonably close (3 hours).
+      if (bestNote && bestNote.deltaMs <= 3 * 60 * 60 * 1000) {
+        await supabaseAdmin
           .from('notes_archive')
           .update({ recording_id: recording.id })
           .eq('id', bestNote.id)
-          .is('recording_id', null)  // Only update if not already linked (atomic check)
-          .select('id')
-          .maybeSingle()
-
-        if (updatedNote) {
-          console.log(`[Recording Upload] ✅ Linked recording ${recording.id} to notes_archive ${bestNote.id} (delta: ${Math.round(bestNote.deltaMs / 1000)}s)`)
-        } else if (linkError) {
-          console.warn(`[Recording Upload] ⚠️ Failed to link recording:`, linkError.message)
-        } else {
-          console.log(`[Recording Upload] ℹ️ Note ${bestNote.id} was already linked by another process`)
-        }
-      } else if (bestNote) {
-        console.log(`[Recording Upload] ℹ️ Closest note too far away (delta: ${Math.round(bestNote.deltaMs / 1000 / 60)} min, limit: 60 min)`)
       }
     } catch (linkError) {
       console.warn('[Recording Upload] Failed to auto-link recording to notes_archive:', linkError)
@@ -215,70 +185,16 @@ export async function POST(
     // Process AI analysis directly (more reliable than fire-and-forget HTTP calls)
     // This runs in the background using setImmediate/setTimeout pattern
     const processAIAnalysis = async () => {
-      const startTime = Date.now()
       try {
-        console.log(`\n${'='.repeat(60)}`)
-        console.log(`[Recording AI] ▶️ STARTING AI PROCESSING`)
-        console.log(`[Recording AI] Recording ID: ${recording.id}`)
-        console.log(`[Recording AI] Booking ID: ${bookingId}`)
-        console.log(`[Recording AI] Storage Path: ${storagePath}`)
-        console.log(`${'='.repeat(60)}\n`)
+        console.log(`[Recording Upload] Starting AI processing for recording ${recording.id}`)
 
-        // FIX #1: Idempotency check - skip if already processing or completed
-        const { data: currentRecord } = await supabaseAdmin
-          .from('lesson_recordings')
-          .select('ai_processing_status, ai_processed_at')
-          .eq('id', recording.id)
-          .single()
-
-        if (currentRecord?.ai_processing_status === 'completed') {
-          console.log(`[Recording AI] ⏭️ Skipping - already completed at ${currentRecord.ai_processed_at}`)
-          return
-        }
-
-        if (currentRecord?.ai_processing_status === 'processing') {
-          console.log(`[Recording AI] ⏭️ Skipping - already being processed by another worker`)
-          return
-        }
-
-        // FIX #4: Check for and cleanup stuck recordings (processing > 10 minutes)
-        const TEN_MINUTES_AGO = new Date(Date.now() - 10 * 60 * 1000).toISOString()
-        const { data: stuckRecordings } = await supabaseAdmin
-          .from('lesson_recordings')
-          .select('id')
-          .eq('ai_processing_status', 'processing')
-          .lt('updated_at', TEN_MINUTES_AGO)
-          .limit(10)
-
-        if (stuckRecordings && stuckRecordings.length > 0) {
-          console.log(`[Recording AI] ⚠️ Found ${stuckRecordings.length} stuck recording(s) - marking as failed`)
-          await supabaseAdmin
-            .from('lesson_recordings')
-            .update({
-              ai_processing_status: 'failed',
-              ai_processing_error: 'Processing timeout after 10 minutes',
-            })
-            .in('id', stuckRecordings.map(r => r.id))
-        }
-
-        // Update status to processing (with atomic check to prevent race condition)
-        const { data: updatedRecord, error: updateStatusError } = await supabaseAdmin
+        // Update status to processing
+        await supabaseAdmin
           .from('lesson_recordings')
           .update({ ai_processing_status: 'processing' })
           .eq('id', recording.id)
-          .eq('ai_processing_status', 'pending')  // Only update if still pending
-          .select('id')
-          .maybeSingle()
-
-        if (!updatedRecord) {
-          console.log(`[Recording AI] ⏭️ Skipping - status was changed by another process`)
-          return
-        }
-        console.log(`[Recording AI] ✅ Status updated to 'processing' in DB`)
 
         // Download the recording
-        console.log(`[Recording AI] 📥 Downloading recording from Supabase Storage...`)
-        const downloadStart = Date.now()
         const { data: fileData, error: downloadError } = await supabaseAdmin.storage
           .from('lesson-recordings')
           .download(storagePath)
@@ -289,61 +205,18 @@ export async function POST(
 
         // Convert to buffer for transcription
         const recordingBuffer = Buffer.from(await fileData.arrayBuffer())
-        console.log(`[Recording AI] ✅ Download complete in ${Date.now() - downloadStart}ms`)
-        console.log(`[Recording AI] 📊 File size: ${(recordingBuffer.length / 1024 / 1024).toFixed(2)} MB`)
+        console.log(`[Recording Upload] Downloaded ${recordingBuffer.length} bytes, starting transcription`)
 
-        // Transcribe the audio - prefer AssemblyAI for diarization, fallback to Whisper
-        let transcriptText: string
-        let diarizedTranscript: DiarizedTranscript | null = null
-
-        console.log(`\n[Recording AI] 🎤 TRANSCRIPTION PHASE`)
-        console.log(`[Recording AI] AssemblyAI available: ${isAssemblyAIAvailable()}`)
-
-        if (isAssemblyAIAvailable()) {
-          console.log(`[Recording AI] 🔊 Using AssemblyAI for speaker diarization...`)
-          const transcribeStart = Date.now()
-          try {
-            diarizedTranscript = await transcribeWithDiarization(recordingBuffer)
-            transcriptText = diarizedTranscript.text
-            console.log(`[Recording AI] ✅ AssemblyAI transcription complete in ${Date.now() - transcribeStart}ms`)
-            console.log(`[Recording AI] 📝 Transcript length: ${transcriptText.length} chars`)
-            console.log(`[Recording AI] 👥 Speakers detected: ${diarizedTranscript.utterances.length} utterances`)
-            console.log(`[Recording AI] 🎓 Teacher words: ${diarizedTranscript.speakerWordCounts.teacher}`)
-            console.log(`[Recording AI] 🧑‍🎓 Student words: ${diarizedTranscript.speakerWordCounts.student}`)
-
-            // Log first few utterances as sample
-            console.log(`[Recording AI] 📜 Sample utterances:`)
-            diarizedTranscript.utterances.slice(0, 3).forEach((u, i) => {
-              console.log(`   ${i + 1}. [${u.speaker}]: "${u.text.slice(0, 100)}${u.text.length > 100 ? '...' : ''}"`)
-            })
-          } catch (assemblyError) {
-            console.warn(`[Recording AI] ⚠️ AssemblyAI failed after ${Date.now() - transcribeStart}ms:`, assemblyError)
-            console.log(`[Recording AI] 🔄 Falling back to Whisper...`)
-            const whisperStart = Date.now()
-            const whisperTranscript = await transcribeAudio(recordingBuffer, `${recording.id}.webm`)
-            transcriptText = whisperTranscript.text
-            console.log(`[Recording AI] ✅ Whisper transcription complete in ${Date.now() - whisperStart}ms`)
-          }
-        } else {
-          console.log(`[Recording AI] ⚠️ ASSEMBLYAI_API_KEY not set - using Whisper (no speaker diarization)`)
-          const whisperStart = Date.now()
-          const whisperTranscript = await transcribeAudio(recordingBuffer, `${recording.id}.webm`)
-          transcriptText = whisperTranscript.text
-          console.log(`[Recording AI] ✅ Whisper transcription complete in ${Date.now() - whisperStart}ms`)
-          console.log(`[Recording AI] 📝 Transcript length: ${transcriptText.length} chars`)
-        }
+        // Transcribe the audio
+        const transcript = await transcribeAudio(recordingBuffer, `${recording.id}.webm`)
+        console.log(`[Recording Upload] Transcription complete: ${transcript.text.length} chars`)
 
         // Get associated notes for context
-        console.log(`\n[Recording AI] 📋 FETCHING CONTEXT`)
         const { data: notesArchive } = await supabaseAdmin
           .from('notes_archive')
           .select('content_html, content')
           .eq('recording_id', recording.id)
           .maybeSingle()
-        console.log(`[Recording AI] Notes archive found: ${!!notesArchive}`)
-        if (notesArchive) {
-          console.log(`[Recording AI] Notes content length: ${(notesArchive.content || notesArchive.content_html || '').length} chars`)
-        }
 
         // Get previous lesson summaries for context
         const { data: previousRecordings } = await supabaseAdmin
@@ -357,38 +230,22 @@ export async function POST(
         const previousSummaries = previousRecordings
           ?.map(r => (r.ai_summary as { summary?: string })?.summary)
           .filter(Boolean) as string[] | undefined
-        console.log(`[Recording AI] Previous summaries found: ${previousSummaries?.length || 0}`)
 
-        // Generate AI summary with diarized transcript if available
-        console.log(`\n[Recording AI] 🤖 GENERATING AI SUMMARY`)
-        console.log(`[Recording AI] Using diarized transcript: ${!!diarizedTranscript}`)
-        const summaryStart = Date.now()
+        // Generate AI summary
+        console.log(`[Recording Upload] Generating AI summary`)
         const summary = await generateLessonSummary(
-          transcriptText,
+          transcript.text,
           notesArchive?.content || notesArchive?.content_html,
-          previousSummaries,
-          diarizedTranscript ? {
-            text: diarizedTranscript.text,
-            utterances: diarizedTranscript.utterances.map(u => ({
-              speaker: u.speaker,
-              text: u.text,
-            })),
-          } : undefined
+          previousSummaries
         )
-        console.log(`[Recording AI] ✅ Summary generated in ${Date.now() - summaryStart}ms`)
-        console.log(`[Recording AI] 📊 Summary details:`)
-        console.log(`   - Topics covered: ${summary.keyTopicsCovered?.length || 0}`)
-        console.log(`   - Exercises: ${summary.exercisesPracticed?.length || 0}`)
-        console.log(`   - Feedback points: ${summary.teacherFeedback?.length || 0}`)
-        console.log(`   - Homework items: ${summary.homeworkAssignments?.length || 0}`)
 
-        // Update the recording with results (including diarized transcript if available)
-        console.log(`\n[Recording AI] 💾 SAVING TO DATABASE`)
-        const { error: updateError } = await supabaseAdmin
+        console.log(`[Recording Upload] Summary generated successfully`)
+
+        // Update the recording with results
+        await supabaseAdmin
           .from('lesson_recordings')
           .update({
-            transcript: transcriptText,
-            transcript_diarized: diarizedTranscript,
+            transcript: transcript.text,
             ai_summary: summary,
             ai_processing_status: 'completed',
             ai_processed_at: new Date().toISOString(),
@@ -396,39 +253,17 @@ export async function POST(
           })
           .eq('id', recording.id)
 
-        if (updateError) {
-          console.error(`[Recording AI] ❌ Failed to update lesson_recordings:`, updateError)
-        } else {
-          console.log(`[Recording AI] ✅ lesson_recordings table updated`)
-        }
-
         // Also update the notes_archive if it exists
         if (notesArchive) {
-          const { error: archiveError } = await supabaseAdmin
+          await supabaseAdmin
             .from('notes_archive')
             .update({ ai_summary: summary })
             .eq('recording_id', recording.id)
-
-          if (archiveError) {
-            console.error(`[Recording AI] ❌ Failed to update notes_archive:`, archiveError)
-          } else {
-            console.log(`[Recording AI] ✅ notes_archive table updated`)
-          }
         }
 
-        const totalTime = Date.now() - startTime
-        console.log(`\n${'='.repeat(60)}`)
-        console.log(`[Recording AI] ✅ AI PROCESSING COMPLETE`)
-        console.log(`[Recording AI] Recording ID: ${recording.id}`)
-        console.log(`[Recording AI] Total time: ${(totalTime / 1000).toFixed(1)}s`)
-        console.log(`${'='.repeat(60)}\n`)
+        console.log(`[Recording Upload] AI processing completed for recording ${recording.id}`)
       } catch (processingError) {
-        const totalTime = Date.now() - startTime
-        console.error(`\n${'='.repeat(60)}`)
-        console.error(`[Recording AI] ❌ AI PROCESSING FAILED`)
-        console.error(`[Recording AI] Recording ID: ${recording.id}`)
-        console.error(`[Recording AI] Error after ${(totalTime / 1000).toFixed(1)}s:`, processingError)
-        console.error(`${'='.repeat(60)}\n`)
+        console.error('[Recording Upload] AI processing error:', processingError)
 
         // Update status to failed
         await supabaseAdmin
@@ -534,13 +369,13 @@ export async function GET(
       )
     }
 
-    // Refresh signed URLs for all recordings (4 hours for better playback experience)
+    // Refresh signed URLs for all recordings
     const recordingsWithUrls = await Promise.all(
       (recordings || []).map(async (recording) => {
         if (recording.storage_path) {
           const { data: urlData } = await supabaseAdmin.storage
             .from('lesson-recordings')
-            .createSignedUrl(recording.storage_path, 60 * 60 * 4) // 4 hours
+            .createSignedUrl(recording.storage_path, 60 * 60) // 1 hour
 
           return {
             ...recording,
