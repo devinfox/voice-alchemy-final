@@ -491,37 +491,63 @@ const VideoSection = React.memo(function VideoSection({
       return
     }
 
-    console.log('[VideoSection] Uploading recording, size:', blob.size, 'bookingId:', bookingId)
+    console.log('[VideoSection] Uploading recording via direct upload, size:', blob.size, 'bookingId:', bookingId)
 
     try {
-      const formData = new FormData()
-      formData.append('recording', blob, `lesson-${bookingId}-${Date.now()}.webm`)
-      formData.append('roomName', `lesson-${bookingId}`)
-      if (startedAt) {
-        formData.append('classStartedAt', startedAt.toISOString())
-      }
+      const filename = `lesson-${bookingId}-${Date.now()}.webm`
 
-      console.log('[VideoSection] Sending POST to /api/lessons/' + bookingId + '/recordings')
-      const response = await fetch(`/api/lessons/${bookingId}/recordings`, {
+      // Step 1: Get presigned upload URL
+      console.log('[VideoSection] Getting presigned upload URL...')
+      const presignResponse = await fetch(`/api/lessons/${bookingId}/recordings/presign`, {
         method: 'POST',
-        body: formData,
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ filename, contentType: 'video/webm' }),
       })
 
-      const responseText = await response.text()
-      console.log('[VideoSection] Recording upload response status:', response.status, 'body:', responseText)
-
-      if (!response.ok) {
-        console.error('[VideoSection] Recording upload failed:', response.status, responseText)
-        // Show user-visible error for upload failures
-        alert(`Recording upload failed: ${responseText}`)
-        return
+      if (!presignResponse.ok) {
+        const errorText = await presignResponse.text()
+        throw new Error(`Failed to get upload URL: ${errorText}`)
       }
 
-      const result = JSON.parse(responseText)
-      console.log('[VideoSection] Recording uploaded successfully:', result)
+      const { uploadUrl, storagePath } = await presignResponse.json()
+      console.log('[VideoSection] Got presigned URL, uploading directly to storage...')
+
+      // Step 2: Upload directly to Supabase Storage (bypasses Vercel 4.5MB limit)
+      const uploadResponse = await fetch(uploadUrl, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'video/webm' },
+        body: blob,
+      })
+
+      if (!uploadResponse.ok) {
+        const errorText = await uploadResponse.text()
+        throw new Error(`Direct upload failed: ${errorText}`)
+      }
+
+      console.log('[VideoSection] Direct upload complete, registering recording...')
+
+      // Step 3: Register the recording and trigger AI processing
+      const completeResponse = await fetch(`/api/lessons/${bookingId}/recordings/complete`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          storagePath,
+          fileSize: blob.size,
+          roomName: `lesson-${bookingId}`,
+          classStartedAt: startedAt?.toISOString(),
+        }),
+      })
+
+      if (!completeResponse.ok) {
+        const errorText = await completeResponse.text()
+        throw new Error(`Failed to register recording: ${errorText}`)
+      }
+
+      const result = await completeResponse.json()
+      console.log('[VideoSection] Recording uploaded and registered successfully:', result)
     } catch (err) {
       console.error('[VideoSection] Error uploading recording:', err)
-      alert(`Recording upload error: ${err instanceof Error ? err.message : 'Unknown error'}`)
+      alert(`Recording upload failed: ${err instanceof Error ? err.message : 'Unknown error'}`)
     }
   }, [bookingId, startedAt])
 
