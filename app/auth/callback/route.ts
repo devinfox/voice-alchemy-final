@@ -34,9 +34,18 @@ export async function GET(request: Request) {
 
   // Handle OAuth code flow
   if (code) {
-    const { error } = await supabase.auth.exchangeCodeForSession(code)
+    const { data, error } = await supabase.auth.exchangeCodeForSession(code)
 
-    if (!error) {
+    if (!error && data.session) {
+      // Check if this is a password recovery flow by looking at the session's aal
+      // For password recovery, Supabase sets a specific auth event
+      // We can also check if the user came from a recovery email by checking the session
+      const isRecovery = data.session.user?.recovery_sent_at &&
+        (Date.now() - new Date(data.session.user.recovery_sent_at).getTime() < 3600000) // Within last hour
+
+      if (isRecovery || next === '/reset-password') {
+        return NextResponse.redirect(`${origin}/reset-password`)
+      }
       return NextResponse.redirect(`${origin}${next}`)
     }
   }
@@ -49,6 +58,10 @@ export async function GET(request: Request) {
     })
 
     if (!error) {
+      // For recovery type, redirect to reset-password
+      if (type === 'recovery') {
+        return NextResponse.redirect(`${origin}/reset-password`)
+      }
       return NextResponse.redirect(`${origin}${next}`)
     } else {
       console.error('[Auth Callback] OTP verification error:', error)
