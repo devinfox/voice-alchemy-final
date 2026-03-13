@@ -3,8 +3,8 @@ import { createClient, getCurrentUser } from '@/lib/supabase-server'
 import Link from 'next/link'
 import { Users, BookOpen, Search, Bell, Video, Calendar, Clock } from 'lucide-react'
 import ModernPitchTrainer from '@/components/ModernPitchTrainer'
-import SongPitchTrainer from '@/components/SongPitchTrainer'
 import RhythmTrainer from '@/components/RhythmTrainer'
+import ScaleTrainer from '@/components/ScaleTrainer'
 
 interface Teacher {
   id: string,
@@ -266,7 +266,7 @@ export default async function DashboardPage() {
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
           <ModernPitchTrainer variant="card" />
           <RhythmTrainer variant="card" />
-          <SongPitchTrainer variant="card" />
+          <ScaleTrainer variant="card" />
         </div>
       </div>
 

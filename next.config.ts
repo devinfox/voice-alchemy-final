@@ -8,6 +8,11 @@ const nextConfig: NextConfig = {
         hostname: '*.supabase.co',
         pathname: '/storage/v1/object/public/**',
       },
+      {
+        protocol: 'https',
+        hostname: 'voicealchemyacademy.com',
+        pathname: '/wp-content/uploads/**',
+      },
     ],
   },
   // Allow Cloudflare tunnel domains in development
