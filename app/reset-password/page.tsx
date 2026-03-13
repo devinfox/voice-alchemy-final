@@ -19,13 +19,58 @@ export default function ResetPasswordPage() {
   const [isValidSession, setIsValidSession] = useState<boolean | null>(null)
 
   useEffect(() => {
-    // Check if user has a valid session (from the password reset email link)
-    const checkSession = async () => {
+    // Handle the auth code from password reset email and check session
+    const handleAuthAndCheckSession = async () => {
       const supabase = createClient()
+
+      // Check if there's a code in the URL (from Supabase redirect)
+      const hashParams = new URLSearchParams(window.location.hash.substring(1))
+      const urlParams = new URLSearchParams(window.location.search)
+
+      const code = urlParams.get('code')
+      const accessToken = hashParams.get('access_token')
+      const refreshToken = hashParams.get('refresh_token')
+      const error = hashParams.get('error')
+
+      // If there's an error in the hash, the link is invalid/expired
+      if (error) {
+        console.error('Auth error:', error, hashParams.get('error_description'))
+        setIsValidSession(false)
+        return
+      }
+
+      // If we have tokens in hash (implicit flow), set session
+      if (accessToken && refreshToken) {
+        const { error: sessionError } = await supabase.auth.setSession({
+          access_token: accessToken,
+          refresh_token: refreshToken,
+        })
+        if (sessionError) {
+          console.error('Failed to set session:', sessionError)
+          setIsValidSession(false)
+          return
+        }
+        // Clean up URL
+        window.history.replaceState({}, '', '/reset-password')
+      }
+
+      // If we have a code (PKCE flow), exchange it
+      if (code) {
+        const { error: exchangeError } = await supabase.auth.exchangeCodeForSession(code)
+        if (exchangeError) {
+          console.error('Failed to exchange code:', exchangeError)
+          setIsValidSession(false)
+          return
+        }
+        // Clean up URL
+        window.history.replaceState({}, '', '/reset-password')
+      }
+
+      // Now check for valid session
       const { data: { session } } = await supabase.auth.getSession()
       setIsValidSession(!!session)
     }
-    checkSession()
+    handleAuthAndCheckSession()
   }, [])
 
   const handleSubmit = async (e: React.FormEvent) => {
