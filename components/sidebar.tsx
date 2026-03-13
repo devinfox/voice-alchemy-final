@@ -13,7 +13,6 @@ import {
   BookOpen,
   Calendar,
   Music,
-  Feather,
 } from 'lucide-react'
 import { createClient } from '@/lib/supabase'
 import { useRouter } from 'next/navigation'
@@ -31,8 +30,7 @@ const teacherNavigation: NavItem[] = [
   { name: 'Dashboard', href: '/dashboard', icon: LayoutDashboard },
   { name: 'My Students', href: '/dashboard/students', icon: Users },
   { name: 'Courses', href: '/dashboard/courses', icon: GraduationCap },
-  { name: 'Training Center', href: '/dashboard/pitch-training', icon: Music },
-  { name: 'Songwriting', href: '/dashboard/songwriting', icon: Feather },
+  { name: 'Pitch Perfect', href: '/dashboard/pitch-training', icon: Music },
   { name: 'Calendar', href: '/dashboard/calendar', icon: Calendar },
 ]
 
@@ -41,8 +39,7 @@ const studentNavigation: NavItem[] = [
   { name: 'Dashboard', href: '/dashboard', icon: LayoutDashboard },
   { name: 'My Lessons', href: '/dashboard/my-lessons', icon: BookOpen },
   { name: 'Courses', href: '/dashboard/courses', icon: GraduationCap },
-  { name: 'Training Center', href: '/dashboard/pitch-training', icon: Music },
-  { name: 'Songwriting', href: '/dashboard/songwriting', icon: Feather },
+  { name: 'Pitch Perfect', href: '/dashboard/pitch-training', icon: Music },
   { name: 'Find Teacher', href: '/dashboard/find-teacher', icon: Search },
   { name: 'Calendar', href: '/dashboard/calendar', icon: Calendar },
 ]

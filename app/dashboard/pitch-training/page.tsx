@@ -1,8 +1,9 @@
 'use client'
 
 import { useState, useEffect } from 'react'
-import { TrendingUp, TrendingDown, Minus, Calendar, Target, Clock, Zap, Award, RefreshCw, Sparkles, Music2, Mic2, Activity, Brain, FileText, BookOpen, ChevronRight } from 'lucide-react'
+import { TrendingUp, TrendingDown, Minus, Calendar, Target, Clock, Zap, Award, RefreshCw, Sparkles, Music2, Mic2, Activity, Brain, FileText, BookOpen, ChevronRight, Music } from 'lucide-react'
 import AIAnalysisPanel from '@/components/AIAnalysisPanel'
+import ScaleAnalysisPanel from '@/components/ScaleAnalysisPanel'
 
 interface WeeklyProgress {
   id: string
@@ -137,6 +138,48 @@ interface RhythmSession {
   best_streak: number
 }
 
+interface ScaleWeeklyProgress {
+  id: string
+  week_start_date: string
+  avg_sequence_accuracy: number | null
+  avg_pitch_accuracy: number | null
+  avg_timing_consistency: number | null
+  avg_overall_score: number | null
+  total_sessions: number
+  total_scales_practiced: number | null
+  total_notes_attempted: number | null
+  total_practice_time_seconds: number | null
+  most_practiced_scale: string | null
+  most_practiced_root: string | null
+  sequence_accuracy_change: number | null
+  pitch_accuracy_change: number | null
+  overall_score_change: number | null
+}
+
+interface ScaleStats {
+  totalSessions: number
+  avgOverallScore: number
+  bestOverallScore: number
+  avgSequenceAccuracy: number
+  avgPitchAccuracy: number
+  uniqueScales: number
+  daysThisWeek: number
+  avgTempo: number
+  minTempo: number
+  maxTempo: number
+}
+
+interface ScaleSession {
+  session_date: string
+  scale_type: string
+  root_note: string
+  direction: string
+  tempo_bpm: number
+  overall_score: number
+  sequence_accuracy: number
+  pitch_accuracy: number
+}
+
 interface LessonNote {
   id: string
   class_started_at: string
@@ -158,12 +201,15 @@ interface ProgressData {
   weeklyProgress: WeeklyProgress[]
   songWeeklyProgress: SongWeeklyProgress[]
   rhythmWeeklyProgress: RhythmWeeklyProgress[]
+  scaleWeeklyProgress?: ScaleWeeklyProgress[]
   aiFeedback: AIFeedback[]
   stats: Stats
   songStats: SongStats
   rhythmStats: RhythmStats
+  scaleStats?: ScaleStats
   recentSongSessions: SongSession[]
   recentRhythmSessions: RhythmSession[]
+  recentScaleSessions?: ScaleSession[]
   recentLessonNotes?: LessonNote[]
   // New singer-focused data
   singerMetrics?: SingerMetrics
@@ -210,15 +256,17 @@ export default function PitchTrainingProgressPage() {
   const [loading, setLoading] = useState(true)
   const [generatingFeedback, setGeneratingFeedback] = useState(false)
   const [error, setError] = useState<string | null>(null)
-  const [activeTab, setActiveTab] = useState<'overview' | 'pitch-trainer' | 'song-trainer' | 'rhythm-trainer'>('overview')
+  const [activeTab, setActiveTab] = useState<'overview' | 'pitch-trainer' | 'rhythm-trainer' | 'scale-trainer'>('overview')
   const [showAIPanel, setShowAIPanel] = useState(false)
+  const [showScaleAIPanel, setShowScaleAIPanel] = useState(false)
 
   const fetchProgress = async () => {
     try {
       setLoading(true)
-      const [progressRes, notesRes] = await Promise.all([
+      const [progressRes, notesRes, scaleRes] = await Promise.all([
         fetch('/api/pitch-training/progress?weeks=8&includeFeedback=true'),
-        fetch('/api/pitch-training/recent-notes')
+        fetch('/api/pitch-training/recent-notes'),
+        fetch('/api/scale-training/session?days=30')
       ])
       if (!progressRes.ok) throw new Error('Failed to fetch progress')
       const result = await progressRes.json()
@@ -227,6 +275,57 @@ export default function PitchTrainingProgressPage() {
       if (notesRes.ok) {
         const notesData = await notesRes.json()
         result.recentLessonNotes = notesData.notes || []
+      }
+
+      // Process scale training sessions
+      if (scaleRes.ok) {
+        const scaleData = await scaleRes.json()
+        const sessions = scaleData.sessions || []
+
+        // Calculate scale stats
+        if (sessions.length > 0) {
+          const overallScores = sessions.map((s: any) => s.overall_score || 0)
+          const sequenceAccuracies = sessions.map((s: any) => s.sequence_accuracy || 0)
+          const pitchAccuracies = sessions.map((s: any) => s.pitch_accuracy || 0)
+          const tempos = sessions.map((s: any) => s.tempo_bpm || 80)
+          const uniqueScales = new Set(sessions.map((s: any) => `${s.scale_type}-${s.root_note}`))
+
+          // Count days practiced this week
+          const now = new Date()
+          const weekStart = new Date(now)
+          const dayOfWeek = weekStart.getDay()
+          weekStart.setDate(weekStart.getDate() - (dayOfWeek === 0 ? 6 : dayOfWeek - 1))
+          weekStart.setHours(0, 0, 0, 0)
+          const daysThisWeek = new Set(
+            sessions
+              .filter((s: any) => new Date(s.session_date) >= weekStart)
+              .map((s: any) => s.session_date)
+          ).size
+
+          result.scaleStats = {
+            totalSessions: sessions.length,
+            avgOverallScore: overallScores.reduce((a: number, b: number) => a + b, 0) / overallScores.length,
+            bestOverallScore: Math.max(...overallScores),
+            avgSequenceAccuracy: sequenceAccuracies.reduce((a: number, b: number) => a + b, 0) / sequenceAccuracies.length,
+            avgPitchAccuracy: pitchAccuracies.reduce((a: number, b: number) => a + b, 0) / pitchAccuracies.length,
+            uniqueScales: uniqueScales.size,
+            daysThisWeek,
+            avgTempo: tempos.reduce((a: number, b: number) => a + b, 0) / tempos.length,
+            minTempo: Math.min(...tempos),
+            maxTempo: Math.max(...tempos),
+          }
+
+          result.recentScaleSessions = sessions.slice(0, 10).map((s: any) => ({
+            session_date: s.session_date,
+            scale_type: s.scale_type,
+            root_note: s.root_note,
+            direction: s.direction,
+            tempo_bpm: s.tempo_bpm || 80,
+            overall_score: s.overall_score,
+            sequence_accuracy: s.sequence_accuracy,
+            pitch_accuracy: s.pitch_accuracy,
+          }))
+        }
       }
 
       setData(result)
@@ -290,7 +389,7 @@ export default function PitchTrainingProgressPage() {
       {/* Header */}
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="text-3xl font-bold text-white">Training Center</h1>
+          <h1 className="text-3xl font-bold text-white">Pitch Perfect</h1>
           <p className="text-slate-400 mt-1">Track your vocal pitch and rhythm improvement over time</p>
         </div>
         <div className="flex items-center gap-2">
@@ -319,6 +418,13 @@ export default function PitchTrainingProgressPage() {
         onAnalysisComplete={fetchProgress}
       />
 
+      {/* Scale Analysis Panel */}
+      <ScaleAnalysisPanel
+        isOpen={showScaleAIPanel}
+        onClose={() => setShowScaleAIPanel(false)}
+        onAnalysisComplete={fetchProgress}
+      />
+
       {/* Tab Navigation */}
       <div className="flex gap-2 glass-card-subtle border border-white/[0.08] p-1 rounded-xl w-fit flex-wrap">
         <button
@@ -344,17 +450,6 @@ export default function PitchTrainingProgressPage() {
           Pitch Trainer
         </button>
         <button
-          onClick={() => setActiveTab('song-trainer')}
-          className={`flex items-center gap-2 px-4 py-2.5 rounded-lg font-medium transition-all ${
-            activeTab === 'song-trainer'
-              ? 'bg-gradient-to-r from-[#a855f7] to-[#7c3aed] text-white shadow-lg shadow-[#a855f7]/20'
-              : 'text-slate-400 hover:text-white hover:bg-white/[0.08]'
-          }`}
-        >
-          <Music2 className="w-4 h-4" />
-          Song Trainer
-        </button>
-        <button
           onClick={() => setActiveTab('rhythm-trainer')}
           className={`flex items-center gap-2 px-4 py-2.5 rounded-lg font-medium transition-all ${
             activeTab === 'rhythm-trainer'
@@ -364,6 +459,17 @@ export default function PitchTrainingProgressPage() {
         >
           <Activity className="w-4 h-4" />
           Rhythm Trainer
+        </button>
+        <button
+          onClick={() => setActiveTab('scale-trainer')}
+          className={`flex items-center gap-2 px-4 py-2.5 rounded-lg font-medium transition-all ${
+            activeTab === 'scale-trainer'
+              ? 'bg-gradient-to-r from-[#a855f7] to-[#7c3aed] text-white shadow-lg shadow-[#a855f7]/20'
+              : 'text-slate-400 hover:text-white hover:bg-white/[0.08]'
+          }`}
+        >
+          <Music className="w-4 h-4" />
+          Scales
         </button>
       </div>
 
@@ -481,16 +587,16 @@ export default function PitchTrainingProgressPage() {
                 </div>
               </div>
 
-              {/* Song Training Summary */}
-              <div className="bg-emerald-500/10 rounded-xl p-4 border border-emerald-500/20">
+              {/* Scale Training Summary */}
+              <div className="bg-pink-500/10 rounded-xl p-4 border border-pink-500/20">
                 <div className="flex items-center justify-between mb-3">
-                  <h3 className="font-semibold text-emerald-300 flex items-center gap-2">
-                    <Music2 className="w-4 h-4" />
-                    Song Training
+                  <h3 className="font-semibold text-pink-300 flex items-center gap-2">
+                    <Music className="w-4 h-4" />
+                    Scale Training
                   </h3>
                   <button
-                    onClick={() => setActiveTab('song-trainer')}
-                    className="text-xs text-emerald-400 hover:text-emerald-300 flex items-center gap-1"
+                    onClick={() => setActiveTab('scale-trainer')}
+                    className="text-xs text-pink-400 hover:text-pink-300 flex items-center gap-1"
                   >
                     Details <ChevronRight className="w-3 h-3" />
                   </button>
@@ -498,15 +604,15 @@ export default function PitchTrainingProgressPage() {
                 <div className="space-y-2 text-sm">
                   <div className="flex justify-between">
                     <span className="text-slate-400">Sessions</span>
-                    <span className="text-white">{data.songStats.totalSessions}</span>
+                    <span className="text-white">{data.scaleStats?.totalSessions || 0}</span>
                   </div>
                   <div className="flex justify-between">
-                    <span className="text-slate-400">Best Accuracy</span>
-                    <span className="text-white">{data.songStats.bestAccuracy}%</span>
+                    <span className="text-slate-400">Best Score</span>
+                    <span className="text-white">{data.scaleStats?.bestOverallScore?.toFixed(0) || 0}%</span>
                   </div>
                   <div className="flex justify-between">
-                    <span className="text-slate-400">Songs Practiced</span>
-                    <span className="text-white">{data.songStats.uniqueSongs}</span>
+                    <span className="text-slate-400">Scales Practiced</span>
+                    <span className="text-white">{data.scaleStats?.uniqueScales || 0}</span>
                   </div>
                 </div>
               </div>
@@ -1354,204 +1460,6 @@ export default function PitchTrainingProgressPage() {
         </>
       )}
 
-      {/* Song Pitch Trainer Tab */}
-      {activeTab === 'song-trainer' && (
-        <>
-          {/* Stats Cards */}
-          <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-            <div className="glass-card-subtle rounded-xl p-4 border-white/[0.08]">
-              <div className="flex items-center gap-2 text-emerald-400 mb-2">
-                <Target className="w-4 h-4" />
-                <span className="text-xs font-medium">Best Accuracy</span>
-              </div>
-              <p className="text-2xl font-bold text-white">{data.songStats.bestAccuracy}%</p>
-              <p className="text-xs text-slate-400">in key</p>
-            </div>
-
-            <div className="glass-card-subtle rounded-xl p-4 border-white/[0.08]">
-              <div className="flex items-center gap-2 text-teal-400 mb-2">
-                <TrendingUp className="w-4 h-4" />
-                <span className="text-xs font-medium">Avg Accuracy</span>
-              </div>
-              <p className="text-2xl font-bold text-white">{data.songStats.averageAccuracy}%</p>
-              <p className="text-xs text-slate-400">overall</p>
-            </div>
-
-            <div className="glass-card-subtle rounded-xl p-4 border-white/[0.08]">
-              <div className="flex items-center gap-2 text-cyan-400 mb-2">
-                <Music2 className="w-4 h-4" />
-                <span className="text-xs font-medium">Songs Practiced</span>
-              </div>
-              <p className="text-2xl font-bold text-white">{data.songStats.uniqueSongs}</p>
-              <p className="text-xs text-slate-400">unique</p>
-            </div>
-
-            <div className="glass-card-subtle rounded-xl p-4 border-white/[0.08]">
-              <div className="flex items-center gap-2 text-blue-400 mb-2">
-                <Clock className="w-4 h-4" />
-                <span className="text-xs font-medium">Total Sessions</span>
-              </div>
-              <p className="text-2xl font-bold text-white">{data.songStats.totalSessions}</p>
-              <p className="text-xs text-slate-400">completed</p>
-            </div>
-          </div>
-
-          {/* Current Week Metrics */}
-          {currentSongWeek && (
-            <div className="glass-card-subtle rounded-2xl p-6 border-white/[0.08]">
-              <h2 className="text-xl font-semibold text-white mb-6 flex items-center gap-2">
-                <Calendar className="w-5 h-5 text-emerald-400" />
-                This Week&apos;s Song Practice
-                <span className="text-sm font-normal text-slate-400 ml-2">
-                  Week of {new Date(currentSongWeek.week_start_date).toLocaleDateString()}
-                </span>
-              </h2>
-
-              <div className="grid grid-cols-2 md:grid-cols-4 gap-6">
-                {/* In-Key Accuracy */}
-                <div className="space-y-2">
-                  <div className="flex items-center justify-between">
-                    <span className="text-sm text-slate-400">In-Key Accuracy</span>
-                    {(() => {
-                      const change = formatChange(currentSongWeek.accuracy_change)
-                      return (
-                        <span className={`flex items-center gap-1 text-xs ${change.color}`}>
-                          <change.icon className="w-3 h-3" />
-                          {change.text}
-                        </span>
-                      )
-                    })()}
-                  </div>
-                  <p className="text-3xl font-bold text-white">
-                    {currentSongWeek.avg_accuracy_percent?.toFixed(1) || '--'}%
-                  </p>
-                  <div className="h-2 bg-slate-700 rounded-full overflow-hidden">
-                    <div
-                      className="h-full bg-gradient-to-r from-emerald-500 to-teal-500 rounded-full transition-all"
-                      style={{ width: `${currentSongWeek.avg_accuracy_percent || 0}%` }}
-                    />
-                  </div>
-                </div>
-
-                {/* Avg Cents Off */}
-                <div className="space-y-2">
-                  <span className="text-sm text-slate-400">Avg Cents Off</span>
-                  <p className="text-3xl font-bold text-white">
-                    {currentSongWeek.avg_cents_off?.toFixed(1) || '--'}
-                    <span className="text-lg text-slate-400">¢</span>
-                  </p>
-                  <p className="text-xs text-slate-500">Lower is better</p>
-                </div>
-
-                {/* Total Notes */}
-                <div className="space-y-2">
-                  <span className="text-sm text-slate-400">Notes Sung</span>
-                  <p className="text-3xl font-bold text-white">
-                    {currentSongWeek.total_notes || 0}
-                  </p>
-                  <p className="text-xs text-slate-500">
-                    {currentSongWeek.total_notes_in_key || 0} in key
-                  </p>
-                </div>
-
-                {/* Songs Practiced */}
-                <div className="space-y-2">
-                  <span className="text-sm text-slate-400">Songs Practiced</span>
-                  <p className="text-3xl font-bold text-white">
-                    {currentSongWeek.total_songs_practiced || 0}
-                  </p>
-                  <p className="text-xs text-slate-500">{currentSongWeek.total_sessions} sessions</p>
-                </div>
-              </div>
-            </div>
-          )}
-
-          {/* Recent Song Sessions */}
-          {data.recentSongSessions.length > 0 && (
-            <div className="glass-card-subtle rounded-2xl p-6 border-white/[0.08]">
-              <h2 className="text-xl font-semibold text-white mb-6">Recent Sessions</h2>
-              <div className="space-y-3">
-                {data.recentSongSessions.slice(0, 10).map((session, index) => (
-                  <div key={index} className="flex items-center justify-between p-4 bg-white/[0.03] rounded-xl border border-white/[0.06]">
-                    <div className="flex items-center gap-4">
-                      <div className="w-10 h-10 rounded-lg bg-emerald-600/20 flex items-center justify-center">
-                        <Music2 className="w-5 h-5 text-emerald-400" />
-                      </div>
-                      <div>
-                        <p className="font-medium text-white">{session.song_title}</p>
-                        <p className="text-sm text-slate-400">{session.song_artist} • Key of {session.song_key}</p>
-                      </div>
-                    </div>
-                    <div className="text-right">
-                      <p className={`text-lg font-bold ${
-                        session.accuracy_percent >= 80 ? 'text-green-400' :
-                        session.accuracy_percent >= 60 ? 'text-yellow-400' :
-                        'text-red-400'
-                      }`}>
-                        {session.accuracy_percent?.toFixed(1)}%
-                      </p>
-                      <p className="text-xs text-slate-500">
-                        {new Date(session.session_date).toLocaleDateString()}
-                      </p>
-                    </div>
-                  </div>
-                ))}
-              </div>
-            </div>
-          )}
-
-          {/* Weekly History */}
-          {data.songWeeklyProgress.length > 1 && (
-            <div className="glass-card-subtle rounded-2xl p-6 border-white/[0.08]">
-              <h2 className="text-xl font-semibold text-white mb-6">Weekly History</h2>
-              <div className="overflow-x-auto">
-                <table className="w-full">
-                  <thead>
-                    <tr className="text-left text-sm text-slate-400 border-b border-white/[0.08]">
-                      <th className="pb-3 pr-4">Week</th>
-                      <th className="pb-3 pr-4">Accuracy</th>
-                      <th className="pb-3 pr-4">Avg Cents Off</th>
-                      <th className="pb-3 pr-4">Songs</th>
-                      <th className="pb-3">Sessions</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {data.songWeeklyProgress.map((week, index) => (
-                      <tr key={week.id} className="border-b border-white/[0.08]">
-                        <td className="py-3 pr-4 text-slate-300">
-                          {new Date(week.week_start_date).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}
-                          {index === 0 && <span className="ml-2 text-xs text-emerald-400">(Current)</span>}
-                        </td>
-                        <td className="py-3 pr-4">
-                          <span className="text-white font-medium">{week.avg_accuracy_percent?.toFixed(1) || '--'}%</span>
-                        </td>
-                        <td className="py-3 pr-4 text-slate-300">{week.avg_cents_off?.toFixed(1) || '--'}¢</td>
-                        <td className="py-3 pr-4 text-slate-300">{week.total_songs_practiced || 0}</td>
-                        <td className="py-3 text-slate-300">{week.total_sessions}</td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-            </div>
-          )}
-
-          {/* Empty State */}
-          {!currentSongWeek && data.recentSongSessions.length === 0 && (
-            <div className="text-center py-12 glass-card-subtle rounded-2xl border-white/[0.08]">
-              <div className="w-16 h-16 mx-auto mb-4 bg-emerald-600/20 rounded-full flex items-center justify-center">
-                <Music2 className="w-8 h-8 text-emerald-400" />
-              </div>
-              <h3 className="text-xl font-semibold text-white mb-2">Start Singing Songs</h3>
-              <p className="text-slate-400 max-w-md mx-auto">
-                Use the Song Pitch Trainer to practice singing in key with famous songs.
-                Your sessions will be tracked here.
-              </p>
-            </div>
-          )}
-        </>
-      )}
-
       {/* Rhythm Trainer Tab */}
       {activeTab === 'rhythm-trainer' && (
         <>
@@ -1797,6 +1705,249 @@ export default function PitchTrainingProgressPage() {
           )}
         </>
       )}
+
+      {/* Scale Trainer Tab */}
+      {activeTab === 'scale-trainer' && (
+        <>
+          {/* AI Coach Button */}
+          <div className="flex justify-end mb-4">
+            <button
+              onClick={() => setShowScaleAIPanel(true)}
+              className="flex items-center gap-2 px-4 py-2 bg-gradient-to-r from-pink-500 to-purple-600 hover:from-pink-400 hover:to-purple-500 text-white rounded-xl transition-all shadow-lg shadow-pink-500/20 text-sm font-medium"
+              title="Scale Training AI Coach"
+            >
+              <Brain className="w-4 h-4" />
+              <span>AI Scale Coach</span>
+            </button>
+          </div>
+
+          {/* Stats Cards */}
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+            <div className="glass-card-subtle rounded-xl p-4 border-white/[0.08]">
+              <div className="flex items-center gap-2 text-pink-400 mb-2">
+                <Target className="w-4 h-4" />
+                <span className="text-xs font-medium">Best Score</span>
+              </div>
+              <p className="text-2xl font-bold text-white">{data.scaleStats?.bestOverallScore?.toFixed(0) || 0}%</p>
+              <p className="text-xs text-slate-400">overall</p>
+            </div>
+
+            <div className="glass-card-subtle rounded-xl p-4 border-white/[0.08]">
+              <div className="flex items-center gap-2 text-purple-400 mb-2">
+                <TrendingUp className="w-4 h-4" />
+                <span className="text-xs font-medium">Avg Score</span>
+              </div>
+              <p className="text-2xl font-bold text-white">{data.scaleStats?.avgOverallScore?.toFixed(1) || 0}%</p>
+              <p className="text-xs text-slate-400">overall</p>
+            </div>
+
+            <div className="glass-card-subtle rounded-xl p-4 border-white/[0.08]">
+              <div className="flex items-center gap-2 text-fuchsia-400 mb-2">
+                <Music className="w-4 h-4" />
+                <span className="text-xs font-medium">Scales Practiced</span>
+              </div>
+              <p className="text-2xl font-bold text-white">{data.scaleStats?.uniqueScales || 0}</p>
+              <p className="text-xs text-slate-400">unique</p>
+            </div>
+
+            <div className="glass-card-subtle rounded-xl p-4 border-white/[0.08]">
+              <div className="flex items-center gap-2 text-[#d8b4fe] mb-2">
+                <Clock className="w-4 h-4" />
+                <span className="text-xs font-medium">Total Sessions</span>
+              </div>
+              <p className="text-2xl font-bold text-white">{data.scaleStats?.totalSessions || 0}</p>
+              <p className="text-xs text-slate-400">completed</p>
+            </div>
+          </div>
+
+          {/* Detailed Metrics */}
+          {data.scaleStats && data.scaleStats.totalSessions > 0 && (
+            <div className="glass-card-subtle rounded-2xl p-6 border-white/[0.08]">
+              <h2 className="text-xl font-semibold text-white mb-6 flex items-center gap-2">
+                <Music className="w-5 h-5 text-pink-400" />
+                Scale Training Metrics
+              </h2>
+
+              <div className="grid grid-cols-2 md:grid-cols-4 gap-6">
+                {/* Sequence Accuracy */}
+                <div className="space-y-2">
+                  <span className="text-sm text-slate-400">Sequence Accuracy</span>
+                  <p className="text-3xl font-bold text-white">
+                    {data.scaleStats.avgSequenceAccuracy?.toFixed(1) || '--'}%
+                  </p>
+                  <div className="h-2 bg-slate-700 rounded-full overflow-hidden">
+                    <div
+                      className="h-full bg-gradient-to-r from-pink-500 to-purple-500 rounded-full transition-all"
+                      style={{ width: `${data.scaleStats.avgSequenceAccuracy || 0}%` }}
+                    />
+                  </div>
+                  <p className="text-xs text-slate-500">Notes sung in correct order</p>
+                </div>
+
+                {/* Pitch Accuracy */}
+                <div className="space-y-2">
+                  <span className="text-sm text-slate-400">Pitch Accuracy</span>
+                  <p className="text-3xl font-bold text-white">
+                    {data.scaleStats.avgPitchAccuracy?.toFixed(1) || '--'}%
+                  </p>
+                  <div className="h-2 bg-slate-700 rounded-full overflow-hidden">
+                    <div
+                      className="h-full bg-gradient-to-r from-purple-500 to-fuchsia-500 rounded-full transition-all"
+                      style={{ width: `${data.scaleStats.avgPitchAccuracy || 0}%` }}
+                    />
+                  </div>
+                  <p className="text-xs text-slate-500">How close to target pitch</p>
+                </div>
+
+                {/* Days This Week */}
+                <div className="space-y-2">
+                  <span className="text-sm text-slate-400">Days This Week</span>
+                  <p className="text-3xl font-bold text-white">{data.scaleStats.daysThisWeek}</p>
+                  <div className="flex gap-1">
+                    {[0, 1, 2, 3, 4, 5, 6].map((day) => (
+                      <div
+                        key={day}
+                        className={`flex-1 h-2 rounded ${
+                          day < data.scaleStats!.daysThisWeek
+                            ? 'bg-gradient-to-r from-pink-500 to-purple-500'
+                            : 'bg-slate-700'
+                        }`}
+                      />
+                    ))}
+                  </div>
+                  <p className="text-xs text-slate-500">Practice consistency</p>
+                </div>
+
+                {/* Tempo/Speed */}
+                <div className="space-y-2">
+                  <span className="text-sm text-slate-400">Average Tempo</span>
+                  <p className="text-3xl font-bold text-white">
+                    {data.scaleStats.avgTempo?.toFixed(0) || 80}
+                    <span className="text-lg text-slate-400 ml-1">BPM</span>
+                  </p>
+                  <div className="flex items-center gap-2 text-xs text-slate-500">
+                    <span>Range: {data.scaleStats.minTempo || 80} - {data.scaleStats.maxTempo || 80} BPM</span>
+                  </div>
+                  <p className="text-xs text-slate-500">Practice speed</p>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* Recent Sessions */}
+          {data.recentScaleSessions && data.recentScaleSessions.length > 0 && (
+            <div className="glass-card-subtle rounded-2xl p-6 border-white/[0.08]">
+              <h2 className="text-xl font-semibold text-white mb-6">Recent Scale Sessions</h2>
+              <div className="overflow-x-auto">
+                <table className="w-full">
+                  <thead>
+                    <tr className="text-left text-sm text-slate-400 border-b border-white/[0.08]">
+                      <th className="pb-3 pr-4">Date</th>
+                      <th className="pb-3 pr-4">Scale</th>
+                      <th className="pb-3 pr-4">Direction</th>
+                      <th className="pb-3 pr-4">Tempo</th>
+                      <th className="pb-3 pr-4">Sequence</th>
+                      <th className="pb-3 pr-4">Pitch</th>
+                      <th className="pb-3">Overall</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {data.recentScaleSessions.map((session, index) => (
+                      <tr key={index} className="border-b border-white/[0.08]">
+                        <td className="py-3 pr-4 text-slate-300">
+                          {new Date(session.session_date).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}
+                        </td>
+                        <td className="py-3 pr-4 text-white font-medium">
+                          {session.root_note} {session.scale_type.replace('_', ' ')}
+                        </td>
+                        <td className="py-3 pr-4 text-slate-300 capitalize">{session.direction}</td>
+                        <td className="py-3 pr-4 text-slate-300">{session.tempo_bpm || 80} BPM</td>
+                        <td className="py-3 pr-4 text-slate-300">{session.sequence_accuracy?.toFixed(0) || '--'}%</td>
+                        <td className="py-3 pr-4 text-slate-300">{session.pitch_accuracy?.toFixed(0) || '--'}%</td>
+                        <td className="py-3">
+                          <span className={`font-medium ${
+                            session.overall_score >= 80 ? 'text-green-400' :
+                            session.overall_score >= 60 ? 'text-yellow-400' : 'text-red-400'
+                          }`}>
+                            {session.overall_score?.toFixed(0) || '--'}%
+                          </span>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          )}
+
+          {/* Scale Training Info */}
+          <div className="glass-card-subtle rounded-xl p-6 border-white/[0.08]">
+            <h3 className="text-lg font-semibold text-white mb-4 flex items-center gap-2">
+              <Music className="w-5 h-5 text-purple-400" />
+              About Scale Training
+            </h3>
+            <div className="grid md:grid-cols-2 gap-6">
+              <div>
+                <h4 className="text-sm font-medium text-white/80 mb-2">How it works</h4>
+                <ul className="text-sm text-slate-400 space-y-2">
+                  <li className="flex items-start gap-2">
+                    <span className="text-purple-400 mt-1">•</span>
+                    Select a scale type (Major, Minor, Pentatonic, etc.)
+                  </li>
+                  <li className="flex items-start gap-2">
+                    <span className="text-purple-400 mt-1">•</span>
+                    Choose your root note and octave
+                  </li>
+                  <li className="flex items-start gap-2">
+                    <span className="text-purple-400 mt-1">•</span>
+                    Sing each note in order - the trainer tracks your pitch
+                  </li>
+                  <li className="flex items-start gap-2">
+                    <span className="text-purple-400 mt-1">•</span>
+                    Get real-time feedback on accuracy and sequence
+                  </li>
+                </ul>
+              </div>
+              <div>
+                <h4 className="text-sm font-medium text-white/80 mb-2">Tips for success</h4>
+                <ul className="text-sm text-slate-400 space-y-2">
+                  <li className="flex items-start gap-2">
+                    <span className="text-[var(--accent)] mt-1">•</span>
+                    Start with simple scales like C Major
+                  </li>
+                  <li className="flex items-start gap-2">
+                    <span className="text-[var(--accent)] mt-1">•</span>
+                    Use a comfortable octave for your voice range
+                  </li>
+                  <li className="flex items-start gap-2">
+                    <span className="text-[var(--accent)] mt-1">•</span>
+                    Hold each note steady for better accuracy tracking
+                  </li>
+                  <li className="flex items-start gap-2">
+                    <span className="text-[var(--accent)] mt-1">•</span>
+                    Practice ascending before trying descending or both
+                  </li>
+                </ul>
+              </div>
+            </div>
+          </div>
+
+          {/* Empty State */}
+          {(!data.scaleStats || data.scaleStats.totalSessions === 0) && (
+            <div className="text-center py-12 glass-card-subtle rounded-2xl border-white/[0.08]">
+              <div className="w-16 h-16 mx-auto mb-4 bg-pink-600/20 rounded-full flex items-center justify-center">
+                <Music className="w-8 h-8 text-pink-400" />
+              </div>
+              <h3 className="text-xl font-semibold text-white mb-2">Start Scale Training</h3>
+              <p className="text-slate-400 max-w-md mx-auto">
+                Use Pitch Perfect on your dashboard to practice scales.
+                Your sessions will be tracked here.
+              </p>
+            </div>
+          )}
+        </>
+      )}
+
     </div>
   )
 }

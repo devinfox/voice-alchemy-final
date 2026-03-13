@@ -108,11 +108,11 @@ export async function GET(
         notes = null;
     }
     
-    // Get count of archived notes for this student
+    // Get count of archived notes for this specific class/booking
     const { count: notesCount } = await supabase
       .from('notes_archive')
       .select('id', { count: 'exact', head: true })
-      .eq('student_id', booking.student_id)
+      .eq('booking_id', bookingId)
 
     const userName = profile.name || `${profile.first_name || ''} ${profile.last_name || ''}`.trim() || 'User'
 

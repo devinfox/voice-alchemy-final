@@ -354,10 +354,11 @@ export default function SessionView({ studentId, bookingId, isAdmin = false, cur
     }
 
     // Also refetch archive from DB to ensure consistency
+    // Filter by booking_id to only show notes for THIS specific class
     const { data: freshArchive } = await supabase
       .from('notes_archive')
       .select('id, class_started_at, class_ended_at')
-      .eq('student_id', studentId)
+      .eq('booking_id', bookingId)
       .order('class_started_at', { ascending: false })
     if (freshArchive) setArchive(freshArchive)
 

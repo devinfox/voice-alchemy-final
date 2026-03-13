@@ -32,6 +32,7 @@ export async function GET(
     }
 
     // Get all past notes from notes_archive (where end-class writes to)
+    // Filter by booking_id to only show notes for THIS specific class/teacher relationship
     const { data: archivedNotes, error: notesError } = await supabase
       .from('notes_archive')
       .select(`
@@ -41,9 +42,11 @@ export async function GET(
         class_started_at,
         class_ended_at,
         published,
-        created_at
+        created_at,
+        recording_id,
+        ai_summary
       `)
-      .eq('student_id', booking.student_id)
+      .eq('booking_id', bookingId)
       .order('class_started_at', { ascending: false })
 
     if (notesError) {
