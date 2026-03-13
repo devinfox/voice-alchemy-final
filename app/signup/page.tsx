@@ -25,6 +25,17 @@ export default function SignupPage() {
     e.preventDefault()
     setError(null)
 
+    // Validate required name fields
+    if (!firstName.trim()) {
+      setError('First name is required')
+      return
+    }
+
+    if (!lastName.trim()) {
+      setError('Last name is required')
+      return
+    }
+
     // Validate passwords match
     if (password !== confirmPassword) {
       setError('Passwords do not match')

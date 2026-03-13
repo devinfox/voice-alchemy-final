@@ -634,7 +634,7 @@ export default function ScaleTrainer({ variant = 'floating' }: ScaleTrainerProps
               <Music className="w-5 h-5 text-pink-400" />
             </div>
             <div>
-              <h2 className="text-lg font-semibold text-white">Pitch Perfect</h2>
+              <h2 className="text-lg font-semibold text-white">Scale Trainer</h2>
               <p className="text-sm text-white/50">Practice scales with real-time feedback</p>
             </div>
           </div>
@@ -1004,7 +1004,7 @@ export default function ScaleTrainer({ variant = 'floating' }: ScaleTrainerProps
           onClick={() => setIsOpen(true)}
           className="fixed bottom-4 right-[140px] w-12 h-12 lg:bottom-6 lg:right-40 lg:w-14 lg:h-14 bg-gradient-to-br from-pink-500 to-purple-600 rounded-full shadow-lg flex items-center justify-center text-white hover:scale-110 active:scale-95 transition-all duration-300 z-50"
           style={{ boxShadow: '0 8px 24px rgba(236, 72, 153, 0.4)' }}
-          title="Pitch Perfect"
+          title="Scale Trainer"
         >
           <Music className="w-5 h-5 lg:w-6 lg:h-6" />
         </button>
@@ -1018,7 +1018,7 @@ export default function ScaleTrainer({ variant = 'floating' }: ScaleTrainerProps
             <Music className="w-6 h-6" />
           </div>
           <div className="text-left flex-1">
-            <p className="font-semibold text-lg">Pitch Perfect</p>
+            <p className="font-semibold text-lg">Scale Trainer</p>
             <p className="text-sm text-white/70">Practice scales & sequences</p>
           </div>
         </button>

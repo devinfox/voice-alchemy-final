@@ -389,7 +389,7 @@ export default function PitchTrainingProgressPage() {
       {/* Header */}
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="text-3xl font-bold text-white">Pitch Perfect</h1>
+          <h1 className="text-3xl font-bold text-white">Training Center</h1>
           <p className="text-slate-400 mt-1">Track your vocal pitch and rhythm improvement over time</p>
         </div>
         <div className="flex items-center gap-2">
@@ -1940,7 +1940,7 @@ export default function PitchTrainingProgressPage() {
               </div>
               <h3 className="text-xl font-semibold text-white mb-2">Start Scale Training</h3>
               <p className="text-slate-400 max-w-md mx-auto">
-                Use Pitch Perfect on your dashboard to practice scales.
+                Use the Scale Trainer on your dashboard to practice scales.
                 Your sessions will be tracked here.
               </p>
             </div>

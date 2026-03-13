@@ -31,7 +31,7 @@ const teacherNavigation: NavItem[] = [
   { name: 'Dashboard', href: '/dashboard', icon: LayoutDashboard },
   { name: 'My Students', href: '/dashboard/students', icon: Users },
   { name: 'Courses', href: '/dashboard/courses', icon: GraduationCap },
-  { name: 'Pitch Perfect', href: '/dashboard/pitch-training', icon: Music },
+  { name: 'Training Center', href: '/dashboard/training-center', icon: Music },
   { name: 'Calendar', href: '/dashboard/calendar', icon: Calendar },
 ]
 
@@ -39,7 +39,7 @@ const studentNavigation: NavItem[] = [
   { name: 'Dashboard', href: '/dashboard', icon: LayoutDashboard },
   { name: 'My Lessons', href: '/dashboard/my-lessons', icon: BookOpen },
   { name: 'Courses', href: '/dashboard/courses', icon: GraduationCap },
-  { name: 'Pitch Perfect', href: '/dashboard/pitch-training', icon: Music },
+  { name: 'Training Center', href: '/dashboard/training-center', icon: Music },
   { name: 'Find Teacher', href: '/dashboard/find-teacher', icon: Search },
   { name: 'Calendar', href: '/dashboard/calendar', icon: Calendar },
 ]
