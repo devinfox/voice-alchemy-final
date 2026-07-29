@@ -54,6 +54,22 @@ const TIMING_THRESHOLDS = {
   window: 200,   // Detection window around beat (±200ms)
 }
 
+const SCHEDULE_AHEAD_SECONDS = 0.3
+const TAP_TEMPO_RESET_FACTOR = 1.5
+
+type AudioContextConstructor = typeof AudioContext
+
+function createBrowserAudioContext(): AudioContext {
+  const AudioContextCtor = window.AudioContext ||
+    (window as Window & { webkitAudioContext?: AudioContextConstructor }).webkitAudioContext
+
+  if (!AudioContextCtor) {
+    throw new Error('Web Audio is not supported in this browser')
+  }
+
+  return new AudioContextCtor()
+}
+
 const SOUND_OPTIONS: { value: MetronomeSound; label: string }[] = [
   { value: 'click', label: 'Click' },
   { value: 'woodblock', label: 'Wood Block' },
@@ -243,7 +259,7 @@ function useOnsetDetection({ threshold, onOnset }: UseOnsetDetectionOptions) {
 
   const startListening = useCallback(async () => {
     try {
-      audioContextRef.current = new (window.AudioContext || (window as any).webkitAudioContext)()
+      audioContextRef.current = createBrowserAudioContext()
       analyserRef.current = audioContextRef.current.createAnalyser()
       analyserRef.current.fftSize = 2048
 
@@ -450,8 +466,15 @@ export default function RhythmTrainer({ variant = 'floating' }: RhythmTrainerPro
   const beatsPerMeasure = TIME_SIGNATURES.find(t => t.value === timeSignature)?.beats || 4
 
   // Handle onset detection
-  const handleOnset = useCallback((onsetTime: number) => {
-    if (!isPlaying || expectedBeatTimesRef.current.length === 0) return
+  /**
+   * Register a hit against the nearest expected beat.
+   *
+   * Shared by both input methods: microphone onsets and the tap pad. Returns
+   * the timing result so the tap pad can flash feedback, or null when the hit
+   * landed outside the matching window (or the metronome is not running).
+   */
+  const handleOnset = useCallback((onsetTime: number): TimingResult | null => {
+    if (!isPlaying || expectedBeatTimesRef.current.length === 0) return null
 
     // Find the closest expected beat
     let closestBeatIndex = -1
@@ -467,7 +490,7 @@ export default function RhythmTrainer({ variant = 'floating' }: RhythmTrainerPro
       }
     })
 
-    if (closestBeatIndex === -1) return
+    if (closestBeatIndex === -1) return null
 
     lastProcessedBeatRef.current = closestBeatIndex
 
@@ -490,6 +513,8 @@ export default function RhythmTrainer({ variant = 'floating' }: RhythmTrainerPro
       ...prev,
       beatTimings: [...prev.beatTimings, newTiming],
     }))
+
+    return result
   }, [isPlaying])
 
   const { isListening, startListening, stopListening } = useOnsetDetection({
@@ -497,13 +522,132 @@ export default function RhythmTrainer({ variant = 'floating' }: RhythmTrainerPro
     onOnset: handleOnset,
   })
 
+  // ==========================================================================
+  // TAP INPUT
+  // ==========================================================================
+  // Until now the only way to register a beat was the microphone, so the tool
+  // was unusable without mic permission, in a quiet room, or anywhere the
+  // metronome bleeding into the mic would false-trigger onsets. Tapping is the
+  // standard input for a rhythm trainer and works everywhere.
+
+  /** Flash feedback on the pad: the result of the most recent tap. */
+  const [tapFeedback, setTapFeedback] = useState<{ result: TimingResult | 'no-match'; id: number } | null>(null)
+  const tapFeedbackTimerRef = useRef<NodeJS.Timeout | null>(null)
+  const tapIdRef = useRef(0)
+
+  const registerTap = useCallback(() => {
+    // Timestamp as early as possible. Expected beat times are stored on the
+    // Date.now() axis (synchronised to audioContext at start), so this is
+    // directly comparable without conversion.
+    const tapTime = Date.now()
+
+    const result = handleOnset(tapTime)
+
+    tapIdRef.current += 1
+    setTapFeedback({ result: result ?? 'no-match', id: tapIdRef.current })
+
+    if (tapFeedbackTimerRef.current) clearTimeout(tapFeedbackTimerRef.current)
+    tapFeedbackTimerRef.current = setTimeout(() => setTapFeedback(null), 350)
+  }, [handleOnset])
+
+  // Spacebar as an alias for the pad. Ignored while typing so it cannot hijack
+  // the BPM field or any future text input.
+  useEffect(() => {
+    const onKeyDown = (e: KeyboardEvent) => {
+      if (e.code !== 'Space' && e.key !== ' ') return
+
+      const target = e.target as HTMLElement | null
+      const tag = target?.tagName
+      if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT' || target?.isContentEditable) return
+
+      e.preventDefault() // stop the page scrolling on every tap
+      if (e.repeat) return // holding the key is not a stream of beats
+      registerTap()
+    }
+
+    window.addEventListener('keydown', onKeyDown)
+    return () => window.removeEventListener('keydown', onKeyDown)
+  }, [registerTap])
+
+  useEffect(() => {
+    return () => {
+      if (tapFeedbackTimerRef.current) clearTimeout(tapFeedbackTimerRef.current)
+    }
+  }, [])
+
+  // ==========================================================================
+  // TAP TEMPO
+  // ==========================================================================
+  // Set the BPM by tapping a few times, rather than hunting on the slider.
+
+  const tapTempoTimesRef = useRef<number[]>([])
+  const [tapTempoCount, setTapTempoCount] = useState(0)
+
+  const registerTempoTap = useCallback(() => {
+    const now = Date.now()
+    const taps = tapTempoTimesRef.current
+
+    // A long gap means this is the start of a new attempt, not a continuation.
+    // This mirrors common tap-tempo counters: reset when the pause is much
+    // longer than the tempo established so far, with a 2s fallback for the
+    // first interval.
+    if (taps.length > 0) {
+      const intervals: number[] = []
+      for (let i = 1; i < taps.length; i++) intervals.push(taps[i] - taps[i - 1])
+      const averageInterval = intervals.length > 0
+        ? intervals.reduce((sum, interval) => sum + interval, 0) / intervals.length
+        : 0
+      const resetThreshold = averageInterval > 0
+        ? averageInterval * TAP_TEMPO_RESET_FACTOR
+        : 2000
+      if (now - taps[taps.length - 1] > resetThreshold) {
+        taps.length = 0
+      }
+    }
+
+    if (taps.length > 0 && now <= taps[taps.length - 1]) {
+      taps.length = 0
+    }
+
+    taps.push(now)
+    if (taps.length > 8) taps.shift() // rolling window, recent taps win
+
+    setTapTempoCount(taps.length)
+
+    // Two taps give one interval, which is far too noisy to trust.
+    if (taps.length < 3) return
+
+    const intervals: number[] = []
+    for (let i = 1; i < taps.length; i++) intervals.push(taps[i] - taps[i - 1])
+
+    // Median rather than mean: one hesitant tap should not drag the tempo.
+    const sorted = [...intervals].sort((a, b) => a - b)
+    const mid = Math.floor(sorted.length / 2)
+    const medianInterval = sorted.length % 2 === 0
+      ? (sorted[mid - 1] + sorted[mid]) / 2
+      : sorted[mid]
+
+    if (medianInterval <= 0) return
+
+    const derived = Math.round(60000 / medianInterval)
+    // Clamp to the slider's range so the two controls cannot disagree.
+    setBpm(Math.max(40, Math.min(220, derived)))
+  }, [])
+
+  const resetTapTempo = useCallback(() => {
+    tapTempoTimesRef.current = []
+    setTapTempoCount(0)
+  }, [])
+
   // Schedule metronome beats
   const scheduleBeats = useCallback(() => {
     if (!audioContextRef.current) return
 
     const currentTime = audioContextRef.current.currentTime
     const secondsPerBeat = 60.0 / bpm
-    const scheduleAhead = 0.1 // Schedule 100ms ahead
+    // Must be larger than TIMING_THRESHOLDS.window so early taps can match a
+    // beat that is about to happen.
+    const scheduleAhead = SCHEDULE_AHEAD_SECONDS
 
     while (nextBeatTimeRef.current < currentTime + scheduleAhead) {
       const beatInMeasure = beatCounterRef.current % beatsPerMeasure
@@ -545,7 +689,7 @@ export default function RhythmTrainer({ variant = 'floating' }: RhythmTrainerPro
   // Start metronome
   const startMetronome = useCallback(async () => {
     if (!audioContextRef.current) {
-      audioContextRef.current = new (window.AudioContext || (window as any).webkitAudioContext)()
+      audioContextRef.current = createBrowserAudioContext()
     }
 
     // Initialize synchronized time references
@@ -616,7 +760,7 @@ export default function RhythmTrainer({ variant = 'floating' }: RhythmTrainerPro
         : Math.round((Date.now() - session.startedAt.getTime()) / 1000)
 
       // Prepare beat metrics for saving
-      const beatMetrics = session.beatTimings.map((bt, index) => ({
+      const beatMetrics = session.beatTimings.map((bt) => ({
         beatNumber: bt.beatNumber,
         expectedTimeMs: bt.expectedTime,
         actualTimeMs: bt.actualTime,
@@ -754,7 +898,7 @@ export default function RhythmTrainer({ variant = 'floating' }: RhythmTrainerPro
     </div>
   )
 
-  // Render BPM slider
+  // Render BPM slider + tap tempo
   const renderBpmControl = () => (
     <div className="bg-slate-800/50 rounded-xl p-4 border border-slate-700/50 mb-4">
       <div className="flex items-center justify-between mb-2">
@@ -773,6 +917,39 @@ export default function RhythmTrainer({ variant = 'floating' }: RhythmTrainerPro
       <div className="flex justify-between text-xs text-slate-500 mt-1">
         <span>40</span>
         <span>220</span>
+      </div>
+
+      {/* Tap tempo: derive BPM from tapping instead of hunting on the slider.
+          Disabled while playing, matching the slider - changing tempo mid-run
+          would invalidate the beat schedule the session is measured against. */}
+      <div className="flex items-center gap-2 mt-3">
+        <button
+          onPointerDown={(e) => {
+            e.preventDefault()
+            registerTempoTap()
+          }}
+          disabled={isPlaying}
+          className={`flex-1 py-2 rounded-lg text-sm font-semibold transition-all select-none touch-none ${
+            isPlaying
+              ? 'bg-slate-700/50 text-slate-500 cursor-not-allowed'
+              : 'bg-slate-700 hover:bg-slate-600 active:scale-[0.98] text-white'
+          }`}
+        >
+          {tapTempoCount === 0
+            ? 'Tap Tempo'
+            : tapTempoCount < 3
+              ? `Keep tapping (${tapTempoCount}/3)`
+              : `Tapping · ${bpm} BPM`}
+        </button>
+        {tapTempoCount > 0 && !isPlaying && (
+          <button
+            onClick={resetTapTempo}
+            className="px-3 py-2 rounded-lg text-xs text-slate-400 hover:text-white hover:bg-slate-700 transition-colors"
+            title="Clear tap tempo"
+          >
+            Reset
+          </button>
+        )}
       </div>
     </div>
   )
@@ -1120,16 +1297,60 @@ export default function RhythmTrainer({ variant = 'floating' }: RhythmTrainerPro
                 </button>
               </div>
 
+              {/* Tap pad - primary input, works with or without the microphone */}
+              <div className="mb-6">
+                <button
+                  onPointerDown={(e) => {
+                    // pointerdown, not click: fires on contact rather than
+                    // release, which is what makes a tap pad feel accurate.
+                    e.preventDefault()
+                    registerTap()
+                  }}
+                  disabled={!isPlaying}
+                  aria-label="Tap on the beat"
+                  className={`w-full h-32 rounded-2xl border-2 select-none touch-none transition-all duration-100 flex flex-col items-center justify-center gap-1 ${
+                    !isPlaying
+                      ? 'border-slate-700/50 bg-slate-800/30 cursor-not-allowed'
+                      : tapFeedback?.result === 'on-beat'
+                        ? 'border-green-400 bg-green-500/30 scale-[0.98]'
+                        : tapFeedback?.result === 'early'
+                          ? 'border-yellow-400 bg-yellow-500/25 scale-[0.98]'
+                          : tapFeedback?.result === 'late'
+                            ? 'border-orange-400 bg-orange-500/25 scale-[0.98]'
+                            : tapFeedback?.result === 'no-match'
+                              ? 'border-slate-500 bg-slate-600/30 scale-[0.98]'
+                              : 'border-amber-500/50 bg-gradient-to-br from-amber-500/15 to-orange-600/10 hover:from-amber-500/25 hover:to-orange-600/20 active:scale-[0.98] cursor-pointer'
+                  }`}
+                >
+                  <span className={`text-lg font-bold ${!isPlaying ? 'text-slate-500' : 'text-white'}`}>
+                    {!isPlaying
+                      ? 'Press play to begin'
+                      : tapFeedback?.result === 'on-beat'
+                        ? 'On beat!'
+                        : tapFeedback?.result === 'early'
+                          ? 'A little early'
+                          : tapFeedback?.result === 'late'
+                            ? 'A little late'
+                            : tapFeedback?.result === 'no-match'
+                              ? 'Off the beat'
+                              : 'TAP'}
+                  </span>
+                  <span className="text-xs text-slate-400">
+                    {isPlaying ? 'tap here or press spacebar' : ''}
+                  </span>
+                </button>
+              </div>
+
               {/* Instructions */}
               <div className="text-center text-sm text-slate-400 mb-6">
-                {!isPlaying && !isListening && (
-                  <p>Press play to start the metronome, then tap the mic to detect your timing!</p>
+                {!isPlaying && (
+                  <p>Press play to start the metronome, then tap the pad or spacebar on each beat.</p>
                 )}
                 {isPlaying && !isListening && (
-                  <p>Metronome is playing. Tap the mic button to start timing detection.</p>
+                  <p>Tap the pad or press spacebar on the beat. Turn on the mic to clap or sing instead.</p>
                 )}
                 {isPlaying && isListening && (
-                  <p>Clap, tap, or sing on the beat - your timing will be tracked!</p>
+                  <p>Tap, clap, or sing on the beat - both tapping and the mic are being tracked.</p>
                 )}
               </div>
 
