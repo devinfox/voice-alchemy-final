@@ -569,7 +569,10 @@ export async function POST(request: NextRequest) {
         .from('emails')
         .insert({
           id: emailId,
-          thread_id: threadId,
+          // The production DB currently has a trigger with uncast enum literals
+          // on AFTER INSERT WHEN thread_id IS NOT NULL. Insert detached, then
+          // attach and update the thread explicitly below.
+          thread_id: null,
           email_account_id: account.id,
           organization_id: accountOrgId,
           message_id: messageId,
@@ -592,6 +595,50 @@ export async function POST(request: NextRequest) {
       if (emailError) {
         console.error('Error creating email:', emailError)
         continue
+      }
+
+      const { error: linkEmailError } = await getSupabaseAdmin()
+        .from('emails')
+        .update({ thread_id: threadId })
+        .eq('id', emailId)
+
+      if (linkEmailError) {
+        console.error('Error linking email to thread:', linkEmailError)
+        continue
+      }
+
+      const { data: currentThread } = await getSupabaseAdmin()
+        .from('email_threads')
+        .select('message_count, unread_count, has_attachments, workflow_state')
+        .eq('id', threadId)
+        .maybeSingle()
+
+      const workflowState = isSpam
+        ? currentThread?.workflow_state ?? null
+        : currentThread?.workflow_state === 'snoozed'
+          ? 'snoozed'
+          : 'needs_response'
+      const { error: threadUpdateError } = await getSupabaseAdmin()
+        .from('email_threads')
+        .update({
+          message_count: (currentThread?.message_count || 0) + 1,
+          unread_count: (currentThread?.unread_count || 0) + 1,
+          last_message_at: new Date().toISOString(),
+          last_inbound_at: new Date().toISOString(),
+          has_attachments: Boolean(
+            currentThread?.has_attachments ||
+            preUploadedAttachments?.length ||
+            attachmentInfo ||
+            rawMimeAttachments.length > 0
+          ),
+          is_read: false,
+          workflow_state: workflowState,
+          updated_at: new Date().toISOString(),
+        })
+        .eq('id', threadId)
+
+      if (threadUpdateError) {
+        console.error('Error updating thread after inbound insert:', threadUpdateError)
       }
 
       // Handle attachments

@@ -574,14 +574,14 @@ BEGIN
         UPDATE email_threads
         SET last_inbound_at = COALESCE(NEW.sent_at, NEW.created_at),
             workflow_state = CASE
-                WHEN workflow_state = 'snoozed' THEN 'snoozed'
-                ELSE 'needs_response'
+                WHEN workflow_state = 'snoozed'::thread_workflow_state THEN 'snoozed'::thread_workflow_state
+                ELSE 'needs_response'::thread_workflow_state
             END
         WHERE id = NEW.thread_id;
     ELSE
         UPDATE email_threads
         SET last_outbound_at = COALESCE(NEW.sent_at, NEW.created_at),
-            workflow_state = 'waiting_on_reply'
+            workflow_state = 'waiting_on_reply'::thread_workflow_state
         WHERE id = NEW.thread_id;
     END IF;
     RETURN NEW;
@@ -600,10 +600,10 @@ DECLARE
     woken_count INTEGER;
 BEGIN
     UPDATE email_threads
-    SET workflow_state = 'needs_response',
+    SET workflow_state = 'needs_response'::thread_workflow_state,
         snoozed_until = NULL,
         folder = 'inbox'
-    WHERE workflow_state = 'snoozed' AND snoozed_until <= NOW();
+    WHERE workflow_state = 'snoozed'::thread_workflow_state AND snoozed_until <= NOW();
 
     GET DIAGNOSTICS woken_count = ROW_COUNT;
     RETURN woken_count;
