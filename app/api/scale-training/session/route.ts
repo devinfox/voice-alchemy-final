@@ -1,5 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase-server'
+import { createSupabaseAdmin } from '@/lib/supabase-admin'
+import { analyzeScaleSession, saveTrainingFeedback, fetchLessonContext } from '@/lib/training-ai'
 
 interface NoteMetric {
   noteName: string
@@ -200,6 +202,45 @@ export async function POST(request: NextRequest) {
 
     // Update weekly progress
     await updateWeeklyProgress(supabase, user.id)
+
+    // AI coaching per session. Previously scale feedback existed only behind the
+    // manual "Scale Analysis" panel, so a student who never opened it received
+    // nothing. Backstopped by the reconciliation cron.
+    void (async () => {
+      try {
+        const lessonNotes = await fetchLessonContext(supabase, user.id)
+
+        const analysis = await analyzeScaleSession(
+          {
+            scaleType: body.scaleType,
+            rootNote: body.rootNote,
+            direction: body.direction,
+            octave: body.octave,
+            tempoBpm,
+            durationSeconds,
+            sequenceAccuracy: body.sequenceAccuracy,
+            pitchAccuracy: body.pitchAccuracy,
+            overallScore: body.overallScore,
+            totalNotesExpected: body.totalNotesExpected,
+            totalNotesSung: body.totalNotesSung,
+            notesInCorrectOrder: body.notesInCorrectOrder,
+          },
+          { lessonNotes }
+        )
+
+        await saveTrainingFeedback(
+          createSupabaseAdmin(), user.id, 'scale_session', sessionId, analysis,
+          {
+            scaleType: body.scaleType,
+            rootNote: body.rootNote,
+            direction: body.direction,
+            overallScore: body.overallScore,
+          }
+        )
+      } catch (err) {
+        console.error('[ScaleSession] AI feedback generation failed:', err)
+      }
+    })()
 
     return NextResponse.json({
       sessionId,

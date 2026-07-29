@@ -6,6 +6,7 @@ import { repairUtf8Mojibake } from '@/lib/mojibake'
 import { v4 as uuidv4 } from 'uuid'
 import { processEmailForAI } from '@/lib/email-ai'
 import { syncCalendarInvitesForEmail } from '@/lib/calendar/sync-email-invites'
+import { forwardHelloInboundEmail, InboundForwardAttachment } from '@/lib/email/inbound-forwarding'
 
 /**
  * Coerce a (possibly malformed) MIME content-type into a value that Supabase
@@ -96,7 +97,7 @@ function parseMimeContent(mimeContent: string, depth: number = 0): { text: strin
       if (part.toLowerCase().includes('content-transfer-encoding: base64')) {
         try {
           content = Buffer.from(content.replace(/\s/g, ''), 'base64').toString('utf-8')
-        } catch (e) {
+        } catch {
           // Keep original if decode fails
         }
       }
@@ -203,7 +204,7 @@ function parseMimeAttachments(mimeContent: string, depth: number = 0): MimeAttac
       const contentMatch = part.match(/\r?\n\r?\n([\s\S]*)/)
       if (!contentMatch) continue
 
-      let rawContent = contentMatch[1].trim()
+      const rawContent = contentMatch[1].trim()
 
       // Check encoding and decode
       const isBase64 = part.toLowerCase().includes('content-transfer-encoding: base64')
@@ -427,6 +428,7 @@ export async function POST(request: NextRequest) {
         size: number
         content: string
       }> = []
+      const forwardAttachments: InboundForwardAttachment[] = []
 
       // Resolve the org for this account so every inbound row is org-stamped.
       // Inserts here use the service-role client, which bypasses the
@@ -610,7 +612,30 @@ export async function POST(request: NextRequest) {
             is_inline: ref.content_id ? true : false,
           })
 
-          if (nimbusOn) {
+          if (!ref.content_id) {
+            try {
+              const { data: blob } = await getSupabaseAdmin().storage
+                .from('email-attachments')
+                .download(ref.storage_path)
+              if (blob) {
+                const buf = Buffer.from(await blob.arrayBuffer())
+                uploadedAttachments.push({
+                  filename: ref.filename,
+                  mimeType: ref.content_type,
+                  size: ref.size_bytes,
+                  content: buf.toString('base64'),
+                })
+                forwardAttachments.push({
+                  filename: ref.filename,
+                  type: ref.content_type,
+                  content: buf.toString('base64'),
+                  disposition: 'attachment',
+                })
+              }
+            } catch (dlErr) {
+              console.error('[SendGrid Inbound] Failed to download pre-uploaded attachment:', ref.filename, dlErr)
+            }
+          } else if (nimbusOn) {
             try {
               const { data: blob } = await getSupabaseAdmin().storage
                 .from('email-attachments')
@@ -625,7 +650,7 @@ export async function POST(request: NextRequest) {
                 })
               }
             } catch (dlErr) {
-              console.error('[SendGrid Inbound] Failed to download pre-uploaded attachment for analysis:', ref.filename, dlErr)
+              console.error('[SendGrid Inbound] Failed to download inline pre-uploaded attachment for analysis:', ref.filename, dlErr)
             }
           }
         }
@@ -691,6 +716,14 @@ export async function POST(request: NextRequest) {
                 size: fileData.size,
                 content: attachmentBuffer.toString('base64'),
               })
+              if (!attInfo['content-id']) {
+                forwardAttachments.push({
+                  filename: attInfo.filename,
+                  type: safeContentType,
+                  content: attachmentBuffer.toString('base64'),
+                  disposition: 'attachment',
+                })
+              }
             }
           }
 
@@ -745,6 +778,14 @@ export async function POST(request: NextRequest) {
               size: att.content.length,
               content: att.content.toString('base64'),
             })
+            if (!att.contentId) {
+              forwardAttachments.push({
+                filename: att.filename,
+                type: safeContentType,
+                content: att.content.toString('base64'),
+                disposition: 'attachment',
+              })
+            }
 
             console.log('[SendGrid Inbound] Uploaded raw MIME attachment:', att.filename)
           }
@@ -765,6 +806,23 @@ export async function POST(request: NextRequest) {
         subject,
         from: fromParsed.email,
       })
+
+      try {
+        await forwardHelloInboundEmail({
+          accountEmail: account.email_address,
+          fromEmail: fromParsed.email,
+          fromName: fromParsed.name || null,
+          toAddresses,
+          ccAddresses,
+          subject,
+          bodyText: finalText,
+          bodyHtml: finalHtml,
+          attachments: forwardAttachments,
+          messageId,
+        })
+      } catch (forwardError) {
+        console.error('[SendGrid Inbound] Failed to forward hello@ email:', forwardError)
+      }
 
       try {
         // Process email for AI analysis, linking, and follow-up automations.

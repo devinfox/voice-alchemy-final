@@ -106,13 +106,22 @@ export async function POST(
       .maybeSingle()
 
     if (latestRecording && archivedNote) {
-      // Update the archived note with the recording ID
-      await dbClient
+      // Update the archived note with the recording ID.
+      // The error was previously unchecked, which hid a FK violation that left
+      // every note in the table unlinked. Surface it.
+      const { error: linkError } = await dbClient
         .from('notes_archive')
         .update({ recording_id: latestRecording.id })
         .eq('id', archivedNote.id)
 
-      console.log('[End Class API] Linked recording', latestRecording.id, 'to archived note', archivedNote.id)
+      if (linkError) {
+        console.error(
+          `[End Class API] FAILED to link recording ${latestRecording.id} to note ` +
+          `${archivedNote.id}: ${linkError.code} ${linkError.message}`
+        )
+      } else {
+        console.log('[End Class API] Linked recording', latestRecording.id, 'to archived note', archivedNote.id)
+      }
 
       // Check if AI processing needs to be triggered
       // Note: AI processing is now primarily handled by the recordings upload route

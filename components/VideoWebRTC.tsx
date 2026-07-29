@@ -123,6 +123,8 @@ const VideoWebRTC = forwardRef<VideoWebRTCHandle, VideoWebRTCProps>(function Vid
   const mediaRecorderRef = useRef<MediaRecorder | null>(null)
   const recordedChunksRef = useRef<Blob[]>([])
   const audioContextRef = useRef<AudioContext | null>(null)
+  // Periodic RMS logging of the mixed recording audio, for diagnosing silent recordings
+  const audioLevelIntervalRef = useRef<NodeJS.Timeout | null>(null)
   const combinedStreamRef = useRef<MediaStream | null>(null)
   const canvasRef = useRef<HTMLCanvasElement | null>(null)
   const animationFrameRef = useRef<number | null>(null)
@@ -815,22 +817,87 @@ const VideoWebRTC = forwardRef<VideoWebRTCHandle, VideoWebRTCProps>(function Vid
     audioContextRef.current = audioContext
     const destination = audioContext.createMediaStreamDestination()
 
+    // An AudioContext created without a user gesture starts 'suspended', and a
+    // suspended context pumps silence into the destination. That alone produces
+    // a full-size video file with a silent audio track, which is consistent
+    // with the near-empty transcripts we have been seeing.
+    if (audioContext.state === 'suspended') {
+      console.warn('[RecordingAudio] AudioContext is suspended - resuming before mixing')
+      audioContext.resume().catch(err =>
+        console.error('[RecordingAudio] Failed to resume AudioContext:', err)
+      )
+    }
+    console.log(`[RecordingAudio] AudioContext state=${audioContext.state} sampleRate=${audioContext.sampleRate}`)
+
     // Mix audio from both streams
     const allStreams = [localStreamRef.current, ...Array.from(remoteStreams.values())].filter(Boolean)
-    allStreams.forEach(stream => {
+    console.log(
+      `[RecordingAudio] Mixing from ${allStreams.length} stream(s): ` +
+      `local=${localStreamRef.current ? 'yes' : 'NO'} remote=${remoteStreams.size}`
+    )
+
+    let connectedTrackCount = 0
+    allStreams.forEach((stream, i) => {
       if (stream) {
         const audioTracks = stream.getAudioTracks()
-        if (audioTracks.length > 0) {
-          const source = audioContext.createMediaStreamSource(new MediaStream([audioTracks[0]]))
-          source.connect(destination)
+        const label = i === 0 ? 'local' : `remote[${i - 1}]`
+
+        if (audioTracks.length === 0) {
+          console.warn(`[RecordingAudio] ${label} stream has NO audio tracks - nothing to record from it`)
+          return
         }
+
+        const t = audioTracks[0]
+        console.log(
+          `[RecordingAudio] ${label} audio track: enabled=${t.enabled} muted=${t.muted} ` +
+          `readyState=${t.readyState} label="${t.label}"`
+        )
+        if (!t.enabled || t.muted || t.readyState !== 'live') {
+          console.warn(`[RecordingAudio] ${label} audio track is not delivering audio`)
+        }
+
+        const source = audioContext.createMediaStreamSource(new MediaStream([audioTracks[0]]))
+        source.connect(destination)
+        connectedTrackCount++
       }
     })
+
+    if (connectedTrackCount === 0) {
+      console.error(
+        '[RecordingAudio] No audio tracks connected. This recording will be SILENT ' +
+        'and its transcript will be rejected as too short.'
+      )
+    }
+
+    // Live level meter. If this logs near-zero RMS for the whole lesson, the
+    // microphone is not reaching the recorder even though tracks look healthy.
+    const meter = audioContext.createAnalyser()
+    meter.fftSize = 2048
+    if (destination.stream.getAudioTracks().length > 0) {
+      audioContext.createMediaStreamSource(destination.stream).connect(meter)
+    }
+    const meterBuffer = new Float32Array(meter.fftSize)
+    if (audioLevelIntervalRef.current) clearInterval(audioLevelIntervalRef.current)
+    audioLevelIntervalRef.current = setInterval(() => {
+      meter.getFloatTimeDomainData(meterBuffer)
+      let sum = 0
+      for (let i = 0; i < meterBuffer.length; i++) sum += meterBuffer[i] * meterBuffer[i]
+      const rms = Math.sqrt(sum / meterBuffer.length)
+      console.log(
+        `[RecordingAudio] mixed level RMS=${rms.toFixed(5)} ` +
+        `${rms < 0.0005 ? '<-- SILENT' : ''} (ctx=${audioContext.state}, tracks=${connectedTrackCount})`
+      )
+    }, 10000)
 
     const combinedStream = new MediaStream([
       ...canvasStream.getVideoTracks(),
       ...destination.stream.getAudioTracks(),
     ])
+
+    console.log(
+      `[RecordingAudio] Combined stream: ${combinedStream.getVideoTracks().length} video, ` +
+      `${combinedStream.getAudioTracks().length} audio track(s)`
+    )
 
     combinedStreamRef.current = combinedStream
     return combinedStream
@@ -871,6 +938,12 @@ const VideoWebRTC = forwardRef<VideoWebRTCHandle, VideoWebRTCProps>(function Vid
       animationFrameRef.current = null
     }
 
+    // Stop the recording level meter
+    if (audioLevelIntervalRef.current) {
+      clearInterval(audioLevelIntervalRef.current)
+      audioLevelIntervalRef.current = null
+    }
+
     // Close AudioContext to prevent memory leak
     if (audioContextRef.current) {
       audioContextRef.current.close().catch(() => {})
@@ -903,6 +976,18 @@ const VideoWebRTC = forwardRef<VideoWebRTCHandle, VideoWebRTCProps>(function Vid
         return
       }
       console.log('[VideoWebRTC] Combined stream created with', stream.getTracks().length, 'tracks')
+
+      // The audio mix is built once, here. A participant who joins after this
+      // point is NOT in the recorded audio, because createCombinedStream is not
+      // re-run. If recording starts before the student connects, the lesson is
+      // captured with the teacher's microphone only, or silence.
+      if (remoteStreams.size === 0) {
+        console.warn(
+          '[RecordingAudio] Recording is starting with NO remote participant connected. ' +
+          'Only local audio will be captured, and a participant joining later will not be ' +
+          'added to the mix.'
+        )
+      }
 
       const options = { mimeType: 'video/webm;codecs=vp9,opus' }
       if (!MediaRecorder.isTypeSupported(options.mimeType)) {
@@ -953,7 +1038,10 @@ const VideoWebRTC = forwardRef<VideoWebRTCHandle, VideoWebRTCProps>(function Vid
     } catch (err) {
       console.error('[VideoWebRTC] Error starting recording:', err)
     }
-  }, [createCombinedStream, onRecordingComplete, autoStopRecording])
+    // remoteStreams.size drives the "no participant connected" warning above.
+    // createCombinedStream already depends on remoteStreams, so this callback's
+    // identity was changing with it regardless.
+  }, [createCombinedStream, onRecordingComplete, autoStopRecording, remoteStreams.size])
 
   // Stop recording and return the blob (without disconnecting)
   const stopRecordingAndGetBlob = useCallback(async (): Promise<Blob | null> => {
@@ -995,6 +1083,12 @@ const VideoWebRTC = forwardRef<VideoWebRTCHandle, VideoWebRTCProps>(function Vid
     if (animationFrameRef.current) {
       cancelAnimationFrame(animationFrameRef.current)
       animationFrameRef.current = null
+    }
+
+    // Stop the recording level meter
+    if (audioLevelIntervalRef.current) {
+      clearInterval(audioLevelIntervalRef.current)
+      audioLevelIntervalRef.current = null
     }
 
     // Close AudioContext to prevent memory leak

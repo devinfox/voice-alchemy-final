@@ -3,6 +3,7 @@
 import { useState, useEffect, useRef, useCallback } from 'react'
 import Script from 'next/script'
 import { Music, Play, Square, Save, RotateCcw, ChevronUp, ChevronDown, Mic, MicOff, Check, X, ArrowUp, ArrowDown, ArrowUpDown, Maximize2, Minimize2, Volume2, VolumeX } from 'lucide-react'
+import { analyzeBuffer } from '@/lib/pitch-detection'
 
 // Audio playback constants
 const MIDDLE_A = 440
@@ -103,10 +104,9 @@ export default function ScaleTrainer({ variant = 'floating' }: ScaleTrainerProps
   const mediaStreamRef = useRef<MediaStream | null>(null)
   const pitchDetectorRef = useRef<any>(null)
 
-  // Constants for pitch detection (matching ModernPitchTrainer)
+  // Constants for pitch detection (matching ModernPitchTrainer).
+  // MIDDLE_A_FREQ / SEMITONE_OFFSET moved to lib/pitch-detection.
   const BUFFER_SIZE = 4096
-  const MIDDLE_A_FREQ = 440
-  const SEMITONE_OFFSET = 69
 
   // Refs for audio playback
   const playbackContextRef = useRef<AudioContext | null>(null)
@@ -283,21 +283,8 @@ export default function ScaleTrainer({ variant = 'floating' }: ScaleTrainerProps
     setPlayingNoteIndex(null)
   }, [])
 
-  // Helper functions for pitch detection (matching chromatic tuner)
-  const getNote = useCallback((frequency: number): number => {
-    const note = 12 * (Math.log(frequency / MIDDLE_A_FREQ) / Math.log(2))
-    return Math.round(note) + SEMITONE_OFFSET
-  }, [])
-
-  const getStandardFrequency = useCallback((note: number): number => {
-    return MIDDLE_A_FREQ * Math.pow(2, (note - SEMITONE_OFFSET) / 12)
-  }, [])
-
-  const getCents = useCallback((frequency: number, note: number): number => {
-    return Math.floor(
-      (1200 * Math.log(frequency / getStandardFrequency(note))) / Math.log(2)
-    )
-  }, [getStandardFrequency])
+  // Note-number, cents and standard-frequency math now come from
+  // lib/pitch-detection, shared with ModernPitchTrainer and SongPitchTrainer.
 
   // Refs to keep callbacks updated without recreating audio processing
   const sensitivityRef = useRef(sensitivity)
@@ -342,43 +329,27 @@ export default function ScaleTrainer({ variant = 'floating' }: ScaleTrainerProps
       analyserRef.current.connect(scriptProcessorRef.current)
       scriptProcessorRef.current.connect(audioContextRef.current.destination)
 
-      // Real-time audio processing via ScriptProcessorNode
+      // Real-time audio processing via ScriptProcessorNode.
+      // Detection logic is shared with ModernPitchTrainer and SongPitchTrainer
+      // via lib/pitch-detection; behaviour here is unchanged.
       scriptProcessorRef.current.addEventListener('audioprocess', (event: AudioProcessingEvent) => {
-        if (sensitivityRef.current === 0) return
-
         const input = event.inputBuffer.getChannelData(0)
 
-        // Calculate RMS for volume threshold
-        let sum = 0.0
-        for (let i = 0; i < input.length; ++i) {
-          sum += input[i] * input[i]
-        }
-        const rms = Math.sqrt(sum / input.length)
+        const detected = analyzeBuffer(input, pitchDetectorRef.current, sensitivityRef.current)
+        if (!detected) return
 
-        // Threshold based on sensitivity (higher sensitivity = lower threshold)
-        const threshold = 0.01 + (1 - sensitivityRef.current / 100) * 0.09
-        if (rms < threshold) return
+        // ScaleTrainer matches against ASCII note names ('F#', not 'F♯')
+        const noteName = detected.nameAscii
 
-        // Get frequency from aubio
-        const frequency = pitchDetectorRef.current.do(input)
+        // Update UI state
+        setDetectedNote(noteName)
+        setDetectedOctave(detected.octave)
+        setDetectedFrequency(detected.frequency)
+        setCentsDeviation(detected.cents)
 
-        if (frequency && frequency > 60 && frequency < 2000) {
-          const note = getNote(frequency)
-          const cents = getCents(frequency, note)
-          const noteIndex = ((note % 12) + 12) % 12
-          const noteName = NOTE_NAMES[noteIndex]
-          const noteOctave = Math.floor(note / 12) - 1
-
-          // Update UI state
-          setDetectedNote(noteName)
-          setDetectedOctave(noteOctave)
-          setDetectedFrequency(frequency)
-          setCentsDeviation(cents)
-
-          // Process for scale training if practicing
-          if (isPracticingRef.current && processDetectedNoteRef.current) {
-            processDetectedNoteRef.current(noteName, noteOctave, frequency, cents)
-          }
+        // Process for scale training if practicing
+        if (isPracticingRef.current && processDetectedNoteRef.current) {
+          processDetectedNoteRef.current(noteName, detected.octave, detected.frequency, detected.cents)
         }
       })
 
@@ -387,7 +358,9 @@ export default function ScaleTrainer({ variant = 'floating' }: ScaleTrainerProps
       console.error('Error initializing audio:', err)
       setHasPermission(false)
     }
-  }, [getNote, getCents])
+    // No deps: note math now comes from lib/pitch-detection as pure module
+    // functions rather than component-scoped callbacks.
+  }, [])
 
   // Process detected note
   const lastNoteTimeRef = useRef<number>(0)

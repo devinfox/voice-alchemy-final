@@ -1,11 +1,15 @@
 {
   "crons": [
     {
-      "path": "/api/cron/process-calls",
+      "path": "/api/cron/process-pending-recordings",
       "schedule": "*/5 * * * *"
     },
     {
-      "path": "/api/cron/process-pending-recordings",
+      "path": "/api/cron/reconcile-training-feedback",
+      "schedule": "*/15 * * * *"
+    },
+    {
+      "path": "/api/cron/wake-snoozed",
       "schedule": "*/5 * * * *"
     }
   ]

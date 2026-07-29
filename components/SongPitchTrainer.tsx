@@ -3,12 +3,11 @@
 import { useState, useEffect, useRef, useCallback } from 'react'
 import { Music, X, Maximize2, Minimize2, Mic, MicOff, Search, Loader2, TrendingUp, Save, Music2, ChevronRight, Volume2, Zap, RefreshCw, Check, AlertCircle } from 'lucide-react'
 import Script from 'next/script'
+import { analyzeBuffer } from '@/lib/pitch-detection'
 
 // ============================================================================
 // CONSTANTS & TYPES
 // ============================================================================
-
-const NOTE_STRINGS = ['C', 'C♯', 'D', 'D♯', 'E', 'F', 'F♯', 'G', 'G♯', 'A', 'A♯', 'B']
 
 const SCALE_NOTES: Record<string, string[]> = {
   // Major scales
@@ -49,8 +48,7 @@ const SCALE_NOTES: Record<string, string[]> = {
   'Abm': ['G♯', 'A♯', 'B', 'C♯', 'D♯', 'E', 'F♯'],
 }
 
-const MIDDLE_A = 440
-const SEMITONE = 69
+// MIDDLE_A / SEMITONE now live in lib/pitch-detection alongside the note math.
 const BUFFER_SIZE = 4096
 const IN_TUNE_THRESHOLD = 10
 
@@ -80,19 +78,8 @@ interface SongResult {
 // ============================================================================
 // PITCH DETECTION HELPERS
 // ============================================================================
-
-function getNote(frequency: number): number {
-  const note = 12 * (Math.log(frequency / MIDDLE_A) / Math.log(2))
-  return Math.round(note) + SEMITONE
-}
-
-function getStandardFrequency(note: number): number {
-  return MIDDLE_A * Math.pow(2, (note - SEMITONE) / 12)
-}
-
-function getCents(frequency: number, note: number): number {
-  return Math.floor((1200 * Math.log(frequency / getStandardFrequency(note))) / Math.log(2))
-}
+// Note math and signal gating now live in lib/pitch-detection, shared with
+// ModernPitchTrainer and ScaleTrainer.
 
 // ============================================================================
 // PITCH DETECTION HOOK
@@ -131,25 +118,14 @@ function usePitchDetection(sensitivity: number, onNoteDetected: (note: DetectedN
       scriptProcessorRef.current.connect(audioContextRef.current.destination)
 
       scriptProcessorRef.current.addEventListener('audioprocess', (event: AudioProcessingEvent) => {
-        if (sensitivityRef.current === 0) return
         const input = event.inputBuffer.getChannelData(0)
-        let sum = 0
-        for (let i = 0; i < input.length; ++i) sum += input[i] * input[i]
-        const rms = Math.sqrt(sum / input.length)
-        const threshold = 0.1 - (sensitivityRef.current / 100) * 0.099
-        if (rms < threshold) return
-        const frequency = pitchDetectorRef.current.do(input)
-        if (frequency) {
-          const note = getNote(frequency)
-          const cents = getCents(frequency, note)
-          callbackRef.current({
-            name: NOTE_STRINGS[note % 12],
-            value: note,
-            cents,
-            octave: Math.floor(note / 12) - 1,
-            frequency,
-          })
-        }
+
+        // Shared gating: amplitude threshold plus the 60-2000Hz plausibility
+        // check, identical across all three trainers.
+        const detected = analyzeBuffer(input, pitchDetectorRef.current, sensitivityRef.current)
+        if (!detected) return
+
+        callbackRef.current(detected)
       })
       setIsListening(true)
     } catch (error: any) {

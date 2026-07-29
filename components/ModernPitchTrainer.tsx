@@ -4,6 +4,7 @@ import { useState, useEffect, useRef, useCallback, useMemo } from 'react'
 import { Music, X, Maximize2, Minimize2, Circle, Piano, Mic, MicOff, TrendingUp, Save } from 'lucide-react'
 import Script from 'next/script'
 import { getSharedMicStream, subscribeSharedMicStream } from '@/lib/shared-mic-stream'
+import { analyzeBuffer, getNoteFrequency } from '@/lib/pitch-detection'
 
 // ============================================================================
 // TUNER LOGIC - Exact port from original tuner.js
@@ -13,8 +14,7 @@ const NOTE_STRINGS = ['C', 'C♯', 'D', 'D♯', 'E', 'F', 'F♯', 'G', 'G♯', '
 const NOTE_STRINGS_DISPLAY = ['C', 'C#', 'D', 'D#', 'E', 'F', 'F#', 'G', 'G#', 'A', 'A#', 'B']
 
 // Constants from original tuner.js
-const MIDDLE_A = 440
-const SEMITONE = 69
+// MIDDLE_A / SEMITONE now live in lib/pitch-detection alongside the note math.
 const BUFFER_SIZE = 4096
 
 // In-tune threshold (cents)
@@ -97,31 +97,12 @@ interface SessionMetrics {
 // ============================================================================
 // PITCH DETECTION HELPERS
 // ============================================================================
-
-function getNote(frequency: number): number {
-  const note = 12 * (Math.log(frequency / MIDDLE_A) / Math.log(2))
-  return Math.round(note) + SEMITONE
-}
-
-function getStandardFrequency(note: number): number {
-  return MIDDLE_A * Math.pow(2, (note - SEMITONE) / 12)
-}
-
-function getCents(frequency: number, note: number): number {
-  return Math.floor(
-    (1200 * Math.log(frequency / getStandardFrequency(note))) / Math.log(2)
-  )
-}
+// getNote / getStandardFrequency / getCents / getNoteFrequency now come from
+// lib/pitch-detection so this trainer, ScaleTrainer and SongPitchTrainer share
+// one implementation and cannot drift apart again.
 
 function getMeterDegree(cents: number): number {
   return Math.round((cents / 250) * 45)
-}
-
-function getNoteFrequency(noteName: string, octave: number): number {
-  const noteIndex = NOTE_STRINGS_DISPLAY.indexOf(noteName)
-  if (noteIndex === -1) return 440
-  const note = (octave + 1) * 12 + noteIndex
-  return getStandardFrequency(note)
 }
 
 // ============================================================================
@@ -316,45 +297,26 @@ function usePitchDetection({ sensitivity, externalMicStream, onNoteDetected, onS
       scriptProcessorRef.current.connect(audioContextRef.current.destination)
 
       scriptProcessorRef.current.addEventListener('audioprocess', (event: AudioProcessingEvent) => {
-        if (sensitivityRef.current === 0) return
-
         const input = event.inputBuffer.getChannelData(0)
-        let sum = 0.0
-        for (let i = 0; i < input.length; ++i) {
-          sum += input[i] * input[i]
+
+        // Amplitude gate, pitch detection and the 60-2000Hz plausibility gate
+        // all happen inside analyzeBuffer, identical to the Scale Trainer.
+        // Returns null for anything that should not count as a sung note.
+        const detected = analyzeBuffer(input, pitchDetectorRef.current, sensitivityRef.current)
+        if (!detected) return
+
+        if (onNoteDetectedRef.current) {
+          onNoteDetectedRef.current(detected)
         }
-        const rms = Math.sqrt(sum / input.length)
 
-        const minThresh = 0.001
-        const maxThresh = 0.1
-        const threshold = maxThresh - ((sensitivityRef.current / 100) * (maxThresh - minThresh))
-        if (rms < threshold) return
-
-        const frequency = pitchDetectorRef.current.do(input)
-        if (frequency) {
-          const note = getNote(frequency)
-          const cents = getCents(frequency, note)
-          const detectedNote = {
-            name: NOTE_STRINGS[note % 12],
-            value: note,
-            cents,
-            octave: parseInt(String(note / 12)) - 1,
-            frequency,
-          }
-
-          if (onNoteDetectedRef.current) {
-            onNoteDetectedRef.current(detectedNote)
-          }
-
-          // Record sample for metrics
-          if (onSampleRecordedRef.current) {
-            onSampleRecordedRef.current({
-              frequency,
-              cents,
-              timestamp: Date.now(),
-              isInTune: Math.abs(cents) <= IN_TUNE_THRESHOLD
-            })
-          }
+        // Record sample for metrics
+        if (onSampleRecordedRef.current) {
+          onSampleRecordedRef.current({
+            frequency: detected.frequency,
+            cents: detected.cents,
+            timestamp: Date.now(),
+            isInTune: detected.isInTune,
+          })
         }
       })
 

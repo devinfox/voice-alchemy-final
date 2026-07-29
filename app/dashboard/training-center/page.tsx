@@ -180,6 +180,21 @@ interface ScaleSession {
   pitch_accuracy: number
 }
 
+interface ScaleTrainingSessionRaw {
+  session_date: string
+  scale_type: string
+  root_note: string
+  direction: string
+  tempo_bpm: number | null
+  overall_score: number | null
+  sequence_accuracy: number | null
+  pitch_accuracy: number | null
+}
+
+interface ScaleTrainingResponse {
+  sessions?: ScaleTrainingSessionRaw[]
+}
+
 interface LessonNote {
   id: string
   class_started_at: string
@@ -279,16 +294,16 @@ export default function PitchTrainingProgressPage() {
 
       // Process scale training sessions
       if (scaleRes.ok) {
-        const scaleData = await scaleRes.json()
+        const scaleData = await scaleRes.json() as ScaleTrainingResponse
         const sessions = scaleData.sessions || []
 
         // Calculate scale stats
         if (sessions.length > 0) {
-          const overallScores = sessions.map((s: any) => s.overall_score || 0)
-          const sequenceAccuracies = sessions.map((s: any) => s.sequence_accuracy || 0)
-          const pitchAccuracies = sessions.map((s: any) => s.pitch_accuracy || 0)
-          const tempos = sessions.map((s: any) => s.tempo_bpm || 80)
-          const uniqueScales = new Set(sessions.map((s: any) => `${s.scale_type}-${s.root_note}`))
+          const overallScores = sessions.map((s) => s.overall_score || 0)
+          const sequenceAccuracies = sessions.map((s) => s.sequence_accuracy || 0)
+          const pitchAccuracies = sessions.map((s) => s.pitch_accuracy || 0)
+          const tempos = sessions.map((s) => s.tempo_bpm || 80)
+          const uniqueScales = new Set(sessions.map((s) => `${s.scale_type}-${s.root_note}`))
 
           // Count days practiced this week
           const now = new Date()
@@ -298,8 +313,8 @@ export default function PitchTrainingProgressPage() {
           weekStart.setHours(0, 0, 0, 0)
           const daysThisWeek = new Set(
             sessions
-              .filter((s: any) => new Date(s.session_date) >= weekStart)
-              .map((s: any) => s.session_date)
+              .filter((s) => new Date(s.session_date) >= weekStart)
+              .map((s) => s.session_date)
           ).size
 
           result.scaleStats = {
@@ -315,7 +330,7 @@ export default function PitchTrainingProgressPage() {
             maxTempo: Math.max(...tempos),
           }
 
-          result.recentScaleSessions = sessions.slice(0, 10).map((s: any) => ({
+          result.recentScaleSessions = sessions.slice(0, 10).map((s) => ({
             session_date: s.session_date,
             scale_type: s.scale_type,
             root_note: s.root_note,
@@ -337,13 +352,24 @@ export default function PitchTrainingProgressPage() {
     }
   }
 
-  const generateNewFeedback = async () => {
+  /**
+   * Request AI analysis.
+   *
+   * 'weekly'        - trends within pitch training only.
+   * 'comprehensive' - fuses pitch, rhythm, lesson notes and recording
+   *                   transcripts into one holistic view.
+   *
+   * The comprehensive path existed in the API from the start but nothing ever
+   * requested it, because this function was hardcoded to 'weekly'. It is now
+   * selectable.
+   */
+  const generateNewFeedback = async (analysisType: 'weekly' | 'comprehensive' = 'weekly') => {
     try {
       setGeneratingFeedback(true)
       const response = await fetch('/api/pitch-training/progress', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ analysisType: 'weekly' })
+        body: JSON.stringify({ analysisType })
       })
       if (!response.ok) throw new Error('Failed to generate feedback')
       await fetchProgress() // Refresh data
@@ -1026,7 +1052,7 @@ export default function PitchTrainingProgressPage() {
                     </span>
                   </div>
                   <div className="flex items-end gap-1 h-16">
-                    {data.progressHistory.slice(0, 14).reverse().map((entry, i) => {
+                    {data.progressHistory.slice(0, 14).reverse().map((entry) => {
                       const value = entry.target_accuracy || 0
                       const height = Math.max(4, (value / 100) * 100)
                       return (
@@ -1050,7 +1076,7 @@ export default function PitchTrainingProgressPage() {
                     </span>
                   </div>
                   <div className="flex items-end gap-1 h-16">
-                    {data.progressHistory.slice(0, 14).reverse().map((entry, i) => {
+                    {data.progressHistory.slice(0, 14).reverse().map((entry) => {
                       const value = entry.voice_stability || 0
                       const height = Math.max(4, (value / 100) * 100)
                       return (
@@ -1074,7 +1100,7 @@ export default function PitchTrainingProgressPage() {
                     </span>
                   </div>
                   <div className="flex items-end gap-1 h-16">
-                    {data.progressHistory.slice(0, 14).reverse().map((entry, i) => {
+                    {data.progressHistory.slice(0, 14).reverse().map((entry) => {
                       const value = entry.overall_score || 0
                       const height = Math.max(4, (value / 100) * 100)
                       return (
@@ -1295,27 +1321,44 @@ export default function PitchTrainingProgressPage() {
                 <Sparkles className="w-5 h-5 text-amber-400" />
                 AI Coach Feedback
               </h2>
-              <button
-                onClick={generateNewFeedback}
-                disabled={generatingFeedback}
-                className={`flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium transition-all ${
-                  generatingFeedback
-                    ? 'bg-slate-700 text-slate-500 cursor-not-allowed'
-                    : 'bg-gradient-to-r from-[#a855f7] to-[#7c3aed] hover:from-[#c084fc] hover:to-[#8b5cf6] text-white'
-                }`}
-              >
-                {generatingFeedback ? (
-                  <>
-                    <RefreshCw className="w-4 h-4 animate-spin" />
-                    Analyzing...
-                  </>
-                ) : (
-                  <>
-                    <Sparkles className="w-4 h-4" />
-                    Get New Analysis
-                  </>
-                )}
-              </button>
+              <div className="flex items-center gap-2">
+                <button
+                  onClick={() => generateNewFeedback('weekly')}
+                  disabled={generatingFeedback}
+                  className={`flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium transition-all ${
+                    generatingFeedback
+                      ? 'bg-slate-700 text-slate-500 cursor-not-allowed'
+                      : 'bg-gradient-to-r from-[#a855f7] to-[#7c3aed] hover:from-[#c084fc] hover:to-[#8b5cf6] text-white'
+                  }`}
+                >
+                  {generatingFeedback ? (
+                    <>
+                      <RefreshCw className="w-4 h-4 animate-spin" />
+                      Analyzing...
+                    </>
+                  ) : (
+                    <>
+                      <Sparkles className="w-4 h-4" />
+                      Weekly Analysis
+                    </>
+                  )}
+                </button>
+
+                {/* Fuses pitch + rhythm + lesson notes + recording transcripts */}
+                <button
+                  onClick={() => generateNewFeedback('comprehensive')}
+                  disabled={generatingFeedback}
+                  title="Combines your pitch and rhythm practice with your lesson notes and recordings for a full picture"
+                  className={`flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium transition-all border ${
+                    generatingFeedback
+                      ? 'bg-slate-700 text-slate-500 cursor-not-allowed border-transparent'
+                      : 'bg-gradient-to-r from-[#CEB466]/20 to-[#9c8644]/10 border-[#CEB466]/40 text-[#CEB466] hover:from-[#CEB466]/30 hover:to-[#9c8644]/20'
+                  }`}
+                >
+                  <Brain className="w-4 h-4" />
+                  Full Picture
+                </button>
+              </div>
             </div>
 
             {latestFeedback ? (
@@ -1396,7 +1439,7 @@ export default function PitchTrainingProgressPage() {
               <div className="text-center py-8">
                 <p className="text-slate-400 mb-4">No AI feedback yet. Complete some practice sessions to get personalized insights!</p>
                 <button
-                  onClick={generateNewFeedback}
+                  onClick={() => generateNewFeedback('weekly')}
                   disabled={generatingFeedback || !currentWeek}
                   className="px-4 py-2 bg-gradient-to-r from-[#a855f7] to-[#7c3aed] text-white rounded-lg hover:from-[#c084fc] hover:to-[#8b5cf6] disabled:opacity-50 disabled:cursor-not-allowed"
                 >

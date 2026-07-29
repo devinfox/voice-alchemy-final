@@ -1,5 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase-server'
+import { createSupabaseAdmin } from '@/lib/supabase-admin'
+import { analyzeSongKeySession, saveTrainingFeedback, fetchLessonContext } from '@/lib/training-ai'
 
 // ============================================================================
 // POST - Save a Song Key Trainer session
@@ -99,6 +101,42 @@ export async function POST(request: NextRequest) {
 
     // Update user's training stats
     await updateUserTrainingStats(supabase, user.id)
+
+    // AI coaching. This tool previously produced no feedback at all - the only
+    // AI involved was the upfront key lookup, which analyses the song rather
+    // than the singer. Backstopped by the reconciliation cron.
+    void (async () => {
+      try {
+        const lessonNotes = await fetchLessonContext(supabase, user.id)
+
+        const { data: recent } = await supabase
+          .from('song_key_training_sessions')
+          .select('song_key')
+          .eq('user_id', user.id)
+          .neq('id', session.id)
+          .order('created_at', { ascending: false })
+          .limit(5)
+
+        const analysis = await analyzeSongKeySession(
+          {
+            songTitle, songArtist, songKey, songBpm,
+            durationSeconds, totalNotes, inKeyPercentage,
+            avgCentsDeviation: avgCentsDeviation || 0,
+          },
+          {
+            lessonNotes,
+            previousKeys: [...new Set((recent || []).map(r => r.song_key).filter(Boolean))],
+          }
+        )
+
+        await saveTrainingFeedback(
+          createSupabaseAdmin(), user.id, 'song_key_session', session.id, analysis,
+          { songKey, songTitle, inKeyPercentage, avgCentsDeviation, totalNotes }
+        )
+      } catch (err) {
+        console.error('[SongKeySession] AI feedback generation failed:', err)
+      }
+    })()
 
     return NextResponse.json({
       message: 'Session saved successfully',

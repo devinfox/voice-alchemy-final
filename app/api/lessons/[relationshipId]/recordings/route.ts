@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase-server'
 import { createClient as createAdminClient } from '@supabase/supabase-js'
-import { transcribeAudio, generateLessonSummary } from '@/lib/openai'
+import { processRecording } from '@/lib/lesson-processing'
 
 function getSchemaHint(errorMessage?: string) {
   if (!errorMessage) return null
@@ -221,152 +221,15 @@ export async function POST(
       console.warn('[Recording Upload] Failed to auto-link recording to notes_archive:', linkError)
     }
 
-    // Process AI analysis directly (more reliable than fire-and-forget HTTP calls)
-    // This runs in the background using setImmediate/setTimeout pattern
-    const processAIAnalysis = async () => {
-      try {
-        console.log(`[Recording Upload] Starting AI processing for recording ${recording.id}`)
-
-        // FIX #1: Idempotency check - skip if already processing or completed
-        const { data: currentRecord } = await supabaseAdmin
-          .from('lesson_recordings')
-          .select('ai_processing_status, ai_processed_at')
-          .eq('id', recording.id)
-          .single()
-
-        if (currentRecord?.ai_processing_status === 'completed') {
-          console.log(`[Recording AI] Skipping - already completed at ${currentRecord.ai_processed_at}`)
-          return
-        }
-
-        if (currentRecord?.ai_processing_status === 'processing') {
-          console.log(`[Recording AI] Skipping - already being processed by another worker`)
-          return
-        }
-
-        // FIX #4: Check for and cleanup stuck recordings (processing > 10 minutes)
-        const TEN_MINUTES_AGO = new Date(Date.now() - 10 * 60 * 1000).toISOString()
-        const { data: stuckRecordings } = await supabaseAdmin
-          .from('lesson_recordings')
-          .select('id')
-          .eq('ai_processing_status', 'processing')
-          .lt('updated_at', TEN_MINUTES_AGO)
-          .limit(10)
-
-        if (stuckRecordings && stuckRecordings.length > 0) {
-          console.log(`[Recording AI] Found ${stuckRecordings.length} stuck recording(s) - marking as failed`)
-          await supabaseAdmin
-            .from('lesson_recordings')
-            .update({
-              ai_processing_status: 'failed',
-              ai_processing_error: 'Processing timeout after 10 minutes',
-            })
-            .in('id', stuckRecordings.map(r => r.id))
-        }
-
-        // Update status to processing (with atomic check to prevent race condition)
-        const { data: updatedRecord } = await supabaseAdmin
-          .from('lesson_recordings')
-          .update({ ai_processing_status: 'processing' })
-          .eq('id', recording.id)
-          .eq('ai_processing_status', 'pending')
-          .select('id')
-          .maybeSingle()
-
-        if (!updatedRecord) {
-          console.log(`[Recording AI] Skipping - status was changed by another process`)
-          return
-        }
-
-        // Download the recording
-        const { data: fileData, error: downloadError } = await supabaseAdmin.storage
-          .from('lesson-recordings')
-          .download(storagePath)
-
-        if (downloadError || !fileData) {
-          throw new Error(`Failed to download recording: ${downloadError?.message}`)
-        }
-
-        // Convert to buffer for transcription
-        const recordingBuffer = Buffer.from(await fileData.arrayBuffer())
-        console.log(`[Recording Upload] Downloaded ${recordingBuffer.length} bytes, starting transcription`)
-
-        // Transcribe the audio
-        const transcript = await transcribeAudio(recordingBuffer, `${recording.id}.webm`)
-        console.log(`[Recording Upload] Transcription complete: ${transcript.text.length} chars`)
-
-        // Get associated notes for context
-        const { data: notesArchive } = await supabaseAdmin
-          .from('notes_archive')
-          .select('content_html, content')
-          .eq('recording_id', recording.id)
-          .maybeSingle()
-
-        // Get previous lesson summaries for context
-        const { data: previousRecordings } = await supabaseAdmin
-          .from('lesson_recordings')
-          .select('ai_summary')
-          .eq('booking_id', bookingId)
-          .eq('ai_processing_status', 'completed')
-          .order('created_at', { ascending: false })
-          .limit(3)
-
-        const previousSummaries = previousRecordings
-          ?.map(r => (r.ai_summary as { summary?: string })?.summary)
-          .filter(Boolean) as string[] | undefined
-
-        // Generate AI summary
-        console.log(`[Recording Upload] Generating AI summary`)
-        const summary = await generateLessonSummary(
-          transcript.text,
-          notesArchive?.content || notesArchive?.content_html,
-          previousSummaries
-        )
-
-        console.log(`[Recording Upload] Summary generated successfully`)
-
-        // Update the recording with results
-        await supabaseAdmin
-          .from('lesson_recordings')
-          .update({
-            transcript: transcript.text,
-            ai_summary: summary,
-            ai_processing_status: 'completed',
-            ai_processed_at: new Date().toISOString(),
-            ai_processing_error: null,
-          })
-          .eq('id', recording.id)
-
-        // Also update the notes_archive if it exists
-        if (notesArchive) {
-          await supabaseAdmin
-            .from('notes_archive')
-            .update({ ai_summary: summary })
-            .eq('recording_id', recording.id)
-        }
-
-        console.log(`[Recording Upload] AI processing completed for recording ${recording.id}`)
-      } catch (processingError) {
-        console.error('[Recording Upload] AI processing error:', processingError)
-
-        // Update status to failed
-        await supabaseAdmin
-          .from('lesson_recordings')
-          .update({
-            ai_processing_status: 'failed',
-            ai_processing_error: processingError instanceof Error ? processingError.message : 'Unknown error',
-          })
-          .eq('id', recording.id)
-      }
-    }
-
-    // Run AI processing in background (non-blocking)
-    // Use setTimeout to ensure the response is sent first
-    setTimeout(() => {
-      processAIAnalysis().catch(err => {
-        console.error('[Recording Upload] Background AI processing failed:', err)
-      })
-    }, 100)
+    // Kick off transcription + summarisation via the shared pipeline
+    // (lib/lesson-processing), identical to the presigned-upload handler,
+    // the cron and the manual reprocess endpoint.
+    //
+    // Best-effort only: serverless can freeze once the response is sent. The
+    // 5-minute cron is the actual delivery guarantee.
+    void processRecording(supabaseAdmin, recording.id).catch(err => {
+      console.error('[Recording Upload] Background AI processing failed:', err)
+    })
 
     console.log(`[Recording Upload] Success - lesson recording ${recording.id} uploaded for booking ${bookingId}`)
     return NextResponse.json({

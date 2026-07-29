@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase-server'
 import { createClient as createAdminClient } from '@supabase/supabase-js'
-import { transcribeAudio, generateLessonSummary } from '@/lib/openai'
+import { processRecording } from '@/lib/lesson-processing'
 
 // POST /api/lessons/[relationshipId]/recordings/complete - Register a recording after direct upload
 export async function POST(
@@ -113,7 +113,13 @@ export async function POST(
       )
     }
 
-    // Link recording to notes
+    // Link recording to notes.
+    //
+    // This previously swallowed its error, which hid a constraint violation for
+    // the entire life of the app: notes_archive.recording_id had a FK to
+    // meeting_recordings, so writing a lesson_recordings id here always failed
+    // and every note stayed unlinked. Errors are now logged explicitly so a
+    // recurrence is visible instead of silent.
     try {
       const { data: bookingNote } = await supabaseAdmin
         .from('notes_archive')
@@ -125,118 +131,38 @@ export async function POST(
         .maybeSingle()
 
       if (bookingNote) {
-        await supabaseAdmin
+        const { error: linkUpdateError } = await supabaseAdmin
           .from('notes_archive')
           .update({ recording_id: recording.id })
           .eq('id', bookingNote.id)
           .is('recording_id', null)
-        console.log(`[Recording Complete] Linked recording ${recording.id} to notes_archive ${bookingNote.id}`)
+
+        if (linkUpdateError) {
+          console.error(
+            `[Recording Complete] FAILED to link recording ${recording.id} to notes_archive ` +
+            `${bookingNote.id}: ${linkUpdateError.code} ${linkUpdateError.message}. ` +
+            `Lesson summaries will lose handwritten-note context until this is fixed.`
+          )
+        } else {
+          console.log(`[Recording Complete] Linked recording ${recording.id} to notes_archive ${bookingNote.id}`)
+        }
+      } else {
+        console.log(`[Recording Complete] No unlinked note found for booking ${bookingId}`)
       }
     } catch (linkError) {
-      console.warn('[Recording Complete] Failed to auto-link recording:', linkError)
+      console.error('[Recording Complete] Failed to auto-link recording:', linkError)
     }
 
-    // Process AI analysis in background
-    const processAIAnalysis = async () => {
-      try {
-        console.log(`[Recording Complete] Starting AI processing for recording ${recording.id}`)
-
-        const { data: currentRecord } = await supabaseAdmin
-          .from('lesson_recordings')
-          .select('ai_processing_status')
-          .eq('id', recording.id)
-          .single()
-
-        if (currentRecord?.ai_processing_status !== 'pending') {
-          return
-        }
-
-        const { data: updatedRecord } = await supabaseAdmin
-          .from('lesson_recordings')
-          .update({ ai_processing_status: 'processing' })
-          .eq('id', recording.id)
-          .eq('ai_processing_status', 'pending')
-          .select('id')
-          .maybeSingle()
-
-        if (!updatedRecord) return
-
-        // Download the recording
-        const { data: downloadData, error: downloadError } = await supabaseAdmin.storage
-          .from('lesson-recordings')
-          .download(storagePath)
-
-        if (downloadError || !downloadData) {
-          throw new Error(`Failed to download: ${downloadError?.message}`)
-        }
-
-        const recordingBuffer = Buffer.from(await downloadData.arrayBuffer())
-        console.log(`[Recording Complete] Downloaded ${recordingBuffer.length} bytes`)
-
-        // Transcribe
-        const transcript = await transcribeAudio(recordingBuffer, `${recording.id}.webm`)
-        console.log(`[Recording Complete] Transcription complete: ${transcript.text.length} chars`)
-
-        // Get notes for context
-        const { data: notesArchive } = await supabaseAdmin
-          .from('notes_archive')
-          .select('content_html, content')
-          .eq('recording_id', recording.id)
-          .maybeSingle()
-
-        // Get previous summaries
-        const { data: previousRecordings } = await supabaseAdmin
-          .from('lesson_recordings')
-          .select('ai_summary')
-          .eq('booking_id', bookingId)
-          .eq('ai_processing_status', 'completed')
-          .order('created_at', { ascending: false })
-          .limit(3)
-
-        const previousSummaries = previousRecordings
-          ?.map(r => (r.ai_summary as { summary?: string })?.summary)
-          .filter(Boolean) as string[] | undefined
-
-        // Generate summary
-        const summary = await generateLessonSummary(
-          transcript.text,
-          notesArchive?.content || notesArchive?.content_html,
-          previousSummaries
-        )
-
-        // Update with results
-        await supabaseAdmin
-          .from('lesson_recordings')
-          .update({
-            transcript: transcript.text,
-            ai_summary: summary,
-            ai_processing_status: 'completed',
-            ai_processed_at: new Date().toISOString(),
-            ai_processing_error: null,
-          })
-          .eq('id', recording.id)
-
-        if (notesArchive) {
-          await supabaseAdmin
-            .from('notes_archive')
-            .update({ ai_summary: summary })
-            .eq('recording_id', recording.id)
-        }
-
-        console.log(`[Recording Complete] AI processing completed for ${recording.id}`)
-      } catch (processingError) {
-        console.error('[Recording Complete] AI processing error:', processingError)
-        await supabaseAdmin
-          .from('lesson_recordings')
-          .update({
-            ai_processing_status: 'failed',
-            ai_processing_error: processingError instanceof Error ? processingError.message : 'Unknown error',
-          })
-          .eq('id', recording.id)
-      }
-    }
-
-    setTimeout(() => processAIAnalysis().catch(console.error), 100)
+    // Kick off transcription + summarisation. Shared with the cron and the
+    // manual reprocess endpoint via lib/lesson-processing, so all three apply
+    // the same transcript sanity floor and the same note/context lookups.
+    //
+    // Fire-and-forget is best-effort only: serverless can freeze the moment the
+    // response is returned. The cron at /api/cron/process-pending-recordings is
+    // the actual guarantee, picking up anything still 'pending' after 5 minutes.
+    void processRecording(supabaseAdmin, recording.id).catch(err =>
+      console.error('[Recording Complete] Background processing failed:', err)
+    )
 
     console.log(`[Recording Complete] Success - recording ${recording.id} for booking ${bookingId}`)
     return NextResponse.json({

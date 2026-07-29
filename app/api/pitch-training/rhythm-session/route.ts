@@ -1,5 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase-server'
+import { createSupabaseAdmin } from '@/lib/supabase-admin'
+import { analyzeRhythmSession, saveTrainingFeedback, fetchLessonContext } from '@/lib/training-ai'
 
 // ============================================================================
 // Types
@@ -163,6 +165,49 @@ export async function POST(request: NextRequest) {
         // Don't fail the whole request, session is already saved
       }
     }
+
+    // Generate AI coaching. Rhythm previously saved metrics and never analysed
+    // them, so students got no feedback from this tool at all.
+    //
+    // Fire-and-forget for responsiveness. It is NOT the delivery guarantee:
+    // /api/cron/reconcile-training-feedback sweeps up any session that ends up
+    // without a feedback row, so a cold start or an OpenAI blip cannot silently
+    // lose a student's coaching.
+    void (async () => {
+      try {
+        const lessonNotes = await fetchLessonContext(supabase, user.id)
+
+        const { data: recent } = await supabase
+          .from('rhythm_training_sessions')
+          .select('overall_score')
+          .eq('user_id', user.id)
+          .neq('id', session.id)
+          .order('created_at', { ascending: false })
+          .limit(5)
+
+        const analysis = await analyzeRhythmSession(
+          {
+            bpm, timeSignature, durationSeconds, totalBeats, onBeatCount,
+            earlyCount, lateCount, missedCount, avgTimingOffsetMs,
+            timingConsistency, onBeatPercent, bestStreak, overallScore,
+            rhythmTendency, avgEarlyMs, avgLateMs,
+          },
+          {
+            lessonNotes,
+            previousScores: (recent || []).map(r => Number(r.overall_score)).filter(Number.isFinite),
+          }
+        )
+
+        // Admin client: the request's auth context may be gone by the time this
+        // resolves, and RLS would then reject the insert.
+        await saveTrainingFeedback(
+          createSupabaseAdmin(), user.id, 'rhythm_session', session.id, analysis,
+          { bpm, onBeatPercent, timingConsistency, overallScore, rhythmTendency }
+        )
+      } catch (err) {
+        console.error('[RhythmSession] AI feedback generation failed:', err)
+      }
+    })()
 
     return NextResponse.json({
       message: 'Session saved successfully',

@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase-server'
 import { createSupabaseAdmin } from '@/lib/supabase-admin'
-import { transcribeAudio, generateLessonSummary, LessonSummary } from '@/lib/openai'
+import { processRecording } from '@/lib/lesson-processing'
 
 // ============================================================================
 // POST - Process a recording: transcribe and generate AI summary
@@ -55,116 +55,37 @@ export async function POST(
       })
     }
 
-    // Update status to processing
-    await dbClient
-      .from('lesson_recordings')
-      .update({ ai_processing_status: 'processing' })
-      .eq('id', recordingId)
+    // All transcribe/summarise logic lives in lib/lesson-processing so this
+    // endpoint, the cron and the upload handler cannot diverge. It claims the
+    // row atomically and applies the transcript sanity floor.
+    const result = await processRecording(admin, recordingId, { force: !!force })
 
-    console.log(`[ProcessRecording] Starting processing for recording ${recordingId}`)
+    if (result.status === 'failed') {
+      return NextResponse.json(
+        { error: 'Processing failed', details: result.reason },
+        { status: 500 }
+      )
+    }
 
-    try {
-      // Download the recording from storage
-      const storagePath = recording.storage_path
-      if (!storagePath) {
-        throw new Error('No storage path for recording')
-      }
-
-      console.log(`[ProcessRecording] Downloading from ${storagePath}`)
-      const { data: fileData, error: downloadError } = await admin.storage
-        .from('lesson-recordings')
-        .download(storagePath)
-
-      if (downloadError || !fileData) {
-        throw new Error(`Failed to download recording: ${downloadError?.message}`)
-      }
-
-      // Convert to buffer for transcription
-      const arrayBuffer = await fileData.arrayBuffer()
-      const buffer = Buffer.from(arrayBuffer)
-
-      console.log(`[ProcessRecording] Downloaded ${buffer.length} bytes, starting transcription`)
-
-      // Transcribe the audio
-      const transcript = await transcribeAudio(buffer, `${recordingId}.webm`)
-      console.log(`[ProcessRecording] Transcription complete: ${transcript.text.length} chars`)
-
-      // Get the associated notes for context
-      const { data: notesArchive } = await dbClient
-        .from('notes_archive')
-        .select('content_html, content')
-        .eq('recording_id', recordingId)
+    if (result.status === 'skipped') {
+      const { data: existing } = await dbClient
+        .from('lesson_recordings')
+        .select('transcript, ai_summary')
+        .eq('id', recordingId)
         .single()
 
-      // Get previous lesson summaries for context
-      const { data: previousRecordings } = await dbClient
-        .from('lesson_recordings')
-        .select('ai_summary')
-        .eq('booking_id', recording.booking_id)
-        .eq('ai_processing_status', 'completed')
-        .order('created_at', { ascending: false })
-        .limit(3)
-
-      const previousSummaries = previousRecordings
-        ?.map(r => (r.ai_summary as LessonSummary)?.summary)
-        .filter(Boolean) as string[] | undefined
-
-      // Generate AI summary
-      console.log(`[ProcessRecording] Generating AI summary`)
-      const summary = await generateLessonSummary(
-        transcript.text,
-        notesArchive?.content || notesArchive?.content_html,
-        previousSummaries
-      )
-
-      console.log(`[ProcessRecording] Summary generated successfully`)
-
-      // Update the recording with results
-      const { error: updateError } = await dbClient
-        .from('lesson_recordings')
-        .update({
-          transcript: transcript.text,
-          ai_summary: summary,
-          ai_processing_status: 'completed',
-          ai_processed_at: new Date().toISOString(),
-          ai_processing_error: null,
-        })
-        .eq('id', recordingId)
-
-      if (updateError) {
-        throw new Error(`Failed to update recording: ${updateError.message}`)
-      }
-
-      // Also update the notes_archive if it exists
-      if (notesArchive) {
-        await dbClient
-          .from('notes_archive')
-          .update({ ai_summary: summary })
-          .eq('recording_id', recordingId)
-      }
-
       return NextResponse.json({
-        success: true,
-        transcript: transcript.text,
-        summary,
+        message: result.reason ?? 'Recording already processed',
+        transcript: existing?.transcript,
+        summary: existing?.ai_summary,
       })
-    } catch (processingError) {
-      console.error('[ProcessRecording] Processing error:', processingError)
-
-      // Update status to failed
-      await dbClient
-        .from('lesson_recordings')
-        .update({
-          ai_processing_status: 'failed',
-          ai_processing_error: processingError instanceof Error ? processingError.message : 'Unknown error',
-        })
-        .eq('id', recordingId)
-
-      return NextResponse.json({
-        error: 'Processing failed',
-        details: processingError instanceof Error ? processingError.message : 'Unknown error',
-      }, { status: 500 })
     }
+
+    return NextResponse.json({
+      success: true,
+      transcriptChars: result.transcriptChars,
+      summary: result.summary,
+    })
   } catch (err) {
     console.error('[ProcessRecording] Error:', err)
     return NextResponse.json(
