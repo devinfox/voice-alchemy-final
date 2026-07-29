@@ -1,0 +1,15 @@
+# Nixpacks configuration for the Inbound Email Service.
+# Node 22 (not 20): @supabase/supabase-js v2.89 requires a native WebSocket,
+# which Node 20 lacks and Node 22 provides — without it the service crashes on
+# boot inside createClient().
+[phases.setup]
+nixPkgs = ["nodejs_22"]
+
+[phases.install]
+cmds = ["npm ci"]
+
+[phases.build]
+cmds = ["npm run build"]
+
+[start]
+cmd = "npm start"

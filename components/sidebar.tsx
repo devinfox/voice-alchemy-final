@@ -13,10 +13,14 @@ import {
   BookOpen,
   Calendar,
   Music,
+  ClipboardList,
+  Mail,
+  FileText,
 } from 'lucide-react'
 import { createClient } from '@/lib/supabase'
 import { useRouter } from 'next/navigation'
 import type { User } from '@/types/database.types'
+import { canAccessEmailTools } from '@/lib/email-access'
 
 interface NavItem {
   name: string
@@ -29,9 +33,16 @@ interface NavItem {
 const teacherNavigation: NavItem[] = [
   { name: 'Dashboard', href: '/dashboard', icon: LayoutDashboard },
   { name: 'My Students', href: '/dashboard/students', icon: Users },
+  { name: 'Email', href: '/dashboard/email', icon: Mail },
+  { name: 'Email Templates', href: '/dashboard/email-templates', icon: FileText },
   { name: 'Courses', href: '/dashboard/courses', icon: GraduationCap },
   { name: 'Training Center', href: '/dashboard/training-center', icon: Music },
   { name: 'Calendar', href: '/dashboard/calendar', icon: Calendar },
+]
+
+// Admin-only navigation, appended to the teacher nav
+const adminNavigation: NavItem[] = [
+  { name: 'Student Directory', href: '/dashboard/admin/students', icon: ClipboardList },
 ]
 
 // Student navigation
@@ -50,10 +61,11 @@ const bottomNavigation = [
 
 interface SidebarProps {
   user: User | null
+  userEmail?: string | null
   unreadEmailCount?: number
 }
 
-export function Sidebar({ user }: SidebarProps) {
+export function Sidebar({ user, userEmail }: SidebarProps) {
   const pathname = usePathname()
   const router = useRouter()
 
@@ -66,7 +78,15 @@ export function Sidebar({ user }: SidebarProps) {
 
   // Determine which navigation to show based on role
   const isTeacher = user?.role === 'teacher' || user?.role === 'instructor' || user?.role === 'admin'
-  const navigation = isTeacher ? teacherNavigation : studentNavigation
+  const isAdmin = user?.role === 'admin'
+  const hasEmailAccess = canAccessEmailTools(user, userEmail)
+  const visibleTeacherNavigation = teacherNavigation.filter((item) => {
+    if (item.href.startsWith('/dashboard/email')) return hasEmailAccess
+    return true
+  })
+  const navigation = isTeacher
+    ? (isAdmin ? [...visibleTeacherNavigation, ...adminNavigation] : visibleTeacherNavigation)
+    : studentNavigation
 
   const renderNavItem = (item: NavItem) => {
     const isActive = pathname === item.href || pathname.startsWith(item.href + '/')

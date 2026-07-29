@@ -80,6 +80,15 @@ export async function getCurrentUser(): Promise<Profile | null> {
 }
 
 /**
+ * Auth user only (no profile). Used by ported email folder pages.
+ */
+export async function getAuthUser() {
+  const supabase = await createClient()
+  const { data: { user } } = await supabase.auth.getUser()
+  return user
+}
+
+/**
  * Check if user is authenticated (for middleware/guards)
  */
 export async function isAuthenticated() {

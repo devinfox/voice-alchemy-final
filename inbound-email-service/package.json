@@ -1,0 +1,24 @@
+{
+  "name": "inbound-email-service",
+  "version": "1.0.0",
+  "description": "Receives SendGrid Inbound Parse posts without Vercel's 4.5MB body limit, stores attachments, and forwards a slim payload to the CRM webhook.",
+  "type": "module",
+  "main": "dist/index.js",
+  "engines": {
+    "node": ">=22"
+  },
+  "scripts": {
+    "build": "tsc",
+    "start": "node dist/index.js",
+    "dev": "tsx src/index.ts",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@supabase/supabase-js": "^2.89.0"
+  },
+  "devDependencies": {
+    "@types/node": "^20.10.0",
+    "tsx": "^4.7.0",
+    "typescript": "^5.3.0"
+  }
+}

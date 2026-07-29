@@ -1,5 +1,6 @@
 import { createServerClient } from '@supabase/ssr'
 import { NextResponse, type NextRequest } from 'next/server'
+import { canAccessEmailTools } from '@/lib/email-access'
 
 export async function middleware(request: NextRequest) {
   let supabaseResponse = NextResponse.next({
@@ -34,15 +35,41 @@ export async function middleware(request: NextRequest) {
     data: { user },
   } = await supabase.auth.getUser()
 
+  const pathname = request.nextUrl.pathname
+  const isEmailDashboardRoute = pathname.startsWith('/dashboard/email') ||
+                                pathname.startsWith('/dashboard/email-templates')
+  const isEmailApiRoute = pathname.startsWith('/api/email') ||
+                          pathname.startsWith('/api/email-templates')
+  const isEmailWebhookRoute = pathname.startsWith('/api/email/webhooks/')
+
+  if (user && (isEmailDashboardRoute || (isEmailApiRoute && !isEmailWebhookRoute))) {
+    const { data: profile } = await supabase
+      .from('profiles')
+      .select('first_name, last_name, name, role')
+      .eq('id', user.id)
+      .maybeSingle()
+
+    if (!canAccessEmailTools(profile, user.email)) {
+      if (isEmailApiRoute) {
+        return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
+      }
+
+      const url = request.nextUrl.clone()
+      url.pathname = '/dashboard'
+      url.search = ''
+      return NextResponse.redirect(url)
+    }
+  }
+
   // Define protected and auth routes
-  const isAuthRoute = request.nextUrl.pathname.startsWith('/login') ||
-                      request.nextUrl.pathname.startsWith('/signup') ||
-                      request.nextUrl.pathname.startsWith('/forgot-password') ||
-                      request.nextUrl.pathname.startsWith('/reset-password') ||
-                      request.nextUrl.pathname.startsWith('/auth/callback')
+  const isAuthRoute = pathname.startsWith('/login') ||
+                      pathname.startsWith('/signup') ||
+                      pathname.startsWith('/forgot-password') ||
+                      pathname.startsWith('/reset-password') ||
+                      pathname.startsWith('/auth/callback')
   const isProtectedRoute = !isAuthRoute &&
-                           !request.nextUrl.pathname.startsWith('/api') &&
-                           request.nextUrl.pathname !== '/'
+                           !pathname.startsWith('/api') &&
+                           pathname !== '/'
 
   // Redirect unauthenticated users to login
   if (!user && isProtectedRoute) {
@@ -54,7 +81,7 @@ export async function middleware(request: NextRequest) {
 
   // Redirect authenticated users away from auth pages (except reset-password which needs auth)
   // Allow ?switch=true to bypass for account switching in dev mode
-  const isResetPassword = request.nextUrl.pathname.startsWith('/reset-password')
+  const isResetPassword = pathname.startsWith('/reset-password')
   const isSwitchingAccounts = request.nextUrl.searchParams.get('switch') === 'true'
   if (user && isAuthRoute && !isResetPassword && !isSwitchingAccounts) {
     const url = request.nextUrl.clone()

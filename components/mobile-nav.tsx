@@ -17,9 +17,12 @@ import {
   BookOpen,
   Calendar,
   Music,
+  Mail,
+  FileText,
 } from 'lucide-react'
 import { createClient } from '@/lib/supabase'
 import type { User } from '@/types/database.types'
+import { canAccessEmailTools } from '@/lib/email-access'
 
 interface NavItem {
   name: string
@@ -30,6 +33,8 @@ interface NavItem {
 const teacherNavigation: NavItem[] = [
   { name: 'Dashboard', href: '/dashboard', icon: LayoutDashboard },
   { name: 'My Students', href: '/dashboard/students', icon: Users },
+  { name: 'Email', href: '/dashboard/email', icon: Mail },
+  { name: 'Email Templates', href: '/dashboard/email-templates', icon: FileText },
   { name: 'Courses', href: '/dashboard/courses', icon: GraduationCap },
   { name: 'Training Center', href: '/dashboard/training-center', icon: Music },
   { name: 'Calendar', href: '/dashboard/calendar', icon: Calendar },
@@ -46,17 +51,13 @@ const studentNavigation: NavItem[] = [
 
 interface MobileNavProps {
   user: User | null
+  userEmail?: string | null
 }
 
-export function MobileNav({ user }: MobileNavProps) {
+export function MobileNav({ user, userEmail }: MobileNavProps) {
   const [isOpen, setIsOpen] = useState(false)
   const pathname = usePathname()
   const router = useRouter()
-
-  // Close menu when route changes
-  useEffect(() => {
-    setIsOpen(false)
-  }, [pathname])
 
   // Prevent body scroll when menu is open
   useEffect(() => {
@@ -78,7 +79,12 @@ export function MobileNav({ user }: MobileNavProps) {
   }
 
   const isTeacher = user?.role === 'teacher' || user?.role === 'instructor' || user?.role === 'admin'
-  const navigation = isTeacher ? teacherNavigation : studentNavigation
+  const hasEmailAccess = canAccessEmailTools(user, userEmail)
+  const visibleTeacherNavigation = teacherNavigation.filter((item) => {
+    if (item.href.startsWith('/dashboard/email')) return hasEmailAccess
+    return true
+  })
+  const navigation = isTeacher ? visibleTeacherNavigation : studentNavigation
 
   return (
     <>

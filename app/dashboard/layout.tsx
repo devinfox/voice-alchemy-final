@@ -39,10 +39,10 @@ export default async function DashboardLayout({
       />
 
       {/* Mobile Navigation */}
-      <MobileNav user={profile} />
+      <MobileNav user={profile} userEmail={user.email} />
 
       {/* Desktop Sidebar */}
-      <Sidebar user={profile} />
+      <Sidebar user={profile} userEmail={user.email} />
 
       <div className="flex-1 flex flex-col relative z-10">
         {/* Desktop Header */}

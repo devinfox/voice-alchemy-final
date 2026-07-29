@@ -215,3 +215,116 @@ export interface Database {
     };
   };
 }
+
+// ============================================================================
+// EMAIL TEMPLATE / FUNNEL TYPES (ported from CRM)
+// ============================================================================
+
+export type EmailTemplateCategory =
+  | 'welcome'
+  | 'follow_up'
+  | 'paperwork'
+  | 'funding'
+  | 'closing'
+  | 'general'
+  | 'lesson'
+  | 'onboarding';
+
+export type FunnelStatus = 'draft' | 'active' | 'paused' | 'archived'
+
+export type EnrollmentStatus =
+  | 'active'
+  | 'completed'
+  | 'paused'
+  | 'cancelled'
+  | 'pending_approval'
+  | 'rejected'
+
+export interface EmailTemplate {
+  id: string
+  name: string
+  subject: string
+  body: string
+  body_html: string | null
+  description: string | null
+  category: EmailTemplateCategory | null
+  is_active: boolean
+  created_by: string | null
+  is_deleted: boolean
+  deleted_at: string | null
+  created_at: string
+  updated_at: string
+}
+
+export interface EmailFunnel {
+  id: string
+  name: string
+  description: string | null
+  status: FunnelStatus
+  tags: string[]
+  auto_enroll_enabled: boolean
+  total_enrolled: number
+  total_completed: number
+  total_emails_sent: number
+  total_opens: number
+  total_clicks: number
+  created_by: string | null
+  is_deleted: boolean
+  deleted_at: string | null
+  created_at: string
+  updated_at: string
+  phases?: EmailFunnelPhase[]
+  enrollments_count?: number
+}
+
+export interface EmailFunnelPhase {
+  id: string
+  funnel_id: string
+  template_id: string | null
+  phase_order: number
+  name: string | null
+  delay_days: number
+  delay_hours: number
+  emails_sent: number
+  emails_opened: number
+  emails_clicked: number
+  created_at: string
+  updated_at: string
+  template?: EmailTemplate
+}
+
+export interface EmailFunnelEnrollment {
+  id: string
+  funnel_id: string
+  lead_id: string | null
+  contact_id: string | null
+  status: EnrollmentStatus
+  current_phase: number
+  enrolled_at: string
+  enrolled_by: string | null
+  last_email_sent_at: string | null
+  next_email_scheduled_at: string | null
+  completed_at: string | null
+  paused_at: string | null
+  cancelled_at: string | null
+  cancel_reason: string | null
+  match_reason: string | null
+  created_at: string
+  updated_at: string
+  funnel?: EmailFunnel
+}
+
+export interface EmailFunnelLog {
+  id: string
+  enrollment_id: string
+  phase_id: string
+  email_id: string | null
+  sent_at: string | null
+  opened_at: string | null
+  clicked_at: string | null
+  bounced_at: string | null
+  scheduled_for: string | null
+  status: string
+  error_message: string | null
+  created_at: string
+}

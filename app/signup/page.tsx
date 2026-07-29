@@ -1,22 +1,31 @@
 'use client'
 
-import { useState } from 'react'
-import { useRouter } from 'next/navigation'
+import { Suspense, useState } from 'react'
+import { useSearchParams } from 'next/navigation'
 import Link from 'next/link'
 import Image from 'next/image'
 import { createClient } from '@/lib/supabase'
 import { ProfileRole } from '@/types/database.types'
-import { GraduationCap, Users } from 'lucide-react'
+import { GraduationCap, Mail, Users } from 'lucide-react'
 
 export default function SignupPage() {
-  const router = useRouter()
+  return (
+    <Suspense>
+      <SignupForm />
+    </Suspense>
+  )
+}
+
+function SignupForm() {
+  const searchParams = useSearchParams()
+  const initialRole: ProfileRole = searchParams.get('role') === 'teacher' ? 'teacher' : 'student'
 
   const [firstName, setFirstName] = useState('')
   const [lastName, setLastName] = useState('')
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
   const [confirmPassword, setConfirmPassword] = useState('')
-  const [role, setRole] = useState<ProfileRole>('student')
+  const [role, setRole] = useState<ProfileRole>(initialRole)
   const [error, setError] = useState<string | null>(null)
   const [loading, setLoading] = useState(false)
   const [success, setSuccess] = useState(false)
@@ -56,6 +65,7 @@ export default function SignupPage() {
       email,
       password,
       options: {
+        emailRedirectTo: `${window.location.origin}/auth/callback`,
         data: {
           first_name: firstName,
           last_name: lastName,
@@ -72,12 +82,6 @@ export default function SignupPage() {
 
     setSuccess(true)
     setLoading(false)
-
-    // Auto-redirect after signup (if email confirmation is disabled)
-    setTimeout(() => {
-      router.push('/dashboard')
-      router.refresh()
-    }, 2000)
   }
 
   if (success) {
@@ -90,16 +94,53 @@ export default function SignupPage() {
       >
         <div className="max-w-md w-full text-center">
           <div className="glass-card p-8 border border-[#CEB466]/30">
-            <div className="w-16 h-16 rounded-full bg-gradient-to-br from-[#CEB466] to-[#9c8644] flex items-center justify-center mx-auto mb-4 shadow-lg shadow-[#CEB466]/30">
-              <GraduationCap className="w-8 h-8 text-[#171229]" />
+            <div className="w-16 h-16 rounded-full bg-gradient-to-br from-[#CEB466] to-[#9c8644] flex items-center justify-center mx-auto mb-5 shadow-lg shadow-[#CEB466]/30">
+              <Mail className="w-8 h-8 text-[#171229]" />
             </div>
-            <h2 className="text-xl font-semibold text-[#CEB466] mb-2">Account Created!</h2>
-            <p className="text-sm text-gray-400">
-              Your account has been created successfully. Redirecting to dashboard...
+            <h2 className="text-2xl font-semibold text-[#CEB466] mb-3">
+              Check your email for confirmation!
+            </h2>
+            <p className="text-sm text-gray-300 leading-relaxed">
+              We sent a confirmation link to <span className="text-white font-medium">{email}</span>.
+              Open that email and click the link to activate your Voice Alchemy Academy account.
             </p>
-            <div className="mt-4">
-              <div className="w-6 h-6 border-2 border-[#CEB466]/30 border-t-[#CEB466] rounded-full animate-spin mx-auto" />
+            <p className="text-sm text-gray-400 leading-relaxed mt-4">
+              Once confirmed, you&apos;ll be able to sign in and continue your vocal journey.
+            </p>
+
+            <div className="grid grid-cols-2 gap-3 mt-6">
+              <a
+                href="https://mail.google.com/"
+                target="_blank"
+                rel="noopener noreferrer"
+                className="py-3 px-4 rounded-xl bg-white/[0.08] border border-white/10 text-sm font-semibold text-white hover:border-[#CEB466]/40 hover:text-[#CEB466] transition-colors"
+              >
+                Open Gmail
+              </a>
+              <a
+                href="https://outlook.live.com/mail/"
+                target="_blank"
+                rel="noopener noreferrer"
+                className="py-3 px-4 rounded-xl bg-white/[0.08] border border-white/10 text-sm font-semibold text-white hover:border-[#CEB466]/40 hover:text-[#CEB466] transition-colors"
+              >
+                Open Outlook
+              </a>
             </div>
+
+            <Link
+              href="/login"
+              className="mt-3 block w-full py-3 px-4 rounded-xl text-sm font-bold text-[#171229] transition-all duration-300"
+              style={{
+                background: 'linear-gradient(135deg, #e0c97d 0%, #CEB466 30%, #b59d52 60%, #9c8644 100%)',
+                boxShadow: '0 10px 40px rgba(206, 180, 102, 0.25), 0 4px 12px rgba(0,0,0,0.1)',
+              }}
+            >
+              Back to Sign In
+            </Link>
+
+            <p className="text-xs text-gray-500 mt-5">
+              Don&apos;t see it? Check your spam or promotions folder.
+            </p>
           </div>
         </div>
       </div>
@@ -142,7 +183,7 @@ export default function SignupPage() {
                 className="object-contain"
                 priority
               />
-              <p className="text-gray-400 text-sm">Create your account</p>
+              <p className="text-gray-400 text-sm">Create your Voice Alchemy account</p>
             </div>
           </div>
 
@@ -156,9 +197,14 @@ export default function SignupPage() {
 
             {/* Role Selection */}
             <div>
-              <label className="block text-sm font-medium text-gray-300 mb-3">
-                I am a...
-              </label>
+              <div className="flex items-center justify-between mb-3">
+                <label className="block text-sm font-medium text-gray-300">
+                  Creating a {role === 'student' ? 'Student' : 'Teacher'} account
+                </label>
+                <Link href="/" className="text-xs font-medium text-[#CEB466] hover:text-[#e0c97d] transition-colors">
+                  Change
+                </Link>
+              </div>
               <div className="grid grid-cols-2 gap-4">
                 <button
                   type="button"
@@ -295,7 +341,7 @@ export default function SignupPage() {
               }}
             >
               <span className="relative z-10 tracking-wide uppercase">
-                {loading ? 'Creating account...' : `Create ${role} account`}
+                {loading ? 'Creating account...' : 'Create my account'}
               </span>
               <div className="absolute inset-0 bg-gradient-to-r from-white/20 to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-300" />
             </button>

@@ -1,5 +1,6 @@
 import { redirect } from 'next/navigation'
 import { createClient } from '@/lib/supabase-server'
+import { SignupGateway } from '@/components/signup-gateway'
 
 export default async function Home() {
   const supabase = await createClient()
@@ -7,7 +8,7 @@ export default async function Home() {
 
   if (user) {
     redirect('/dashboard')
-  } else {
-    redirect('/login')
   }
+
+  return <SignupGateway />
 }
