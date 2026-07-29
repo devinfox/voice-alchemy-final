@@ -1,7 +1,7 @@
 import { sendEmail } from '@/lib/sendgrid'
 
 export const HELLO_FORWARD_FROM = 'hello@voicealchemyacademy.com'
-export const JULIA_FORWARD_TO = 'julia.millervasquez@gmail.com'
+export const JULIA_FORWARD_TO = 'voicealchemyacademy@gmail.com'
 
 export interface InboundForwardAttachment {
   content: string
