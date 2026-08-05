@@ -1,5 +1,14 @@
-import LandingPage from '@/components/LandingPage'
+import { redirect } from 'next/navigation'
+import { createClient } from '@/lib/supabase-server'
+import { SignupGateway } from '@/components/signup-gateway'
 
-export default function Home() {
-  return <LandingPage />
+export default async function Home() {
+  const supabase = await createClient()
+  const { data: { user } } = await supabase.auth.getUser()
+
+  if (user) {
+    redirect('/dashboard')
+  }
+
+  return <SignupGateway />
 }
