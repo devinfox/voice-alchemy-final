@@ -22,7 +22,6 @@ function DevQuickLogin() {
   const [loading, setLoading] = useState(false)
   const [loggingIn, setLoggingIn] = useState<string | null>(null)
   const [expanded, setExpanded] = useState(false)
-  const [autoLoginAttempted, setAutoLoginAttempted] = useState(false)
 
   const fetchUsers = useCallback(async () => {
     if (users.length > 0) return // Already loaded
@@ -40,26 +39,12 @@ function DevQuickLogin() {
     }
   }, [users.length])
 
-  // Auto-fetch users and auto-login as Julia
+  // Auto-fetch the list of test users (login stays manual — a click is required)
   useEffect(() => {
     fetchUsers()
   }, [fetchUsers])
 
-  // Auto-login as Julia when found
-  useEffect(() => {
-    if (autoLoginAttempted || loggingIn) return
-    const julia = users.find(u =>
-      u.name.toLowerCase().includes('julia') &&
-      (u.role === 'teacher' || u.role === 'instructor')
-    )
-    if (julia) {
-      console.log('[DevQuickLogin] Auto-logging in as Julia...')
-      setAutoLoginAttempted(true)
-      handleQuickLogin(julia.email, julia.name)
-    }
-  }, [users, autoLoginAttempted, loggingIn])
-
-  const handleQuickLogin = async (email: string, name: string) => {
+  const handleQuickLogin = async (email: string) => {
     setLoggingIn(email)
     try {
       // Sign out first if there's an existing session
@@ -75,11 +60,11 @@ function DevQuickLogin() {
       if (res.ok) {
         const data = await res.json()
 
-        if (data.usePasswordAuth && data.password) {
-          // Sign in with the temporary password
-          const { error: signInError } = await supabase.auth.signInWithPassword({
-            email: data.email,
-            password: data.password
+        if (data.useOtpAuth && data.tokenHash) {
+          // Sign in with the one-time magic link token
+          const { error: signInError } = await supabase.auth.verifyOtp({
+            type: 'magiclink',
+            token_hash: data.tokenHash,
           })
 
           if (signInError) {
@@ -126,7 +111,7 @@ function DevQuickLogin() {
       {/* Quick Julia Button */}
       {julia ? (
         <button
-          onClick={() => handleQuickLogin(julia.email, julia.name)}
+          onClick={() => handleQuickLogin(julia.email)}
           disabled={!!loggingIn}
           className="w-full mb-3 py-3 px-4 rounded-lg bg-gradient-to-r from-orange-600 to-amber-600 hover:from-orange-500 hover:to-amber-500 text-white font-medium text-sm transition-all disabled:opacity-50 flex items-center justify-center gap-2"
         >
@@ -174,7 +159,7 @@ function DevQuickLogin() {
                     {teachers.map(user => (
                       <button
                         key={user.id}
-                        onClick={() => handleQuickLogin(user.email, user.name)}
+                        onClick={() => handleQuickLogin(user.email)}
                         disabled={!!loggingIn}
                         className="py-2 px-3 rounded-lg bg-purple-600/20 hover:bg-purple-600/30 border border-purple-500/30 text-purple-300 text-xs transition-all disabled:opacity-50 text-left"
                       >
@@ -199,7 +184,7 @@ function DevQuickLogin() {
                     {students.slice(0, 6).map(user => (
                       <button
                         key={user.id}
-                        onClick={() => handleQuickLogin(user.email, user.name)}
+                        onClick={() => handleQuickLogin(user.email)}
                         disabled={!!loggingIn}
                         className="py-2 px-3 rounded-lg bg-blue-600/20 hover:bg-blue-600/30 border border-blue-500/30 text-blue-300 text-xs transition-all disabled:opacity-50 text-left"
                       >
@@ -245,17 +230,11 @@ function DevQuickLogin() {
 
 // Check if we're in dev mode (client-side check)
 function useIsDevMode() {
-  const [isDev, setIsDev] = useState(false)
-
-  useEffect(() => {
-    // Check if running on localhost or dev environment
-    const isLocalhost = window.location.hostname === 'localhost' ||
-                        window.location.hostname === '127.0.0.1' ||
-                        window.location.hostname.includes('.local')
-    setIsDev(isLocalhost)
-  }, [])
-
-  return isDev
+  return typeof window !== 'undefined' && (
+    window.location.hostname === 'localhost' ||
+    window.location.hostname === '127.0.0.1' ||
+    window.location.hostname.includes('.local')
+  )
 }
 
 // Known Microsoft email domains
@@ -279,11 +258,14 @@ function LoginForm({ showDevLogin }: { showDevLogin: boolean }) {
   const searchParams = useSearchParams()
   const redirect = searchParams.get('redirect') || '/dashboard'
   const errorParam = searchParams.get('error')
+  // Set by /auth/callback after an email-confirmation link is opened
+  const confirmedParam = searchParams.get('confirmed')
 
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
   const [error, setError] = useState<string | null>(errorParam)
   const [loading, setLoading] = useState(false)
+  const [googleLoading, setGoogleLoading] = useState(false)
   // Async organization check result (for custom domains) - keyed by domain
   const [orgCheckResult, setOrgCheckResult] = useState<{ domain: string; allows: boolean } | null>(null)
 
@@ -387,13 +369,53 @@ function LoginForm({ showDevLogin }: { showDevLogin: boolean }) {
     router.refresh()
   }
 
+  const handleGoogleLogin = async () => {
+    setError(null)
+    setGoogleLoading(true)
+
+    const supabase = createClient()
+    const { error } = await supabase.auth.signInWithOAuth({
+      provider: 'google',
+      options: {
+        redirectTo: `${window.location.origin}/auth/callback?next=${encodeURIComponent(redirect)}`,
+      },
+    })
+
+    // On success the browser redirects to Google; only errors land here
+    if (error) {
+      setError(error.message)
+      setGoogleLoading(false)
+    }
+  }
+
   return (
     <form onSubmit={handleLogin} className="space-y-5">
+      {confirmedParam === '1' && !error && (
+        <div className="bg-[#CEB466]/10 backdrop-blur-sm border border-[#CEB466]/40 px-4 py-3 rounded-xl">
+          <p className="text-sm font-semibold text-[#CEB466]">Email confirmed</p>
+          <p className="text-sm text-gray-300 mt-0.5">
+            Your account is active. Sign in below to get started.
+          </p>
+        </div>
+      )}
+
+      {confirmedParam === 'expired' && !error && (
+        <div className="bg-amber-500/10 backdrop-blur-sm border border-amber-400/30 px-4 py-3 rounded-xl">
+          <p className="text-sm font-semibold text-amber-300">Confirmation link expired</p>
+          <p className="text-sm text-gray-300 mt-0.5">
+            That link has already been used or has expired. Try signing in below &mdash; if that
+            doesn&apos;t work, <Link href="/signup" className="text-[#CEB466] hover:underline">sign up again</Link> to
+            get a fresh link.
+          </p>
+        </div>
+      )}
+
       {error && (
         <div className="bg-red-500/10 backdrop-blur-sm border border-red-400/30 text-red-300 px-4 py-3 rounded-xl text-sm">
           {error}
         </div>
       )}
+
 
       <div className="space-y-4">
         <div>
@@ -457,6 +479,27 @@ function LoginForm({ showDevLogin }: { showDevLogin: boolean }) {
           You&apos;ll be redirected to Microsoft to sign in
         </p>
       )}
+
+      <div className="flex items-center gap-3">
+        <div className="flex-1 h-px bg-white/10" />
+        <span className="text-xs text-gray-500 uppercase tracking-wider">or</span>
+        <div className="flex-1 h-px bg-white/10" />
+      </div>
+
+      <button
+        type="button"
+        onClick={handleGoogleLogin}
+        disabled={googleLoading}
+        className="w-full py-3.5 px-4 rounded-xl text-sm font-semibold text-white bg-white/[0.06] hover:bg-white/[0.1] border border-white/15 transition-all duration-300 disabled:opacity-50 flex items-center justify-center gap-3"
+      >
+        <svg className="w-4.5 h-4.5" viewBox="0 0 24 24" aria-hidden="true">
+          <path fill="#4285F4" d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z" />
+          <path fill="#34A853" d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z" />
+          <path fill="#FBBC05" d="M5.84 14.1c-.22-.66-.35-1.36-.35-2.1s.13-1.44.35-2.1V7.06H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.94l3.66-2.84z" />
+          <path fill="#EA4335" d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.06l3.66 2.84c.87-2.6 3.3-4.52 6.16-4.52z" />
+        </svg>
+        {googleLoading ? 'Connecting to Google...' : 'Continue with Google'}
+      </button>
 
       <div className="flex items-center justify-center gap-4 text-sm pt-2">
         <Link href="/forgot-password" className="text-gray-400 hover:text-[#CEB466] transition-colors duration-300">
