@@ -303,7 +303,7 @@ function LoginForm({ showDevLogin }: { showDevLogin: boolean }) {
           <ShieldCheck className="w-4 h-4 text-emerald-400 shrink-0 mt-0.5" />
           <div className="text-xs">
             <p className="font-bold text-emerald-300">Email Confirmed Successfully</p>
-            <p className="text-gray-300 mt-0.5">Your sanctuary account is active. Sign in below.</p>
+            <p className="text-gray-300 mt-0.5">Your account is active. Log in below.</p>
           </div>
         </div>
       )}
@@ -312,7 +312,7 @@ function LoginForm({ showDevLogin }: { showDevLogin: boolean }) {
         <div className="p-3.5 rounded-2xl bg-amber-500/10 border border-amber-500/30 text-xs text-amber-200">
           <p className="font-bold">Confirmation link expired</p>
           <p className="mt-0.5 text-gray-300">
-            Try signing in below or{' '}
+            Try logging in below or{' '}
             <Link href="/signup" className="text-[#CEB466] underline font-semibold">
               sign up again
             </Link>.
@@ -395,7 +395,7 @@ function LoginForm({ showDevLogin }: { showDevLogin: boolean }) {
         }}
       >
         <span className="relative z-10 tracking-wider uppercase">
-          {loading ? 'Authenticating...' : 'Sign In to Sanctuary'}
+          {loading ? 'Logging In...' : 'Log In'}
         </span>
         {!loading && <ArrowRight className="w-4 h-4 relative z-10" />}
         <div className="absolute inset-0 bg-gradient-to-r from-white/25 to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-300" />
