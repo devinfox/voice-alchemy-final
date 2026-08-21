@@ -23,16 +23,6 @@ export function SignupGateway() {
         }}
       />
 
-      <div className="absolute inset-0 opacity-30 pointer-events-none">
-        <Image
-          src="/homepage/still.png"
-          alt=""
-          fill
-          priority
-          className="object-cover"
-        />
-        <div className="absolute inset-0 bg-[#0f0b1e]/75" />
-      </div>
 
       <main className="relative z-10 w-full max-w-5xl">
         <div className="flex justify-center mb-8">

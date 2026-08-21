@@ -7,7 +7,6 @@ import { analyzeSessionPerformance } from '@/lib/openai'
 // ============================================================================
 
 interface NoteMetricInput {
-  // Legacy metrics
   noteName: string
   octave: number
   targetFrequency: number
@@ -20,13 +19,17 @@ interface NoteMetricInput {
   maxCentsDeviation: number
   minCentsDeviation: number
   attemptNumber: number
-  // New singer-focused metrics
+  // Singer-focused & acoustic telemetry
   targetAccuracy?: number
   voiceStability?: number
+  maeCents?: number
+  pitchBiasCents?: number
+  pitchDirection?: 'sharp' | 'flat' | 'on-target'
+  inTunePercent?: number
+  inWindowPercent?: number
   avgSemitoneDeviation?: number
   mostSungNote?: string | null
   mostSungOctave?: number | null
-  pitchDirection?: 'sharp' | 'flat' | 'on-target'
   timeToFirstSound?: number
   sampleCount?: number
 }
@@ -71,14 +74,13 @@ export async function POST(request: NextRequest) {
     let avgPitchStability: number
     let avgInTuneSustainMs: number
     let overallScore: number
-    // New singer-focused session aggregates
+    // Singer-focused session aggregates
     let avgTargetAccuracy: number = 0
     let avgVoiceStability: number = 0
     let avgSemitoneDeviation: number = 0
     let pitchTendency: 'sharp' | 'flat' | 'on-target' = 'on-target'
 
     if (isSongKeySession) {
-      // Song Key Trainer session
       totalNotes = songTotalNotes || 0
       matchedNotes = Math.round((totalNotes * (inKeyPercentage || 0)) / 100)
       avgPitchAccuracy = inKeyPercentage || 0
@@ -87,19 +89,14 @@ export async function POST(request: NextRequest) {
       avgInTuneSustainMs = 0
       overallScore = avgPitchAccuracy
     } else {
-      // Note-based pitch training session
       if (!noteMetrics || noteMetrics.length === 0) {
         return NextResponse.json({ error: 'No note metrics provided' }, { status: 400 })
       }
 
-      // Calculate session aggregates
       totalNotes = noteMetrics.length
-
-      // Check if we have the new singer-focused metrics
       const hasNewMetrics = noteMetrics.some(n => n.targetAccuracy !== undefined)
 
       if (hasNewMetrics) {
-        // NEW: Use singer-focused metrics
         avgTargetAccuracy = noteMetrics.reduce((sum, n) => sum + (n.targetAccuracy ?? n.pitchAccuracy), 0) / totalNotes
         avgVoiceStability = noteMetrics.reduce((sum, n) => sum + (n.voiceStability ?? n.pitchStability), 0) / totalNotes
         avgSemitoneDeviation = noteMetrics.reduce((sum, n) => sum + (n.avgSemitoneDeviation ?? 0), 0) / totalNotes
@@ -115,11 +112,15 @@ export async function POST(request: NextRequest) {
           pitchTendency = 'on-target'
         }
 
-        // Count matched notes: within 1 semitone of target AND >50% target accuracy
+        // Strict note match: Target Accuracy >= 70% AND mean error <= 25 cents
         matchedNotes = noteMetrics.filter(n => {
-          const semitones = Math.abs(n.avgSemitoneDeviation ?? 0)
           const accuracy = n.targetAccuracy ?? n.pitchAccuracy
-          return semitones <= 1 && accuracy >= 50
+          const errorCents = n.maeCents !== undefined
+            ? n.maeCents
+            : n.avgSemitoneDeviation !== undefined
+              ? Math.abs(n.avgSemitoneDeviation * 100)
+              : Math.abs(n.avgCentsDeviation)
+          return accuracy >= 70 && errorCents <= 25
         }).length
 
         avgPitchAccuracy = avgTargetAccuracy
@@ -127,35 +128,27 @@ export async function POST(request: NextRequest) {
         avgPitchStability = avgVoiceStability
         avgInTuneSustainMs = Math.round(noteMetrics.reduce((sum, n) => sum + n.inTuneSustainMs, 0) / totalNotes)
 
-        // NEW: Calculate overall score with singer-focused weighting
-        // Target Accuracy (40%): How close to the target note
-        // Voice Stability (35%): How steady their pitch is
-        // Onset Speed (15%): How quickly they find a pitch
-        // Sample Count bonus (10%): Reward for actually singing (not just hitting mic)
-        const avgSampleCount = noteMetrics.reduce((sum, n) => sum + (n.sampleCount ?? 10), 0) / totalNotes
-        const sampleBonus = Math.min(100, avgSampleCount * 2) // 50 samples = 100%
-
+        // Musical scoring: Target accuracy gates stability, onset speed, and sustain
+        const targetGate = avgTargetAccuracy / 100
         overallScore = (
-          avgTargetAccuracy * 0.40 +
-          avgVoiceStability * 0.35 +
-          Math.min(100, Math.max(0, 100 - (avgPitchOnsetSpeedMs / 15))) * 0.15 +
-          sampleBonus * 0.10
+          avgTargetAccuracy * 0.50 +
+          (avgVoiceStability * targetGate * 0.30) +
+          (Math.min(100, Math.max(0, 100 - (avgPitchOnsetSpeedMs / 15))) * targetGate * 0.10) +
+          (Math.min(100, (avgInTuneSustainMs / 40)) * targetGate * 0.10)
         )
       } else {
-        // LEGACY: Use old metrics
-        matchedNotes = noteMetrics.filter(n => n.pitchAccuracy >= 70).length
+        matchedNotes = noteMetrics.filter(n => n.pitchAccuracy >= 70 && Math.abs(n.avgCentsDeviation) <= 25).length
 
         avgPitchAccuracy = noteMetrics.reduce((sum, n) => sum + n.pitchAccuracy, 0) / totalNotes
         avgPitchOnsetSpeedMs = Math.round(noteMetrics.reduce((sum, n) => sum + n.pitchOnsetSpeedMs, 0) / totalNotes)
         avgPitchStability = noteMetrics.reduce((sum, n) => sum + n.pitchStability, 0) / totalNotes
         avgInTuneSustainMs = Math.round(noteMetrics.reduce((sum, n) => sum + n.inTuneSustainMs, 0) / totalNotes)
 
-        // Calculate overall score (weighted average)
         overallScore = (
-          avgPitchAccuracy * 0.35 +
-          Math.min(100, Math.max(0, 100 - (avgPitchOnsetSpeedMs / 10))) * 0.2 +
-          avgPitchStability * 0.25 +
-          Math.min(100, (avgInTuneSustainMs / 50)) * 0.2
+          avgPitchAccuracy * 0.50 +
+          avgPitchStability * 0.30 +
+          Math.min(100, Math.max(0, 100 - (avgPitchOnsetSpeedMs / 15))) * 0.10 +
+          Math.min(100, (avgInTuneSustainMs / 40)) * 0.10
         )
       }
     }
@@ -173,17 +166,18 @@ export async function POST(request: NextRequest) {
       .eq('session_date', sessionDate)
       .maybeSingle()
 
-    // Only save if this session is better than existing or no existing session
+    // If existing session scored higher, we still return progress status without throwing
     if (existingSession && existingSession.overall_score >= overallScore) {
       return NextResponse.json({
-        message: 'Session not saved - existing session has higher score',
+        message: 'Session recorded (daily best retained)',
         currentScore: overallScore,
         bestScore: existingSession.overall_score,
-        saved: false
+        saved: true,
+        isNewBest: false
       })
     }
 
-    // Delete existing session if we're replacing it
+    // Delete existing session record for today if replacing with new daily high score
     if (existingSession) {
       await supabase
         .from('pitch_training_sessions')
@@ -191,7 +185,7 @@ export async function POST(request: NextRequest) {
         .eq('id', existingSession.id)
     }
 
-    // Create new session (including new singer-focused metrics)
+    // Create new session
     const { data: session, error: sessionError } = await supabase
       .from('pitch_training_sessions')
       .insert({
@@ -200,7 +194,6 @@ export async function POST(request: NextRequest) {
         started_at: startedAt,
         ended_at: endedAt,
         duration_seconds: durationSeconds,
-        // Legacy metrics
         avg_pitch_accuracy: avgPitchAccuracy,
         avg_pitch_onset_speed_ms: avgPitchOnsetSpeedMs,
         avg_pitch_stability: avgPitchStability,
@@ -208,7 +201,6 @@ export async function POST(request: NextRequest) {
         overall_score: overallScore,
         total_notes_attempted: totalNotes,
         total_notes_matched: matchedNotes,
-        // New singer-focused metrics
         avg_target_accuracy: avgTargetAccuracy,
         avg_voice_stability: avgVoiceStability,
         avg_semitone_deviation: avgSemitoneDeviation,
@@ -222,24 +214,22 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'Failed to save session' }, { status: 500 })
     }
 
-    // Insert note metrics (including new singer-focused metrics)
+    // Insert note metrics
     const noteMetricsToInsert = noteMetrics.map(n => ({
       session_id: session.id,
       user_id: user.id,
-      // Legacy fields
       note_name: n.noteName,
       octave: n.octave,
       target_frequency: n.targetFrequency,
-      pitch_accuracy: n.pitchAccuracy,
+      pitch_accuracy: n.targetAccuracy ?? n.pitchAccuracy,
       pitch_onset_speed_ms: n.pitchOnsetSpeedMs,
-      pitch_stability: n.pitchStability,
+      pitch_stability: n.voiceStability ?? n.pitchStability,
       in_tune_sustain_ms: n.inTuneSustainMs,
       avg_detected_frequency: n.avgDetectedFrequency,
-      avg_cents_deviation: n.avgCentsDeviation,
+      avg_cents_deviation: n.maeCents ?? n.avgCentsDeviation,
       max_cents_deviation: n.maxCentsDeviation,
       min_cents_deviation: n.minCentsDeviation,
       attempt_number: n.attemptNumber,
-      // New singer-focused fields
       target_accuracy: n.targetAccuracy ?? n.pitchAccuracy,
       voice_stability: n.voiceStability ?? n.pitchStability,
       avg_semitone_deviation: n.avgSemitoneDeviation ?? 0,
@@ -256,10 +246,9 @@ export async function POST(request: NextRequest) {
 
     if (metricsError) {
       console.error('Metrics insert error:', metricsError)
-      // Don't fail the whole request, session is already saved
     }
 
-    // Generate AI feedback asynchronously (don't wait for it)
+    // Generate AI feedback asynchronously with full acoustic facts
     generateAndSaveAIFeedback(user.id, session.id, {
       avgPitchAccuracy,
       avgPitchOnsetSpeedMs,
@@ -268,7 +257,10 @@ export async function POST(request: NextRequest) {
       overallScore,
       totalNotesAttempted: totalNotes,
       totalNotesMatched: matchedNotes,
-      durationSeconds
+      durationSeconds,
+      avgTargetAccuracy,
+      avgVoiceStability,
+      pitchTendency,
     }, noteMetrics).catch(err => console.error('AI feedback generation failed:', err))
 
     return NextResponse.json({
@@ -346,13 +338,15 @@ async function generateAndSaveAIFeedback(
     totalNotesAttempted: number
     totalNotesMatched: number
     durationSeconds: number
+    avgTargetAccuracy?: number
+    avgVoiceStability?: number
+    pitchTendency?: 'sharp' | 'flat' | 'on-target'
   },
   noteMetrics: NoteMetricInput[]
 ) {
   try {
     const supabase = await createClient()
 
-    // Get student context (lesson notes, teacher feedback, etc.)
     const { data: lessonNotes } = await supabase
       .from('notes_archive')
       .select('content')
@@ -364,22 +358,27 @@ async function generateAndSaveAIFeedback(
       lessonNotes: lessonNotes?.map(n => n.content?.substring(0, 200)) || []
     }
 
-    // Generate AI analysis
     const analysis = await analyzeSessionPerformance(
       sessionMetrics,
       noteMetrics.map(n => ({
         noteName: n.noteName,
         octave: n.octave,
-        pitchAccuracy: n.pitchAccuracy,
+        targetAccuracy: n.targetAccuracy ?? n.pitchAccuracy,
+        voiceStability: n.voiceStability ?? n.pitchStability,
+        maeCents: n.maeCents,
+        pitchBiasCents: n.pitchBiasCents,
+        pitchDirection: n.pitchDirection,
+        inTunePercent: n.inTunePercent,
         pitchOnsetSpeedMs: n.pitchOnsetSpeedMs,
-        pitchStability: n.pitchStability,
         inTuneSustainMs: n.inTuneSustainMs,
+        mostSungNote: n.mostSungNote,
+        pitchAccuracy: n.pitchAccuracy,
+        pitchStability: n.pitchStability,
         avgCentsDeviation: n.avgCentsDeviation
       })),
       studentContext
     )
 
-    // Save AI feedback
     await supabase
       .from('pitch_training_ai_feedback')
       .insert({

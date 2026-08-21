@@ -220,13 +220,13 @@ export default function SessionView({ studentId, bookingId, isAdmin = false, cur
     return () => { supabase.removeChannel(channel) }
   }, [bookingId, supabase])
 
-  // Yjs Initialization
+  // Yjs Initialization - Keyed to unique bookingId so lessons never bleed state into each other
   useEffect(() => {
-    if (!currentUser || !studentId) return
+    if (!currentUser || !bookingId) return
 
     const doc = new Y.Doc()
     const yjsProvider = new YjsSupabaseProvider(doc, {
-      documentId: studentId,
+      documentId: bookingId,
       userId: currentUser.id,
       userName: currentUser.name,
       onSynced: () => {
@@ -248,7 +248,7 @@ export default function SessionView({ studentId, bookingId, isAdmin = false, cur
       providerRef.current = null
       setProviderReady(false)
     }
-  }, [studentId, currentUser])
+  }, [bookingId, currentUser])
 
   // --- Class Actions ---
 
@@ -292,6 +292,7 @@ export default function SessionView({ studentId, bookingId, isAdmin = false, cur
 
     // Get the content directly from the editor before anything else
     const contentHtml = editor?.getHTML() ?? ''
+    const contentJson = editor?.getJSON() ?? null
     console.log('[SessionView] Captured editor content, length:', contentHtml.length)
 
     await provider?.forceSave()
@@ -321,6 +322,7 @@ export default function SessionView({ studentId, bookingId, isAdmin = false, cur
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
         contentHtml,
+        contentJson,
         classStartedAt: startedAt?.toISOString() ?? ended.toISOString(),
       }),
     })
@@ -483,8 +485,8 @@ const VideoSection = React.memo(function VideoSection({
   videoRef: React.RefObject<VideoWebRTCHandle | null>
 }) {
   // Handle recording upload
-  const handleRecordingComplete = useCallback(async (blob: Blob) => {
-    console.log('[VideoSection] handleRecordingComplete called, blob:', blob ? `${blob.size} bytes` : 'null')
+  const handleRecordingComplete = useCallback(async (blob: Blob, audioBlob?: Blob | null) => {
+    console.log('[VideoSection] handleRecordingComplete called, video:', blob ? `${blob.size} bytes` : 'null', 'audio:', audioBlob ? `${audioBlob.size} bytes` : 'null')
 
     if (!blob || blob.size === 0) {
       console.error('[VideoSection] No recording data to upload - blob is empty or null')
@@ -494,10 +496,11 @@ const VideoSection = React.memo(function VideoSection({
     console.log('[VideoSection] Uploading recording via direct upload, size:', blob.size, 'bookingId:', bookingId)
 
     try {
-      const filename = `lesson-${bookingId}-${Date.now()}.webm`
+      const timestamp = Date.now()
+      const filename = `lesson-${bookingId}-${timestamp}.webm`
 
-      // Step 1: Get presigned upload URL
-      console.log('[VideoSection] Getting presigned upload URL...')
+      // Step 1: Upload Master Video Recording directly to Supabase Storage
+      console.log('[VideoSection] Getting presigned upload URL for video...')
       const presignResponse = await fetch(`/api/lessons/${bookingId}/recordings/presign`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -506,13 +509,12 @@ const VideoSection = React.memo(function VideoSection({
 
       if (!presignResponse.ok) {
         const errorText = await presignResponse.text()
-        throw new Error(`Failed to get upload URL: ${errorText}`)
+        throw new Error(`Failed to get video upload URL: ${errorText}`)
       }
 
       const { uploadUrl, storagePath } = await presignResponse.json()
-      console.log('[VideoSection] Got presigned URL, uploading directly to storage...')
+      console.log('[VideoSection] Uploading master video directly to storage...')
 
-      // Step 2: Upload directly to Supabase Storage (bypasses Vercel 4.5MB limit)
       const uploadResponse = await fetch(uploadUrl, {
         method: 'PUT',
         headers: { 'Content-Type': 'video/webm' },
@@ -521,10 +523,41 @@ const VideoSection = React.memo(function VideoSection({
 
       if (!uploadResponse.ok) {
         const errorText = await uploadResponse.text()
-        throw new Error(`Direct upload failed: ${errorText}`)
+        throw new Error(`Direct video upload failed: ${errorText}`)
       }
 
-      console.log('[VideoSection] Direct upload complete, registering recording...')
+      // Step 2: Upload lightweight AI Audio Asset if available (< 25MB)
+      let audioStoragePath: string | null = null
+      let audioFileSize: number | null = null
+
+      if (audioBlob && audioBlob.size > 0) {
+        try {
+          const audioFilename = `lesson-${bookingId}-${timestamp}.audio.webm`
+          const audioPresignRes = await fetch(`/api/lessons/${bookingId}/recordings/presign`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ filename: audioFilename, contentType: 'audio/webm' }),
+          })
+
+          if (audioPresignRes.ok) {
+            const audioData = await audioPresignRes.json()
+            const audioUploadRes = await fetch(audioData.uploadUrl, {
+              method: 'PUT',
+              headers: { 'Content-Type': 'audio/webm' },
+              body: audioBlob,
+            })
+            if (audioUploadRes.ok) {
+              audioStoragePath = audioData.storagePath
+              audioFileSize = audioBlob.size
+              console.log('[VideoSection] Dedicated AI audio track uploaded successfully:', audioStoragePath, audioFileSize)
+            }
+          }
+        } catch (audioErr) {
+          console.warn('[VideoSection] Could not upload separate audio track, falling back to video:', audioErr)
+        }
+      }
+
+      console.log('[VideoSection] Direct uploads complete, registering recording...')
 
       // Step 3: Register the recording and trigger AI processing
       const completeResponse = await fetch(`/api/lessons/${bookingId}/recordings/complete`, {
@@ -533,6 +566,8 @@ const VideoSection = React.memo(function VideoSection({
         body: JSON.stringify({
           storagePath,
           fileSize: blob.size,
+          audioStoragePath,
+          audioFileSize,
           roomName: `lesson-${bookingId}`,
           classStartedAt: startedAt?.toISOString(),
         }),
@@ -663,12 +698,35 @@ const VideoSection = React.memo(function VideoSection({
       {isAdmin ? (
         <div className="p-4 border-t border-white/10 flex items-center gap-2">
           {!active ? (
-            <button onClick={onStartClass} className="flex items-center gap-2 px-4 py-2 rounded-lg bg-[#CEB466] hover:bg-[#e0c97d] text-[#171229] font-medium transition-colors"><PlayCircle className="w-5 h-5" />Start Class</button>
+            <button onClick={onStartClass} className="flex items-center gap-2 px-5 py-2.5 rounded-xl bg-gradient-to-r from-[#CEB466] to-[#9c8644] hover:from-[#e0c97d] hover:to-[#CEB466] text-[#171229] font-bold text-sm transition-all shadow-lg shadow-[#CEB466]/20">
+              <PlayCircle className="w-5 h-5 text-[#171229]" />
+              <span>Start Class</span>
+            </button>
           ) : (
-            <button onClick={onEndClass} className="flex items-center gap-2 px-4 py-2 rounded-lg bg-red-600 hover:bg-red-700 text-white font-medium transition-colors"><StopCircle className="w-5 h-5" />End Class</button>
+            <button onClick={onEndClass} className="flex items-center gap-2 px-5 py-2.5 rounded-xl bg-red-600 hover:bg-red-700 text-white font-bold text-sm transition-all shadow-lg shadow-red-600/20">
+              <StopCircle className="w-5 h-5 text-white" />
+              <span>End Class & Archive Notes</span>
+            </button>
           )}
         </div>
-      ) : (<p className="p-4 text-sm text-gray-400 border-t border-white/10">{active ? 'Class in session.' : 'Class not in session yet. You can view past notes below.'}</p>)}
+      ) : (
+        <div className="p-4 border-t border-white/10 flex items-center justify-between text-sm">
+          {active ? (
+            <div className="flex items-center gap-2 text-emerald-400 font-medium">
+              <span className="w-2.5 h-2.5 bg-emerald-500 rounded-full animate-pulse"></span>
+              <span>Live Class in Session — Video connected</span>
+            </div>
+          ) : (
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between w-full gap-2 text-gray-300">
+              <div className="flex items-center gap-2 text-amber-400">
+                <span className="w-2 h-2 bg-amber-400 rounded-full animate-ping"></span>
+                <span>Waiting for teacher to start class. You will connect automatically.</span>
+              </div>
+              <span className="text-xs text-gray-500">Review past notes & assignments below</span>
+            </div>
+          )}
+        </div>
+      )}
     </section>
   )
 })

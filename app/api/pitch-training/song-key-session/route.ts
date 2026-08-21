@@ -1,7 +1,25 @@
 import { NextRequest, NextResponse } from 'next/server'
+import type { SupabaseClient } from '@supabase/supabase-js'
 import { createClient } from '@/lib/supabase-server'
 import { createSupabaseAdmin } from '@/lib/supabase-admin'
 import { analyzeSongKeySession, saveTrainingFeedback, fetchLessonContext } from '@/lib/training-ai'
+
+interface SongKeySessionPayload {
+  startedAt: string
+  endedAt: string
+  songKey: string
+  songTitle?: string | null
+  songArtist?: string | null
+  songBpm?: number | null
+  inKeyPercentage: number
+  avgCentsDeviation?: number | null
+  totalNotes: number
+}
+
+interface SongKeyWeekSession {
+  in_key_percentage: number | null
+  duration_seconds: number | null
+}
 
 // ============================================================================
 // POST - Save a Song Key Trainer session
@@ -16,7 +34,7 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     }
 
-    const body = await request.json()
+    const body = await request.json() as SongKeySessionPayload
     const {
       startedAt,
       endedAt,
@@ -38,14 +56,18 @@ export async function POST(request: NextRequest) {
     const durationSeconds = Math.round((endTime.getTime() - startTime.getTime()) / 1000)
     const sessionDate = startTime.toISOString().split('T')[0]
 
-    // Check if there's an existing session for today with this song
-    const { data: existingSession } = await supabase
+    // Check if there's an existing session for today with this specific song
+    let query = supabase
       .from('song_key_training_sessions')
       .select('id, in_key_percentage')
       .eq('user_id', user.id)
       .eq('session_date', sessionDate)
       .eq('song_key', songKey)
-      .maybeSingle()
+
+    query = songTitle ? query.eq('song_title', songTitle) : query.is('song_title', null)
+    query = songArtist ? query.eq('song_artist', songArtist) : query.is('song_artist', null)
+
+    const { data: existingSession } = await query.maybeSingle()
 
     // Only save if this session is better than existing or no existing session
     if (existingSession && existingSession.in_key_percentage >= inKeyPercentage) {
@@ -220,7 +242,7 @@ export async function GET(request: NextRequest) {
 // Helper: Update user's overall training stats
 // ============================================================================
 
-async function updateUserTrainingStats(supabase: any, userId: string) {
+async function updateUserTrainingStats(supabase: SupabaseClient, userId: string) {
   try {
     // Get all song key sessions for this week
     const startOfWeek = new Date()
@@ -234,8 +256,9 @@ async function updateUserTrainingStats(supabase: any, userId: string) {
       .gte('session_date', startOfWeek.toISOString().split('T')[0])
 
     if (weekSessions && weekSessions.length > 0) {
-      const weeklyAvg = weekSessions.reduce((sum: number, s: any) => sum + (s.in_key_percentage || 0), 0) / weekSessions.length
-      const totalDuration = weekSessions.reduce((sum: number, s: any) => sum + (s.duration_seconds || 0), 0)
+      const sessions = weekSessions as SongKeyWeekSession[]
+      const weeklyAvg = sessions.reduce((sum, s) => sum + (s.in_key_percentage || 0), 0) / sessions.length
+      const totalDuration = sessions.reduce((sum, s) => sum + (s.duration_seconds || 0), 0)
 
       // Update weekly progress (if table exists)
       await supabase
@@ -243,7 +266,7 @@ async function updateUserTrainingStats(supabase: any, userId: string) {
         .upsert({
           user_id: userId,
           week_start: startOfWeek.toISOString().split('T')[0],
-          total_sessions: weekSessions.length,
+          total_sessions: sessions.length,
           avg_in_key_percentage: weeklyAvg,
           total_practice_seconds: totalDuration
         }, {

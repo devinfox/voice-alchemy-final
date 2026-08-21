@@ -84,12 +84,90 @@ export function octaveOf(note: number): number {
   return Math.floor(note / 12) - 1
 }
 
-/** Frequency of a named note, e.g. ('A', 4) -> 440. Accepts '#' or '♯'. */
+/** Natural base semitones (0-11) for diatonic letters. */
+const LETTER_NATURAL_SEMITONES: Record<string, number> = {
+  'C': 0, 'D': 2, 'E': 4, 'F': 5, 'G': 7, 'A': 9, 'B': 11,
+  'c': 0, 'd': 2, 'e': 4, 'f': 5, 'g': 7, 'a': 9, 'b': 11,
+}
+
+/**
+ * Frequency of a named note using letter-displacement math.
+ * Correctly handles octave-crossing enharmonics:
+ * - 'B#', 4 -> B4 MIDI + 1 = C5 (523.25 Hz)
+ * - 'Cb', 4 -> C4 MIDI - 1 = B3 (246.94 Hz)
+ * - 'Bb', 3 -> B3 MIDI - 1 = A#3/Bb3 (233.08 Hz)
+ */
 export function getNoteFrequency(noteName: string, octave: number): number {
-  const normalised = noteName.replace('#', '♯')
-  const index = NOTE_STRINGS.indexOf(normalised as (typeof NOTE_STRINGS)[number])
-  if (index === -1) return MIDDLE_A
-  return getStandardFrequency((octave + 1) * 12 + index)
+  const clean = noteName.trim()
+  if (!clean) return MIDDLE_A
+
+  const letter = clean.charAt(0).toUpperCase()
+  const naturalSemitone = LETTER_NATURAL_SEMITONES[letter]
+  if (naturalSemitone === undefined) return MIDDLE_A
+
+  const accidental = clean.slice(1)
+  let offset = 0
+
+  if (accidental === '#' || accidental === '♯') offset = 1
+  else if (accidental === '##' || accidental === '𝄪') offset = 2
+  else if (accidental === 'b' || accidental === '♭') offset = -1
+  else if (accidental === 'bb' || accidental === '♭♭') offset = -2
+
+  const baseMidi = (octave + 1) * 12 + naturalSemitone
+  const exactMidi = baseMidi + offset
+  return getStandardFrequency(exactMidi)
+}
+
+/**
+ * Steep pedagogical target accuracy curve for intonation training.
+ * - <= 10 cents: 95% - 100% (pro pitch center)
+ * - 15 cents: ~83% (in-tune boundary)
+ * - 25 cents: ~60%
+ * - 50 cents: ~20% (quarter-tone off)
+ * - >= 75 cents: 0% (wrong semitone)
+ */
+export function calculateTargetAccuracy(maeCents: number): number {
+  if (maeCents <= 10) return Math.round(100 - maeCents * 0.5)
+  if (maeCents <= 25) return Math.round(95 - (maeCents - 10) * 2.33)
+  if (maeCents <= 50) return Math.round(60 - (maeCents - 25) * 1.6)
+  if (maeCents <= 75) return Math.max(0, Math.round(20 - (maeCents - 50) * 0.8))
+  return 0
+}
+
+/** Signed continuous error in cents between a detected frequency and target frequency. */
+export function getTargetCentsError(detectedFrequency: number, targetFrequency: number): number {
+  if (detectedFrequency <= 0 || targetFrequency <= 0) return 0
+  return 1200 * Math.log2(detectedFrequency / targetFrequency)
+}
+
+/** Calculate standard deviation of frequency deviations in cents relative to the mean frequency. */
+export function calculateCentsStdDev(frequencies: number[]): number {
+  if (frequencies.length <= 1) return 0
+  const valid = frequencies.filter(f => f > 0)
+  if (valid.length <= 1) return 0
+
+  const meanFreq = valid.reduce((a, b) => a + b, 0) / valid.length
+  // Convert each sample to cents from mean
+  const centsDeltas = valid.map(f => 1200 * Math.log2(f / meanFreq))
+  const avgDelta = centsDeltas.reduce((a, b) => a + b, 0) / centsDeltas.length
+  const variance = centsDeltas.reduce((sum, c) => sum + Math.pow(c - avgDelta, 2), 0) / centsDeltas.length
+  return Math.sqrt(variance)
+}
+
+/** Calculate standard deviation of any numeric array. */
+export function stdDev(values: number[]): number {
+  if (values.length <= 1) return 0
+  const mean = values.reduce((a, b) => a + b, 0) / values.length
+  const variance = values.reduce((sum, v) => sum + Math.pow(v - mean, 2), 0) / values.length
+  return Math.sqrt(variance)
+}
+
+/** Calculate median of a number array. */
+export function calculateMedian(values: number[]): number {
+  if (values.length === 0) return 0
+  const sorted = [...values].sort((a, b) => a - b)
+  const mid = Math.floor(sorted.length / 2)
+  return sorted.length % 2 !== 0 ? sorted[mid] : (sorted[mid - 1] + sorted[mid]) / 2
 }
 
 // ---------------------------------------------------------------------------

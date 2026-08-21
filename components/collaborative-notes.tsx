@@ -27,12 +27,26 @@ export function CollaborativeNotes({
   readOnly = false,
   onSynced,
 }: CollaborativeNotesProps) {
-  const [ydoc] = useState(() => new Y.Doc())
+  const [ydoc, setYdoc] = useState(() => new Y.Doc())
   const [provider, setProvider] = useState<YjsSupabaseProvider | null>(null)
   const [connectedUsers, setConnectedUsers] = useState<Map<number, AwarenessUser>>(new Map())
   const [synced, setSynced] = useState(false)
   const [saving, setSaving] = useState(false)
   const editorRef = useRef<ReturnType<typeof useEditor> | null>(null)
+  const onSyncedRef = useRef(onSynced)
+
+  useEffect(() => {
+    const doc = new Y.Doc()
+    setYdoc(doc)
+    setSynced(false)
+    return () => {
+      doc.destroy()
+    }
+  }, [noteId])
+
+  useEffect(() => {
+    onSyncedRef.current = onSynced
+  }, [onSynced])
 
   // Initialize provider
   useEffect(() => {
@@ -43,7 +57,7 @@ export function CollaborativeNotes({
       userColor,
       onSynced: () => {
         setSynced(true)
-        onSynced?.()
+        onSyncedRef.current?.()
       },
       onAwarenessUpdate: (users) => {
         setConnectedUsers(new Map(users))
@@ -55,7 +69,7 @@ export function CollaborativeNotes({
     return () => {
       newProvider.destroy()
     }
-  }, [noteId, userId, userName, userColor, ydoc, onSynced])
+  }, [noteId, userId, userName, userColor, ydoc])
 
   // Set up editor
   const editor = useEditor({

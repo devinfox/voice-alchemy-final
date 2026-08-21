@@ -49,7 +49,7 @@ export async function POST(
     const dbClient = adminClient || supabase
 
     // Read the note content sent directly from the editor
-    let body: { contentHtml?: string; classStartedAt?: string } = {}
+    let body: { contentHtml?: string; contentJson?: Record<string, unknown>; classStartedAt?: string } = {}
     try {
       body = await request.json()
     } catch {
@@ -57,6 +57,7 @@ export async function POST(
     }
 
     let contentHtml = body.contentHtml ?? ''
+    const contentJson = body.contentJson ?? null
     const classStartedAt = body.classStartedAt ?? new Date().toISOString()
 
     // Fallback: if frontend didn't send content, try reading from lesson_current_notes
@@ -82,6 +83,7 @@ export async function POST(
         booking_id: bookingId,  // Link to specific class/booking
         content: plainText,
         content_html: contentHtml,
+        content_json: contentJson,
         class_started_at: classStartedAt,
         class_ended_at: new Date().toISOString(),
         published: true,

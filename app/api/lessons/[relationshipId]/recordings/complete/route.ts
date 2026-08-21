@@ -19,10 +19,10 @@ export async function POST(
 
     // Parse request body
     const body = await request.json()
-    const { storagePath, fileSize, roomName, classStartedAt } = body
+    const { storagePath, fileSize, audioStoragePath, audioFileSize, roomName, classStartedAt } = body
 
-    if (!storagePath) {
-      return NextResponse.json({ error: 'storagePath is required' }, { status: 400 })
+    if (!storagePath && !audioStoragePath) {
+      return NextResponse.json({ error: 'storagePath or audioStoragePath is required' }, { status: 400 })
     }
 
     // Verify booking exists and user has access
@@ -64,22 +64,25 @@ export async function POST(
       process.env.SUPABASE_SERVICE_ROLE_KEY
     )
 
-    // Verify the file exists in storage
-    const { data: fileData, error: fileError } = await supabaseAdmin.storage
-      .from('lesson-recordings')
-      .list(bookingId, { search: storagePath.split('/').pop() })
-
-    if (fileError || !fileData || fileData.length === 0) {
-      return NextResponse.json(
-        { error: 'Recording file not found in storage' },
-        { status: 404 }
-      )
+    // Verify the video file exists in storage if provided
+    let fileData = null
+    if (storagePath) {
+      const { data, error: fileError } = await supabaseAdmin.storage
+        .from('lesson-recordings')
+        .list(bookingId, { search: storagePath.split('/').pop() })
+      if (!fileError && data && data.length > 0) {
+        fileData = data
+      }
     }
 
-    // Get signed URL
-    const { data: urlData } = await supabaseAdmin.storage
-      .from('lesson-recordings')
-      .createSignedUrl(storagePath, 60 * 60 * 24 * 7) // 7 days
+    // Get signed URL for video if available
+    let signedVideoUrl = null
+    if (storagePath) {
+      const { data: urlData } = await supabaseAdmin.storage
+        .from('lesson-recordings')
+        .createSignedUrl(storagePath, 60 * 60 * 24 * 7) // 7 days
+      signedVideoUrl = urlData?.signedUrl
+    }
 
     const timestamp = Date.now()
 
@@ -94,13 +97,16 @@ export async function POST(
         status: 'ready',
         upload_status: 'completed',
         storage_provider: 'supabase',
-        storage_path: storagePath,
-        storage_url: urlData?.signedUrl,
-        file_size_bytes: fileSize || fileData[0]?.metadata?.size,
+        storage_path: storagePath || null,
+        storage_url: signedVideoUrl || null,
+        audio_storage_path: audioStoragePath || null,
+        audio_file_size_bytes: audioFileSize || null,
+        file_size_bytes: fileSize || (fileData ? fileData[0]?.metadata?.size : null),
         format: 'webm',
         started_at: classStartedAt || new Date().toISOString(),
         ended_at: new Date().toISOString(),
         ai_processing_status: 'pending',
+        ai_attempt_count: 0,
       })
       .select()
       .single()
@@ -169,7 +175,7 @@ export async function POST(
       success: true,
       recording: {
         id: recording.id,
-        url: urlData?.signedUrl,
+        url: signedVideoUrl,
         bookingId,
       },
     })

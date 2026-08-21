@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from 'react'
 import Link from 'next/link'
-import { Users, Clock, Calendar, Video, ChevronRight, Loader2 } from 'lucide-react'
+import { Users, Clock, Calendar, Video, ChevronRight, Loader2, Search, GraduationCap, Sparkles } from 'lucide-react'
 
 interface Teacher {
   id: string
@@ -143,10 +143,32 @@ export default function MyLessonsPage() {
 
       {/* Teachers Grid */}
       {teachers.length === 0 && pendingRequests.length === 0 ? (
-        <div className="text-center py-12 bg-white/5 backdrop-blur-sm rounded-xl border border-white/10">
-          <Users className="w-12 h-12 text-gray-500 mx-auto mb-4" />
-          <h3 className="text-lg font-medium text-white mb-2">No lessons yet</h3>
-          <p className="text-gray-400 mb-4">Your assigned teacher will appear here automatically.</p>
+        <div className="glass-card rounded-2xl border border-white/10 p-8 md:p-12 text-center max-w-2xl mx-auto">
+          <div className="w-16 h-16 rounded-2xl bg-[#CEB466]/20 border border-[#CEB466]/30 flex items-center justify-center text-[#CEB466] mx-auto mb-5 shadow-lg shadow-[#CEB466]/15">
+            <Users className="w-8 h-8" />
+          </div>
+          <h2 className="text-2xl font-bold text-white mb-2">No Active Voice Lessons Yet</h2>
+          <p className="text-gray-300 text-sm max-w-md mx-auto mb-8 leading-relaxed">
+            Connect with a certified Voice Alchemy vocal coach to schedule private 1-on-1 video lessons, receive live feedback, and track your vocal journey.
+          </p>
+
+          <div className="flex flex-col sm:flex-row items-center justify-center gap-3">
+            <Link
+              href="/dashboard/find-teacher"
+              className="w-full sm:w-auto inline-flex items-center justify-center gap-2 px-6 py-3.5 rounded-xl bg-gradient-to-r from-[#CEB466] to-[#9c8644] text-[#171229] font-bold text-sm shadow-lg shadow-[#CEB466]/25 hover:scale-[1.02] transition-all"
+            >
+              <Search className="w-4 h-4 text-[#171229]" />
+              <span>Find a Vocal Mentor</span>
+            </Link>
+
+            <Link
+              href="/dashboard/courses"
+              className="w-full sm:w-auto inline-flex items-center justify-center gap-2 px-6 py-3.5 rounded-xl bg-white/5 border border-white/15 text-white font-medium text-sm hover:bg-white/10 transition-all"
+            >
+              <GraduationCap className="w-4 h-4 text-[#CEB466]" />
+              <span>Explore Courses</span>
+            </Link>
+          </div>
         </div>
       ) : (
         teachers.length > 0 && (

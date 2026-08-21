@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect, use } from 'react'
+import { useState, useEffect, useRef, use } from 'react'
 import { useRouter } from 'next/navigation'
 import { useEditor, EditorContent } from '@tiptap/react'
 import StarterKit from '@tiptap/starter-kit'
@@ -123,14 +123,18 @@ A shift in perspective or emotion`,
     immediatelyRender: false,
   })
 
+  const initialContentLoadedRef = useRef(false)
+
   // Fetch document
   useEffect(() => {
+    initialContentLoadedRef.current = false
     fetchDocument()
   }, [id])
 
-  // Set editor content when ready
+  // Set editor content when ready on initial load
   useEffect(() => {
-    if (editor && document?.content && Object.keys(document.content).length > 0) {
+    if (editor && document?.content && Object.keys(document.content).length > 0 && !initialContentLoadedRef.current) {
+      initialContentLoadedRef.current = true
       editor.commands.setContent(document.content)
     }
   }, [editor, document])
@@ -170,7 +174,7 @@ A shift in perspective or emotion`,
     }, 3000)
 
     return () => clearTimeout(timer)
-  }, [isDirty, editor?.getHTML()])
+  }, [isDirty])
 
   const handleSave = async (isAutoSave = false) => {
     if (!editor || !document) return

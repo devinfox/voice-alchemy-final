@@ -86,26 +86,20 @@ export async function POST(request: NextRequest) {
 
     // Calculate overall score with improved formula for singers
     // 1. Offset score: scale based on timing window (200ms), not arbitrary 100ms
-    const offsetScore = Math.max(0, 100 - (Math.abs(avgTimingOffsetMs) / TIMING_WINDOW_MS * 100))
+    // Mathematically sound scoring for singers:
+    // 1. Hit Rate: percentage of presented beats that were actually hit
+    const hitCount = onBeatCount + earlyCount + lateCount
+    let overallScore = 0
 
-    // 2. Missed beat penalty: missing beats should hurt the score significantly
-    const missedRatio = totalBeats > 0 ? missedCount / totalBeats : 0
-    const missedPenalty = missedRatio * 30 // Up to -30 points for missing all beats
+    if (hitCount > 0 && totalBeats > 0) {
+      const hitRate = hitCount / totalBeats
+      const onGridScore = (onBeatCount / hitCount) * 100
+      const offsetScore = Math.max(0, 100 - (Math.abs(avgTimingOffsetMs) / TIMING_WINDOW_MS * 100))
+      const consistencyScore = timingConsistency || 0
 
-    // 3. Accuracy: use actual on-beat percentage (this already accounts for hits)
-    // 4. Consistency: how steady the timing is (already calculated by component)
-
-    // Weighted score formula:
-    // - On-beat accuracy: 45% (most important for singers)
-    // - Timing consistency: 30% (steady rhythm is crucial)
-    // - Offset closeness: 15% (being close even when not perfect)
-    // - Minus missed beat penalty
-    const overallScore = Math.max(0, Math.min(100,
-      onBeatPercent * 0.45 +
-      timingConsistency * 0.30 +
-      offsetScore * 0.15 +
-      (100 - missedPenalty) * 0.10 // 10% for actually hitting beats
-    ))
+      const timingQuality = (onGridScore * 0.40) + (offsetScore * 0.35) + (consistencyScore * 0.25)
+      overallScore = Math.max(0, Math.min(100, hitRate * timingQuality))
+    }
 
     const startTime = new Date(startedAt)
     const sessionDate = startTime.toISOString().split('T')[0]
