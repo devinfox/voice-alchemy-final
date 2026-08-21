@@ -4,6 +4,7 @@ import { useState, useEffect } from 'react'
 import { TrendingUp, TrendingDown, Minus, Calendar, Target, Clock, Zap, Award, RefreshCw, Sparkles, Music2, Mic2, Activity, Brain, FileText, BookOpen, ChevronRight, Music } from 'lucide-react'
 import AIAnalysisPanel from '@/components/AIAnalysisPanel'
 import ScaleAnalysisPanel from '@/components/ScaleAnalysisPanel'
+import { SpotlightTour, SpotlightTriggerButton, SpotlightStep } from '@/components/spotlight-tour'
 
 interface WeeklyProgress {
   id: string
@@ -266,12 +267,45 @@ function formatPracticeTime(seconds: number | null): string {
   return `${minutes}m`
 }
 
-export default function PitchTrainingProgressPage() {
+const trainingCenterTourSteps: SpotlightStep[] = [
+  {
+    target: '[data-tour="training-tabs"]',
+    title: '1. Training Suites',
+    content: 'Switch between the Overview, Pitch Trainer, Rhythm Trainer, and Scale Trainer to practice specific technical vocal disciplines.',
+    placement: 'bottom',
+  },
+  {
+    target: '[data-tour="training-summary"]',
+    title: '2. Real-Time Vocal Metrics',
+    content: 'Track your average pitch accuracy, voice stability, and pitch tendency (sharp, flat, or on-target) across all sessions.',
+    placement: 'bottom',
+  },
+  {
+    target: '[data-tour="training-pitch-widget"]',
+    title: '3. Pitch Trainer Suite',
+    content: 'Practice sustained note holding with instant cents feedback to strengthen your pitch centering and vibrato stability.',
+    placement: 'bottom',
+  },
+  {
+    target: '[data-tour="training-rhythm-widget"]',
+    title: '4. Rhythm & Groove Metronome',
+    content: 'Lock in tempo consistency, onset timing, and syncopated grooves to build rock-solid rhythm instincts.',
+    placement: 'top',
+  },
+  {
+    target: '[data-tour="training-ai-panel"]',
+    title: '5. AI Vocal Coach Insights',
+    content: 'Click Analyze Notes anytime to get personalized drill recommendations based on your lesson recordings and practice data.',
+    placement: 'bottom',
+  },
+]
+
+export default function TrainingCenterPage() {
   const [data, setData] = useState<ProgressData | null>(null)
   const [loading, setLoading] = useState(true)
   const [generatingFeedback, setGeneratingFeedback] = useState(false)
   const [error, setError] = useState<string | null>(null)
-  const [activeTab, setActiveTab] = useState<'overview' | 'pitch-trainer' | 'rhythm-trainer' | 'scale-trainer'>('overview')
+  const [activeTab, setActiveTab] = useState<'overview' | 'pitch-trainer' | 'scale-trainer' | 'rhythm-trainer' | 'song-trainer'>('overview')
   const [showAIPanel, setShowAIPanel] = useState(false)
   const [showScaleAIPanel, setShowScaleAIPanel] = useState(false)
 
@@ -413,26 +447,29 @@ export default function PitchTrainingProgressPage() {
   return (
     <div className="space-y-8 p-6">
       {/* Header */}
-      <div className="flex items-center justify-between">
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
         <div>
-          <h1 className="text-3xl font-bold text-white">Training Center</h1>
-          <p className="text-slate-400 mt-1">Track your vocal pitch and rhythm improvement over time</p>
+          <h1 className="text-2xl sm:text-3xl font-bold text-white font-luxury">Training Center</h1>
+          <p className="text-slate-400 mt-1 text-xs sm:text-sm">Track your vocal pitch and rhythm improvement over time</p>
         </div>
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-2 flex-wrap">
+          <SpotlightTriggerButton tourKey="training_center_v4" label="How to" />
+
           <button
+            data-tour="training-ai-panel"
             onClick={() => setShowAIPanel(true)}
-            className="flex items-center gap-2 px-4 py-2 bg-gradient-to-r from-[#a855f7] to-[#7c3aed] hover:from-[#c084fc] hover:to-[#8b5cf6] text-white rounded-xl transition-all shadow-lg shadow-[#a855f7]/20 text-sm font-medium"
+            className="flex items-center gap-2 px-4 py-2 bg-gradient-to-r from-[#a855f7] to-[#7c3aed] hover:from-[#c084fc] hover:to-[#8b5cf6] text-white rounded-xl transition-all shadow-lg shadow-[#a855f7]/20 text-xs sm:text-sm font-medium"
             title="AI Coach Analysis"
           >
             <Brain className="w-4 h-4" />
-            <span className="hidden sm:inline">Analyze Notes</span>
+            <span>Analyze Notes</span>
           </button>
           <button
             onClick={fetchProgress}
             className="p-2 hover:bg-white/[0.08] rounded-lg transition-colors"
             title="Refresh"
           >
-            <RefreshCw className="w-5 h-5 text-slate-400" />
+            <RefreshCw className="w-4 h-4 sm:w-5 sm:h-5 text-slate-400" />
           </button>
         </div>
       </div>
@@ -452,7 +489,7 @@ export default function PitchTrainingProgressPage() {
       />
 
       {/* Tab Navigation */}
-      <div className="flex gap-2 glass-card-subtle border border-white/[0.08] p-1 rounded-xl w-fit flex-wrap">
+      <div data-tour="training-tabs" className="flex gap-2 glass-card-subtle border border-white/[0.08] p-1 rounded-xl w-fit flex-wrap">
         <button
           onClick={() => setActiveTab('overview')}
           className={`flex items-center gap-2 px-4 py-2.5 rounded-lg font-medium transition-all ${
@@ -550,7 +587,7 @@ export default function PitchTrainingProgressPage() {
           </div>
 
           {/* Combined Progress Card */}
-          <div className="glass-card-subtle rounded-2xl p-6 border-white/[0.08]">
+          <div data-tour="training-summary" className="glass-card-subtle rounded-2xl p-6 border-white/[0.08]">
             <h2 className="text-xl font-semibold text-white mb-6 flex items-center gap-2">
               <TrendingUp className="w-5 h-5 text-[#c4b5fd]" />
               Your Training Summary
@@ -558,7 +595,7 @@ export default function PitchTrainingProgressPage() {
 
             <div className="grid md:grid-cols-3 gap-6">
               {/* Pitch Training Summary */}
-              <div className="bg-indigo-500/10 rounded-xl p-4 border border-indigo-500/20">
+              <div data-tour="training-pitch-widget" className="bg-indigo-500/10 rounded-xl p-4 border border-indigo-500/20">
                 <div className="flex items-center justify-between mb-3">
                   <h3 className="font-semibold text-indigo-300 flex items-center gap-2">
                     <Mic2 className="w-4 h-4" />
@@ -589,8 +626,8 @@ export default function PitchTrainingProgressPage() {
                           data.singerMetrics.predominantTendency === 'flat' ? 'text-blue-400' :
                           'text-green-400'
                         }`}>
-                          {data.singerMetrics.predominantTendency === 'sharp' ? '♯ Sharp' :
-                           data.singerMetrics.predominantTendency === 'flat' ? '♭ Flat' : '✓ On Target'}
+                          {data.singerMetrics.predominantTendency === 'sharp' ? 'Sharp' :
+                           data.singerMetrics.predominantTendency === 'flat' ? 'Flat' : 'On Target'}
                         </span>
                       </div>
                     </>
@@ -644,7 +681,7 @@ export default function PitchTrainingProgressPage() {
               </div>
 
               {/* Rhythm Training Summary */}
-              <div className="bg-amber-500/10 rounded-xl p-4 border border-amber-500/20">
+              <div data-tour="training-rhythm-widget" className="bg-amber-500/10 rounded-xl p-4 border border-amber-500/20">
                 <div className="flex items-center justify-between mb-3">
                   <h3 className="font-semibold text-amber-300 flex items-center gap-2">
                     <Activity className="w-4 h-4" />
@@ -673,8 +710,8 @@ export default function PitchTrainingProgressPage() {
                       data.rhythmStats?.predominantTendency === 'late' ? 'text-orange-400' :
                       'text-green-400'
                     }`}>
-                      {data.rhythmStats?.predominantTendency === 'early' ? '⏪ Early' :
-                       data.rhythmStats?.predominantTendency === 'late' ? '⏩ Late' : '✓ On Time'}
+                      {data.rhythmStats?.predominantTendency === 'early' ? 'Early' :
+                       data.rhythmStats?.predominantTendency === 'late' ? 'Late' : 'On Time'}
                     </span>
                   </div>
                 </div>
@@ -983,7 +1020,7 @@ export default function PitchTrainingProgressPage() {
                       'text-green-400'
                     }`}>
                       {data.singerMetrics.predominantTendency === 'sharp' ? '♯' :
-                       data.singerMetrics.predominantTendency === 'flat' ? '♭' : '✓'}
+                       data.singerMetrics.predominantTendency === 'flat' ? '♭' : ''}
                     </span>
                     <span className="text-xl font-semibold text-white capitalize">
                       {data.singerMetrics.predominantTendency === 'on-target' ? 'On Target' : data.singerMetrics.predominantTendency}
@@ -1230,7 +1267,7 @@ export default function PitchTrainingProgressPage() {
                         'text-green-400'
                       }`}>
                         {currentWeek.predominant_tendency === 'sharp' ? '♯' :
-                         currentWeek.predominant_tendency === 'flat' ? '♭' : '✓'}
+                         currentWeek.predominant_tendency === 'flat' ? '♭' : ''}
                       </span>
                       <span className="text-lg font-semibold text-white capitalize">
                         {currentWeek.predominant_tendency === 'on-target' ? 'On Target' : currentWeek.predominant_tendency}
@@ -1991,6 +2028,17 @@ export default function PitchTrainingProgressPage() {
         </>
       )}
 
+      {/* Training Center Interactive Guided Walkthrough */}
+      <SpotlightTour
+        tourKey="training_center_v4"
+        steps={trainingCenterTourSteps}
+        welcomePrompt={{
+          title: 'Training Center Guided Tour',
+          message: 'Welcome to your Vocal Training Center! Would you like a brief interactive walkthrough of your pitch analytics, scale intonation suites, and rhythm metronomes?',
+          confirmText: 'Yes, Show Me Around',
+          cancelText: 'Maybe Later',
+        }}
+      />
     </div>
   )
 }

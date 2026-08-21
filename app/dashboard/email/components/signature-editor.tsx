@@ -20,25 +20,25 @@ const SIGNATURE_TEMPLATES: { name: string; description: string; config: Signatur
     config: DEVIN_FOX_SIGNATURE,
   },
   {
-    name: 'Sales Representative',
-    description: 'Precious Metals Specialist template',
+    name: 'Vocal Coach',
+    description: 'Vocal Coach & Instructor template',
     config: {
       name: 'Your Name',
-      title: 'Precious Metals Specialist',
-      phone: '000.000.0000',
-      email: 'your.email@citadelgold.com',
+      title: 'Vocal Coach & Instructor',
+      phone: '818.209.2305',
+      email: 'your.email@voicealchemyacademy.com',
       includeTrustBadges: true,
       includeAsSeenOn: true,
     },
   },
   {
-    name: 'Manager Template',
-    description: 'Account Manager signature',
+    name: 'Academy Coordinator',
+    description: 'Student Success & Coordinator signature',
     config: {
       name: 'Your Name',
-      title: 'Account Manager',
-      phone: '000.000.0000',
-      email: 'your.email@citadelgold.com',
+      title: 'Student Success Coordinator',
+      phone: '818.209.2305',
+      email: 'your.email@voicealchemyacademy.com',
       includeTrustBadges: true,
       includeAsSeenOn: false,
     },
@@ -267,7 +267,7 @@ export function SignatureEditor({
                 type="text"
                 value={customConfig.email}
                 onChange={(e) => setCustomConfig({ ...customConfig, email: e.target.value })}
-                placeholder="devinfox@citadelgold.com"
+                placeholder="devin@voicealchemyacademy.com"
                 className="w-full px-3 py-2 bg-white/5 border border-white/10 rounded-lg text-white text-sm placeholder-gray-500 focus:outline-none focus:border-yellow-500/50"
               />
             </div>

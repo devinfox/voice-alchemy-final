@@ -39,11 +39,7 @@ export default async function FunnelDetailPage({ params }: PageProps) {
         *,
         template:email_templates(id, name, subject)
       ),
-      enrollments:email_funnel_enrollments(
-        *,
-        lead:leads(id, first_name, last_name, email),
-        contact:contacts(id, first_name, last_name, email)
-      )
+      enrollments:email_funnel_enrollments(*)
     `)
     .eq('id', id)
     .eq('is_deleted', false)
@@ -52,6 +48,23 @@ export default async function FunnelDetailPage({ params }: PageProps) {
   if (error || !funnel) {
     console.error('Error fetching funnel:', error)
     notFound()
+  }
+
+  // Fetch student/contact profiles for enrollments
+  const participantIds = (funnel.enrollments || [])
+    .map((e: { contact_id?: string | null; lead_id?: string | null }) => e.contact_id || e.lead_id)
+    .filter(Boolean) as string[]
+
+  let profileMap: Record<string, { first_name: string; last_name: string; name: string; email: string }> = {}
+  if (participantIds.length > 0) {
+    const { data: profiles } = await supabase
+      .from('profiles')
+      .select('id, first_name, last_name, name, email')
+      .in('id', participantIds)
+
+    if (profiles) {
+      profileMap = Object.fromEntries(profiles.map(p => [p.id, p]))
+    }
   }
 
   // Sort phases by phase_order

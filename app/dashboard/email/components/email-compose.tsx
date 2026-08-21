@@ -104,16 +104,13 @@ function inlineEmailBodySpacing(html: string): string {
   return out
 }
 
-// The shared info@citadelgold.com mailbox speaks for different people/roles, so
-// its signature is switchable: the sender clicks the signature preview (or a
-// pill) to cycle between these. All use the info@ contact line; the Scott
-// option intentionally has a title but no phone.
-const INFO_ACCOUNT_EMAIL = 'info@citadelgold.com'
-const INFO_SIGNATURE_EMAIL = 'info@citadelgold.com'
+// The shared info@voicealchemyacademy.com mailbox signature options
+const INFO_ACCOUNT_EMAIL = 'info@voicealchemyacademy.com'
+const INFO_SIGNATURE_EMAIL = 'info@voicealchemyacademy.com'
 const INFO_SIGNATURE_OPTIONS: { label: string; name: string; title: string; phone: string }[] = [
-  { label: 'Management', name: 'Management', title: '', phone: '310-209-8166' },
-  { label: 'Customer Service', name: 'Customer Service', title: '', phone: '310-209-8166' },
-  { label: 'Scott Friedman', name: 'Scott Friedman', title: 'Onboarding Manager', phone: '' },
+  { label: 'Academy Support', name: 'Voice Alchemy Support', title: 'Student Support', phone: '818.209.2305' },
+  { label: 'Admissions', name: 'Voice Alchemy Admissions', title: 'Admissions Team', phone: '818.209.2305' },
+  { label: 'Julia', name: 'Julia', title: 'Master Vocal Coach', phone: '' },
 ]
 
 export function EmailCompose({
@@ -207,23 +204,23 @@ export function EmailCompose({
         const supabase = createClient()
         const { data: { user } } = await supabase.auth.getUser()
         if (!user) {
-          setRepProfile({ name: 'Your Rep', phone: '800-605-5597', email: '', title: 'Precious Metals Specialist' })
+          setRepProfile({ name: 'Voice Alchemy Coach', phone: '818.209.2305', email: '', title: 'Vocal Coach & Instructor' })
           return
         }
         const { data: profile } = await supabase
-          .from('users')
-          .select('first_name, last_name, phone, email, job_title')
-          .eq('auth_id', user.id)
+          .from('profiles')
+          .select('first_name, last_name, email, role')
+          .eq('id', user.id)
           .single()
         setRepProfile({
-          name: `${profile?.first_name || ''} ${profile?.last_name || ''}`.trim() || 'Your Rep',
-          phone: profile?.phone || '800-605-5597',
+          name: `${profile?.first_name || ''} ${profile?.last_name || ''}`.trim() || 'Voice Alchemy Coach',
+          phone: '818.209.2305',
           email: profile?.email || '',
-          title: profile?.job_title || 'Precious Metals Specialist',
+          title: profile?.role === 'admin' ? 'Founder & Instructor' : 'Vocal Coach & Instructor',
         })
       } catch (err) {
         console.error('Failed to load rep profile for signature:', err)
-        setRepProfile({ name: 'Your Rep', phone: '800-605-5597', email: '', title: 'Precious Metals Specialist' })
+        setRepProfile({ name: 'Voice Alchemy Coach', phone: '818.209.2305', email: '', title: 'Vocal Coach & Instructor' })
       }
     }
     loadRepProfile()

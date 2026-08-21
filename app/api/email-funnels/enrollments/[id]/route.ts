@@ -20,14 +20,7 @@ export async function PATCH(
 
     const { status, action } = body
 
-    // Look up the users table ID from auth_id (approved_by/rejected_by reference users.id, not auth.users.id)
-    const { data: userProfile } = await supabase
-      .from('users')
-      .select('id')
-      .eq('auth_id', user.id)
-      .single()
-
-    const usersTableId = userProfile?.id || user.id // Fallback to auth id if no profile found
+    const usersTableId = user.id
 
     // Use service role for updates
     const serviceClient = createServiceClient(
@@ -53,8 +46,8 @@ export async function PATCH(
         .from('email_funnel_enrollments')
         .update({
           status: 'active',
-          approved_at: new Date().toISOString(),
-          approved_by: usersTableId,
+          enrolled_at: new Date().toISOString(),
+          enrolled_by: usersTableId || null,
         })
         .eq('id', id)
 
@@ -83,9 +76,9 @@ export async function PATCH(
       const { error: updateError } = await serviceClient
         .from('email_funnel_enrollments')
         .update({
-          status: 'rejected',
-          rejected_at: new Date().toISOString(),
-          rejected_by: usersTableId,
+          status: 'cancelled',
+          cancelled_at: new Date().toISOString(),
+          cancel_reason: 'Rejected by instructor',
         })
         .eq('id', id)
 

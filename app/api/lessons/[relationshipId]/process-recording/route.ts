@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { createClient } from '@/lib/supabase-server'
+import { createClient, getCurrentUser } from '@/lib/supabase-server'
 import { createSupabaseAdmin } from '@/lib/supabase-admin'
 import { processRecording } from '@/lib/lesson-processing'
 
@@ -17,10 +17,10 @@ export async function POST(
     const admin = createSupabaseAdmin()
     const internalSecret = request.headers.get('x-internal-secret')
     const isInternalCall = !!process.env.CRON_SECRET && internalSecret === process.env.CRON_SECRET
-    const { data: { user } } = await supabase.auth.getUser()
+    const profile = await getCurrentUser()
     const dbClient = isInternalCall ? admin : supabase
 
-    if (!isInternalCall && !user) {
+    if (!isInternalCall && !profile) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     }
 
@@ -29,6 +29,27 @@ export async function POST(
 
     if (!recordingId) {
       return NextResponse.json({ error: 'recordingId is required' }, { status: 400 })
+    }
+
+    // Check booking access if not internal call
+    if (!isInternalCall && profile) {
+      const { data: booking } = await admin
+        .from('bookings')
+        .select('student_id, instructor_id')
+        .eq('id', relationshipId)
+        .maybeSingle()
+
+      const isInstructor = booking && profile.id === booking.instructor_id
+      const isStudent = booking && profile.id === booking.student_id
+      const isAdmin = profile.role === 'admin'
+
+      if (!isAdmin && !isInstructor && !isStudent) {
+        return NextResponse.json({ error: 'Access denied to this lesson' }, { status: 403 })
+      }
+
+      if (force && !isAdmin && !isInstructor) {
+        return NextResponse.json({ error: 'Only teachers and admins can rescan recordings' }, { status: 403 })
+      }
     }
 
     // Get the recording details

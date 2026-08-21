@@ -16,8 +16,9 @@ export async function POST(
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     }
 
-    // Verify user is a teacher (admin role)
-    if (profile.role !== 'admin') {
+    // Verify user is a teacher (teacher, instructor, or admin role)
+    const isTeacher = profile.role === 'teacher' || profile.role === 'instructor' || profile.role === 'admin'
+    if (!isTeacher) {
       return NextResponse.json({ error: 'Only teachers can approve requests' }, { status: 403 })
     }
 

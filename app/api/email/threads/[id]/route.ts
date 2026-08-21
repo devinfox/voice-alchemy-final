@@ -16,17 +16,6 @@ export async function GET(
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     }
 
-    // Get user from users table
-    const { data: userData } = await supabase
-      .from('users')
-      .select('id')
-      .eq('auth_id', user.id)
-      .single()
-
-    if (!userData) {
-      return NextResponse.json({ error: 'User not found' }, { status: 404 })
-    }
-
     const admin = getSupabaseAdmin()
 
     // Get the thread with account info
@@ -44,7 +33,7 @@ export async function GET(
     }
 
     // Verify user owns this thread's account
-    if (!thread.email_account || thread.email_account.user_id !== userData.id) {
+    if (!thread.email_account || thread.email_account.user_id !== user.id) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 403 })
     }
 
@@ -104,17 +93,6 @@ export async function DELETE(
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     }
 
-    // Get user from users table
-    const { data: userData } = await supabase
-      .from('users')
-      .select('id')
-      .eq('auth_id', user.id)
-      .single()
-
-    if (!userData) {
-      return NextResponse.json({ error: 'User not found' }, { status: 404 })
-    }
-
     const admin = getSupabaseAdmin()
 
     // Verify the thread belongs to one of the user's email accounts
@@ -130,7 +108,7 @@ export async function DELETE(
 
     // Check ownership
     const threadData = thread as any
-    if (threadData.email_accounts?.user_id !== userData.id) {
+    if (threadData.email_accounts?.user_id !== user.id) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 403 })
     }
 

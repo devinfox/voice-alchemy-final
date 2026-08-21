@@ -1,10 +1,9 @@
 'use client'
 
-import { useState, useEffect } from 'react'
+import { useState } from 'react'
 import Link from 'next/link'
 import Image from 'next/image'
 import { usePathname } from 'next/navigation'
-import { useRouter } from 'next/navigation'
 import {
   Menu,
   X,
@@ -17,10 +16,14 @@ import {
   BookOpen,
   Calendar,
   Music,
+  ClipboardList,
   Mail,
   FileText,
+  Music2,
+  Sparkles,
 } from 'lucide-react'
 import { createClient } from '@/lib/supabase'
+import { useRouter } from 'next/navigation'
 import type { User } from '@/types/database.types'
 import { canAccessEmailTools } from '@/lib/email-access'
 
@@ -28,48 +31,49 @@ interface NavItem {
   name: string
   href: string
   icon: React.ComponentType<{ className?: string }>
+  badge?: number
 }
 
+// Teacher navigation
 const teacherNavigation: NavItem[] = [
   { name: 'Dashboard', href: '/dashboard', icon: LayoutDashboard },
   { name: 'My Students', href: '/dashboard/students', icon: Users },
+  { name: 'Training Center', href: '/dashboard/training-center', icon: Music },
+  { name: 'Courses', href: '/dashboard/courses', icon: GraduationCap },
   { name: 'Email', href: '/dashboard/email', icon: Mail },
   { name: 'Email Templates', href: '/dashboard/email-templates', icon: FileText },
-  { name: 'Courses', href: '/dashboard/courses', icon: GraduationCap },
-  { name: 'Training Center', href: '/dashboard/training-center', icon: Music },
   { name: 'Calendar', href: '/dashboard/calendar', icon: Calendar },
 ]
 
+// Admin-only navigation
+const adminNavigation: NavItem[] = [
+  { name: 'Student Directory', href: '/dashboard/admin/students', icon: ClipboardList },
+]
+
+// Student navigation
 const studentNavigation: NavItem[] = [
   { name: 'Dashboard', href: '/dashboard', icon: LayoutDashboard },
+  { name: 'Training Center', href: '/dashboard/training-center', icon: Music },
   { name: 'My Lessons', href: '/dashboard/my-lessons', icon: BookOpen },
   { name: 'Courses', href: '/dashboard/courses', icon: GraduationCap },
-  { name: 'Training Center', href: '/dashboard/training-center', icon: Music },
   { name: 'Find Teacher', href: '/dashboard/find-teacher', icon: Search },
   { name: 'Calendar', href: '/dashboard/calendar', icon: Calendar },
+]
+
+const bottomNavigation = [
+  { name: 'Settings', href: '/dashboard/settings', icon: Settings },
 ]
 
 interface MobileNavProps {
   user: User | null
   userEmail?: string | null
+  unreadEmailCount?: number
 }
 
 export function MobileNav({ user, userEmail }: MobileNavProps) {
   const [isOpen, setIsOpen] = useState(false)
   const pathname = usePathname()
   const router = useRouter()
-
-  // Prevent body scroll when menu is open
-  useEffect(() => {
-    if (isOpen) {
-      document.body.style.overflow = 'hidden'
-    } else {
-      document.body.style.overflow = ''
-    }
-    return () => {
-      document.body.style.overflow = ''
-    }
-  }, [isOpen])
 
   const handleSignOut = async () => {
     const supabase = createClient()
@@ -78,170 +82,122 @@ export function MobileNav({ user, userEmail }: MobileNavProps) {
     router.refresh()
   }
 
+  // Determine which navigation to show based on role
   const isTeacher = user?.role === 'teacher' || user?.role === 'instructor' || user?.role === 'admin'
+  const isAdmin = user?.role === 'admin'
   const hasEmailAccess = canAccessEmailTools(user, userEmail)
   const visibleTeacherNavigation = teacherNavigation.filter((item) => {
     if (item.href.startsWith('/dashboard/email')) return hasEmailAccess
     return true
   })
-  const navigation = isTeacher ? visibleTeacherNavigation : studentNavigation
+  const navigation = isTeacher
+    ? (isAdmin ? [...visibleTeacherNavigation, ...adminNavigation] : visibleTeacherNavigation)
+    : studentNavigation
 
   return (
-    <>
-      {/* Mobile Header */}
-      <header className="lg:hidden fixed top-0 left-0 right-0 h-16 glass-overlay border-b border-white/10 px-4 flex items-center justify-between z-40">
-        <button
-          onClick={() => setIsOpen(true)}
-          className="p-2.5 -ml-2 text-gray-400 hover:text-white hover:bg-white/10 rounded-xl transition-all duration-200"
-          aria-label="Open menu"
-        >
-          <Menu className="w-6 h-6" />
-        </button>
-
+    <div className="lg:hidden">
+      {/* Mobile Header Bar */}
+      <div className="flex items-center justify-between px-4 py-3 border-b border-white/[0.08] bg-[#120d24]/90 backdrop-blur-xl sticky top-0 z-40">
         <Link href="/dashboard" className="flex items-center">
           <Image
             src="/voice-alchemy-logo-stacked.png"
             alt="Voice Alchemy Academy"
-            width={100}
-            height={24}
+            width={130}
+            height={32}
             className="object-contain"
             priority
           />
         </Link>
 
-        {/* User Avatar */}
-        {user && (
-          <div className="w-9 h-9 rounded-full bg-gradient-to-br from-[#CEB466] to-[#9c8644] flex items-center justify-center text-[#171229] font-bold text-xs shadow-lg shadow-[#CEB466]/20 ring-2 ring-[#CEB466]/20">
-            {user.first_name?.[0]}{user.last_name?.[0]}
-          </div>
-        )}
-      </header>
+        <button
+          onClick={() => setIsOpen(!isOpen)}
+          className="p-2 rounded-xl text-gray-400 hover:text-white hover:bg-white/[0.08] transition-colors"
+          aria-label="Toggle Menu"
+        >
+          {isOpen ? <X className="w-6 h-6" /> : <Menu className="w-6 h-6" />}
+        </button>
+      </div>
 
-      {/* Mobile Menu Overlay */}
+      {/* Mobile Drawer Overlay */}
       {isOpen && (
-        <div className="lg:hidden fixed inset-0 z-50 animate-fade-in">
-          {/* Backdrop */}
-          <div
-            className="absolute inset-0 glass-overlay"
-            onClick={() => setIsOpen(false)}
-          />
-
-          {/* Slide-in Menu */}
-          <div className="absolute top-0 left-0 bottom-0 w-[280px] bg-gradient-to-b from-[#1a1535] to-[#171229] border-r border-white/10 flex flex-col animate-slide-in shadow-2xl shadow-black/50">
-            {/* Menu Header */}
-            <div className="h-20 flex items-center justify-between px-4 border-b border-white/10 bg-white/[0.02]">
-              <Link href="/dashboard" className="flex items-center" onClick={() => setIsOpen(false)}>
-                <Image
-                  src="/voice-alchemy-logo-stacked.png"
-                  alt="Voice Alchemy Academy"
-                  width={120}
-                  height={29}
-                  className="object-contain"
-                />
-              </Link>
+        <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-md animate-fade-in">
+          <div className="fixed inset-y-0 left-0 w-72 max-w-[85vw] glass-card-luxe bg-[#171229]/95 border-r border-white/[0.08] flex flex-col p-4 space-y-4 shadow-2xl overflow-y-auto">
+            {/* Header */}
+            <div className="flex items-center justify-between pb-3 border-b border-white/[0.08]">
+              <Image
+                src="/voice-alchemy-logo-stacked.png"
+                alt="Voice Alchemy Academy"
+                width={130}
+                height={32}
+                className="object-contain"
+              />
               <button
                 onClick={() => setIsOpen(false)}
-                className="p-2.5 text-gray-400 hover:text-white hover:bg-white/10 rounded-xl transition-all duration-200"
-                aria-label="Close menu"
+                className="p-2 rounded-xl text-gray-400 hover:text-white"
               >
                 <X className="w-5 h-5" />
               </button>
             </div>
 
-            {/* Navigation */}
-            <nav className="flex-1 px-3 py-4 space-y-1.5 overflow-y-auto">
+            {/* Navigation Links */}
+            <nav className="flex-1 space-y-1">
               {navigation.map((item) => {
-                const isActive = pathname === item.href || pathname.startsWith(item.href + '/')
+                const isActive = pathname === item.href || (item.href !== '/dashboard' && pathname.startsWith(item.href + '/'))
                 return (
                   <Link
                     key={item.name}
                     href={item.href}
                     onClick={() => setIsOpen(false)}
-                    className={`flex items-center gap-3 px-4 py-3.5 rounded-xl text-base font-medium transition-all duration-300 ${
+                    className={`flex items-center gap-3 px-3.5 py-3 rounded-2xl text-sm font-semibold transition-all ${
                       isActive
-                        ? 'bg-gradient-to-r from-[#CEB466]/20 via-[#CEB466]/10 to-transparent text-[#CEB466] border border-[#CEB466]/30 shadow-lg shadow-[#CEB466]/10'
-                        : 'text-gray-300 hover:bg-white/[0.06] hover:text-white active:bg-white/10 border border-transparent'
+                        ? 'bg-[#CEB466]/20 text-[#CEB466] border border-[#CEB466]/40'
+                        : 'text-gray-300 hover:bg-white/[0.06] hover:text-white'
                     }`}
                   >
-                    <div className={`w-9 h-9 rounded-lg flex items-center justify-center ${
-                      isActive
-                        ? 'bg-[#CEB466]/20'
-                        : 'bg-white/5'
-                    }`}>
-                      <item.icon className={`w-5 h-5 ${isActive ? 'text-[#CEB466]' : 'text-gray-400'}`} />
-                    </div>
-                    {item.name}
+                    <item.icon className="w-4 h-4" />
+                    <span>{item.name}</span>
                   </Link>
                 )
               })}
             </nav>
 
-            {/* Bottom Section */}
-            <div className="px-3 py-4 border-t border-white/10 space-y-1.5 bg-white/[0.01]">
-              <Link
-                href="/dashboard/settings"
-                onClick={() => setIsOpen(false)}
-                className={`flex items-center gap-3 px-4 py-3.5 rounded-xl text-base font-medium transition-all duration-300 ${
-                  pathname === '/dashboard/settings'
-                    ? 'bg-gradient-to-r from-[#CEB466]/20 via-[#CEB466]/10 to-transparent text-[#CEB466] border border-[#CEB466]/30 shadow-lg shadow-[#CEB466]/10'
-                    : 'text-gray-300 hover:bg-white/[0.06] hover:text-white active:bg-white/10 border border-transparent'
-                }`}
+            {/* Bottom Links & User Profile */}
+            <div className="pt-4 border-t border-white/[0.08] space-y-2">
+              <button
+                onClick={() => {
+                  setIsOpen(false)
+                  const dashboardTourKey = isTeacher ? 'teacher_dashboard_v4' : 'student_dashboard_v4'
+                  window.dispatchEvent(new CustomEvent(`start-spotlight-${dashboardTourKey}`))
+                }}
+                className="w-full flex items-center gap-3 px-3.5 py-2.5 rounded-xl text-sm font-semibold text-[#CEB466] hover:bg-[#CEB466]/10 transition-colors text-left"
               >
-                <div className={`w-9 h-9 rounded-lg flex items-center justify-center ${
-                  pathname === '/dashboard/settings' ? 'bg-[#CEB466]/20' : 'bg-white/5'
-                }`}>
-                  <Settings className={`w-5 h-5 ${pathname === '/dashboard/settings' ? 'text-[#CEB466]' : 'text-gray-400'}`} />
-                </div>
-                Settings
-              </Link>
+                <Sparkles className="w-4 h-4 text-[#CEB466]" />
+                <span>Page Tour</span>
+              </button>
+
+              {bottomNavigation.map((item) => (
+                <Link
+                  key={item.name}
+                  href={item.href}
+                  onClick={() => setIsOpen(false)}
+                  className="flex items-center gap-3 px-3.5 py-2.5 rounded-xl text-sm text-gray-300 hover:bg-white/[0.06] hover:text-white"
+                >
+                  <item.icon className="w-4 h-4" />
+                  <span>{item.name}</span>
+                </Link>
+              ))}
 
               <button
                 onClick={handleSignOut}
-                className="w-full flex items-center gap-3 px-4 py-3.5 rounded-xl text-base font-medium text-gray-300 hover:bg-red-500/10 hover:text-red-400 active:bg-red-500/15 transition-all duration-300 border border-transparent"
+                className="w-full flex items-center gap-3 px-3.5 py-2.5 rounded-xl text-sm text-red-400 hover:bg-red-500/10 transition-colors"
               >
-                <div className="w-9 h-9 rounded-lg bg-white/5 flex items-center justify-center">
-                  <LogOut className="w-5 h-5 text-gray-400" />
-                </div>
-                Sign out
+                <LogOut className="w-4 h-4" />
+                <span>Sign out</span>
               </button>
             </div>
-
-            {/* User Info */}
-            {user && (
-              <div className="px-3 py-4 border-t border-white/10 bg-gradient-to-t from-white/[0.02] to-transparent">
-                <div className="flex items-center gap-3 p-3 rounded-xl bg-gradient-to-r from-white/[0.05] to-transparent border border-white/[0.06]">
-                  <div className="w-12 h-12 rounded-full bg-gradient-to-br from-[#CEB466] to-[#9c8644] flex items-center justify-center text-[#171229] font-bold shadow-lg shadow-[#CEB466]/20 ring-2 ring-[#CEB466]/20">
-                    {user.first_name?.[0]}{user.last_name?.[0]}
-                  </div>
-                  <div className="flex-1 min-w-0">
-                    <p className="text-base font-medium text-white truncate">
-                      {user.first_name} {user.last_name}
-                    </p>
-                    <p className="text-sm text-[#CEB466]/70 truncate capitalize">
-                      {user.role || 'User'}
-                    </p>
-                  </div>
-                </div>
-              </div>
-            )}
           </div>
         </div>
       )}
-
-      {/* CSS for slide-in animation */}
-      <style jsx global>{`
-        @keyframes slide-in {
-          from {
-            transform: translateX(-100%);
-          }
-          to {
-            transform: translateX(0);
-          }
-        }
-        .animate-slide-in {
-          animation: slide-in 0.2s ease-out;
-        }
-      `}</style>
-    </>
+    </div>
   )
 }

@@ -159,17 +159,6 @@ export async function PATCH(request: NextRequest) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     }
 
-    // Get user from users table
-    const { data: userData } = await supabase
-      .from('users')
-      .select('id')
-      .eq('auth_id', user.id)
-      .single()
-
-    if (!userData) {
-      return NextResponse.json({ error: 'User not found' }, { status: 404 })
-    }
-
     const body = await request.json()
     const { thread_id, label_id, action } = body
 
@@ -186,7 +175,7 @@ export async function PATCH(request: NextRequest) {
       .eq('id', thread_id)
       .single()
 
-    if (!thread || (thread as any).email_accounts?.user_id !== userData.id) {
+    if (!thread || (thread as any).email_accounts?.user_id !== user.id) {
       return NextResponse.json({ error: 'Thread not found' }, { status: 404 })
     }
 

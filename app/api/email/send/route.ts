@@ -29,38 +29,17 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     }
 
-    // Get user from users table
-    let { data: userData } = await supabase
-      .from('users')
-      .select('id, first_name, last_name')
-      .eq('auth_id', user.id)
-      .single()
+    // Get user from profiles table
+    const { data: profile } = await supabase
+      .from('profiles')
+      .select('id, first_name, last_name, name')
+      .eq('id', user.id)
+      .maybeSingle()
 
-    // Auto-create user if not found
-    if (!userData) {
-      const fullName = user.user_metadata?.full_name || user.user_metadata?.name || ''
-      const nameParts = fullName.split(' ')
-      const firstName = nameParts[0] || user.email?.split('@')[0] || 'User'
-      const lastName = nameParts.slice(1).join(' ') || ''
-
-      const { data: newUser, error: createError } = await getSupabaseAdmin()
-        .from('users')
-        .insert({
-          auth_id: user.id,
-          email: user.email,
-          first_name: firstName,
-          last_name: lastName,
-          role: 'sales_rep',
-          is_active: true
-        })
-        .select('id, first_name, last_name')
-        .single()
-
-      if (createError) {
-        console.error('Error creating user:', createError)
-        return NextResponse.json({ error: 'User not found' }, { status: 404 })
-      }
-      userData = newUser
+    const userData = {
+      id: user.id,
+      first_name: profile?.first_name || profile?.name?.split(' ')[0] || user.email?.split('@')[0] || 'User',
+      last_name: profile?.last_name || profile?.name?.split(' ').slice(1).join(' ') || '',
     }
 
     const body = await request.json()

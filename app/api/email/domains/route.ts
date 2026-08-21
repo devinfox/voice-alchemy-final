@@ -16,21 +16,10 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     }
 
-    // Get user from users table
-    const { data: userData } = await supabase
-      .from('users')
-      .select('id')
-      .eq('auth_id', user.id)
-      .single()
-
-    if (!userData) {
-      return NextResponse.json({ error: 'User not found' }, { status: 404 })
-    }
-
     const { data: domains, error } = await supabase
       .from('email_domains')
       .select('*')
-      .eq('created_by', userData.id)
+      .eq('created_by', user.id)
       .eq('is_deleted', false)
       .order('created_at', { ascending: false })
 
@@ -39,7 +28,7 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({ error: error.message }, { status: 500 })
     }
 
-    return NextResponse.json({ domains })
+    return NextResponse.json({ domains: domains || [] })
   } catch (error) {
     console.error('Domains GET error:', error)
     return NextResponse.json({ error: 'Internal server error' }, { status: 500 })
@@ -54,17 +43,6 @@ export async function POST(request: NextRequest) {
 
     if (!user) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
-    }
-
-    // Get user from users table
-    const { data: userData } = await supabase
-      .from('users')
-      .select('id')
-      .eq('auth_id', user.id)
-      .single()
-
-    if (!userData) {
-      return NextResponse.json({ error: 'User not found' }, { status: 404 })
     }
 
     const body = await request.json()
@@ -131,7 +109,7 @@ export async function POST(request: NextRequest) {
         sendgrid_domain_id: sendgridResponse?.id?.toString() || null,
         verification_status: 'pending',
         dns_records: dnsRecords,
-        created_by: userData.id,
+        created_by: user.id,
       })
       .select()
       .single()

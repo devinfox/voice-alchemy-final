@@ -1,3 +1,20 @@
+export interface QuizQuestion {
+  id: string
+  question: string
+  options: string[]
+  correctAnswerIndex: number
+  explanation?: string
+}
+
+export interface CourseQuiz {
+  id: string
+  title: string
+  description?: string
+  questions: QuizQuestion[]
+  passingScorePercent?: number
+  isOptional?: boolean
+}
+
 export interface CourseLesson {
   id: string
   title: string
@@ -6,12 +23,14 @@ export interface CourseLesson {
   body: string[]
   keyPoints: string[]
   practice: string[]
+  quiz?: CourseQuiz
 }
 
 export interface CourseSection {
   id: string
   title: string
   lessons: CourseLesson[]
+  quiz?: CourseQuiz
 }
 
 export interface Course {
@@ -27,6 +46,7 @@ export interface Course {
   whatYouWillLearn: string[]
   requirements: string[]
   sections: CourseSection[]
+  isCustom?: boolean
 }
 
 const beginnerVocalCourse: Course = {
@@ -98,6 +118,39 @@ const beginnerVocalCourse: Course = {
             'Create a personal stop-sign checklist: pain, tightness, persistent roughness',
             'Track hydration before and after practice for one week',
           ],
+          quiz: {
+            id: 'quiz-anatomy-safety',
+            title: 'Optional Knowledge Check: Vocal Safety',
+            description: 'Test your understanding of safe phonation and vocal health boundaries.',
+            isOptional: true,
+            passingScorePercent: 100,
+            questions: [
+              {
+                id: 'q1',
+                question: 'What is the correct response if you feel sharp pain or persistent roughness while singing?',
+                options: [
+                  'Push through it to build vocal endurance',
+                  'Stop immediately, rest, hydrate, and reset technique',
+                  'Sing louder to clear the throat',
+                  'Switch immediately to whistle register'
+                ],
+                correctAnswerIndex: 1,
+                explanation: 'Pain is a non-negotiable hard stop. Singing through pain causes vocal fold swelling and strain.'
+              },
+              {
+                id: 'q2',
+                question: 'What is the core Voice Alchemy progression philosophy?',
+                options: [
+                  'Intensity first, volume second, pitch last',
+                  'Efficiency first, expression second, intensity last',
+                  'Belting high notes on day one',
+                  'Singing exclusively with throat tension'
+                ],
+                correctAnswerIndex: 1,
+                explanation: 'We always build effortless phonation and coordination before adding expressive ornaments or volume intensity.'
+              }
+            ]
+          },
         },
         {
           id: 'breath-posture-support',
@@ -334,11 +387,71 @@ export const courses: Course[] = [
   },
 ]
 
+const CUSTOM_COURSES_KEY = 'vaaa_custom_courses_v1'
+
+export function getCustomCourses(): Course[] {
+  if (typeof window === 'undefined') return []
+  try {
+    const raw = localStorage.getItem(CUSTOM_COURSES_KEY)
+    if (!raw) return []
+    return JSON.parse(raw) as Course[]
+  } catch (e) {
+    console.error('Failed to load custom courses', e)
+    return []
+  }
+}
+
+export function saveCustomCourse(course: Course): Course {
+  if (typeof window === 'undefined') return course
+  try {
+    const current = getCustomCourses()
+    const index = current.findIndex((c) => c.slug === course.slug)
+    const updated: Course = {
+      ...course,
+      isCustom: true,
+      isUnlocked: true,
+      updatedAt: new Date().toLocaleDateString('en-US', { month: 'short', year: 'numeric' }),
+    }
+    let nextList: Course[]
+    if (index >= 0) {
+      nextList = [...current]
+      nextList[index] = updated
+    } else {
+      nextList = [updated, ...current]
+    }
+    localStorage.setItem(CUSTOM_COURSES_KEY, JSON.stringify(nextList))
+    return updated
+  } catch (e) {
+    console.error('Failed to save custom course', e)
+    return course
+  }
+}
+
+export function deleteCustomCourse(slug: string): boolean {
+  if (typeof window === 'undefined') return false
+  try {
+    const current = getCustomCourses()
+    const nextList = current.filter((c) => c.slug !== slug)
+    localStorage.setItem(CUSTOM_COURSES_KEY, JSON.stringify(nextList))
+    return true
+  } catch (e) {
+    console.error('Failed to delete custom course', e)
+    return false
+  }
+}
+
+export function getAllCourses(): Course[] {
+  const custom = getCustomCourses()
+  return [...courses, ...custom]
+}
+
 export function getCourseBySlug(slug: string): Course | undefined {
-  return courses.find((course) => course.slug === slug)
+  const all = getAllCourses()
+  return all.find((course) => course.slug === slug)
 }
 
 export function getCourseLessonCount(course: Course): number {
   return course.sections.reduce((sum, section) => sum + section.lessons.length, 0)
 }
+
 

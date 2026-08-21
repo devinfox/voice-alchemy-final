@@ -76,7 +76,7 @@ export function EmailSidebar({ userId, onCompose }: EmailSidebarProps) {
   }, [hasSyncableAccounts])
 
   // Get tenant configuration for theming
-  const { isCitadelGold, gradientConfig } = useTenant()
+  const { isVoiceAlchemy, gradientConfig } = useTenant()
   const { accentColor, accentColorLight } = gradientConfig
 
   // Initial load effect - only runs once on mount
@@ -396,13 +396,13 @@ export function EmailSidebar({ userId, onCompose }: EmailSidebarProps) {
 
   const getActiveClasses = (active: boolean) => {
     if (!active) return `${textColor} ${hoverBg}`
-    if (isCitadelGold) return 'bg-yellow-500/20 text-yellow-400'
+    if (isVoiceAlchemy) return 'bg-yellow-500/20 text-yellow-400'
     return 'bg-white/10'
   }
 
   const getActiveStyle = (active: boolean) => {
     if (!active) return undefined
-    if (isCitadelGold) return undefined
+    if (isVoiceAlchemy) return undefined
     return {
       color: accentColor,
       borderColor: `${accentColor}40`,
@@ -421,9 +421,9 @@ export function EmailSidebar({ userId, onCompose }: EmailSidebarProps) {
           <button
             onClick={onCompose}
             className={`group relative w-full flex items-center justify-center gap-2.5 px-4 py-3 rounded-xl text-sm font-semibold transition-all duration-300 overflow-hidden ${
-              isCitadelGold ? '' : ''
+              isVoiceAlchemy ? '' : ''
             }`}
-            style={isCitadelGold ? {
+            style={isVoiceAlchemy ? {
               background: 'linear-gradient(135deg, rgba(234, 179, 8, 0.15) 0%, rgba(217, 119, 6, 0.1) 100%)',
               border: '1px solid rgba(234, 179, 8, 0.25)',
               color: '#fbbf24',
@@ -442,7 +442,7 @@ export function EmailSidebar({ userId, onCompose }: EmailSidebarProps) {
           <Link
             href="/dashboard/email/compose"
             className={`group relative w-full flex items-center justify-center gap-2.5 px-4 py-3 rounded-xl text-sm font-semibold transition-all duration-300 overflow-hidden`}
-            style={isCitadelGold ? {
+            style={isVoiceAlchemy ? {
               background: 'linear-gradient(135deg, rgba(234, 179, 8, 0.15) 0%, rgba(217, 119, 6, 0.1) 100%)',
               border: '1px solid rgba(234, 179, 8, 0.25)',
               color: '#fbbf24',
@@ -479,12 +479,12 @@ export function EmailSidebar({ userId, onCompose }: EmailSidebarProps) {
               href={item.href}
               className={`group flex items-center gap-3 px-3 py-2 rounded-xl text-sm font-medium transition-all duration-200 ${
                 active
-                  ? isCitadelGold
+                  ? isVoiceAlchemy
                     ? 'bg-yellow-500/15 text-yellow-400 border border-yellow-500/20'
                     : 'bg-white/[0.08] text-white border border-white/[0.08]'
                   : 'text-gray-400 hover:text-white hover:bg-white/[0.05] border border-transparent'
               }`}
-              style={active && !isCitadelGold ? {
+              style={active && !isVoiceAlchemy ? {
                 color: accentColor,
                 borderColor: `${accentColor}30`,
                 background: `${accentColor}10`,
@@ -496,11 +496,11 @@ export function EmailSidebar({ userId, onCompose }: EmailSidebarProps) {
                 <span
                   className="px-2 py-0.5 text-[10px] font-semibold rounded-md flex-shrink-0 tabular-nums"
                   style={{
-                    background: isCitadelGold
+                    background: isVoiceAlchemy
                       ? 'linear-gradient(135deg, #eab308 0%, #d97706 100%)'
                       : `linear-gradient(135deg, ${accentColor} 0%, ${accentColorLight} 100%)`,
-                    color: isCitadelGold ? '#000' : '#fff',
-                    boxShadow: isCitadelGold
+                    color: isVoiceAlchemy ? '#000' : '#fff',
+                    boxShadow: isVoiceAlchemy
                       ? '0 2px 8px rgba(234, 179, 8, 0.3)'
                       : `0 2px 8px ${accentColor}40`,
                   }}
@@ -518,12 +518,12 @@ export function EmailSidebar({ userId, onCompose }: EmailSidebarProps) {
             href="/dashboard/email/ai-drafts"
             className={`group flex items-center gap-3 px-3 py-2 rounded-xl text-sm font-medium transition-all duration-200 ${
               pathname === '/dashboard/email/ai-drafts'
-                ? isCitadelGold
+                ? isVoiceAlchemy
                   ? 'bg-yellow-500/15 text-yellow-400 border border-yellow-500/20'
                   : 'bg-white/[0.08] text-white border border-white/[0.08]'
                 : 'text-gray-400 hover:text-white hover:bg-white/[0.05] border border-transparent'
             }`}
-            style={pathname === '/dashboard/email/ai-drafts' && !isCitadelGold ? {
+            style={pathname === '/dashboard/email/ai-drafts' && !isVoiceAlchemy ? {
               color: accentColor,
               borderColor: `${accentColor}30`,
               background: `${accentColor}10`,
@@ -535,11 +535,11 @@ export function EmailSidebar({ userId, onCompose }: EmailSidebarProps) {
               <span
                 className="px-2 py-0.5 text-[10px] font-semibold rounded-md flex-shrink-0 tabular-nums"
                 style={{
-                  background: isCitadelGold
+                  background: isVoiceAlchemy
                     ? 'linear-gradient(135deg, #eab308 0%, #d97706 100%)'
                     : `linear-gradient(135deg, ${accentColor} 0%, ${accentColorLight} 100%)`,
-                  color: isCitadelGold ? '#000' : '#fff',
-                  boxShadow: isCitadelGold
+                  color: isVoiceAlchemy ? '#000' : '#fff',
+                  boxShadow: isVoiceAlchemy
                     ? '0 2px 8px rgba(234, 179, 8, 0.3)'
                     : `0 2px 8px ${accentColor}40`,
                 }}
@@ -554,12 +554,12 @@ export function EmailSidebar({ userId, onCompose }: EmailSidebarProps) {
             href="/dashboard/email/snoozed"
             className={`group flex items-center gap-3 px-3 py-2 rounded-xl text-sm font-medium transition-all duration-200 ${
               pathname === '/dashboard/email/snoozed'
-                ? isCitadelGold
+                ? isVoiceAlchemy
                   ? 'bg-yellow-500/15 text-yellow-400 border border-yellow-500/20'
                   : 'bg-white/[0.08] text-white border border-white/[0.08]'
                 : 'text-gray-400 hover:text-white hover:bg-white/[0.05] border border-transparent'
             }`}
-            style={pathname === '/dashboard/email/snoozed' && !isCitadelGold ? {
+            style={pathname === '/dashboard/email/snoozed' && !isVoiceAlchemy ? {
               color: accentColor,
               borderColor: `${accentColor}30`,
               background: `${accentColor}10`,
@@ -613,8 +613,8 @@ export function EmailSidebar({ userId, onCompose }: EmailSidebarProps) {
                       <span
                         className="text-[9px] font-semibold uppercase tracking-wider flex-shrink-0 px-1.5 py-0.5 rounded"
                         style={{
-                          color: isCitadelGold ? '#fbbf24' : accentColor,
-                          background: isCitadelGold ? 'rgba(251, 191, 36, 0.1)' : `${accentColor}15`,
+                          color: isVoiceAlchemy ? '#fbbf24' : accentColor,
+                          background: isVoiceAlchemy ? 'rgba(251, 191, 36, 0.1)' : `${accentColor}15`,
                         }}
                       >
                         Primary

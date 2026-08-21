@@ -16,17 +16,6 @@ export async function GET(
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     }
 
-    // Get user from users table
-    const { data: userData } = await supabase
-      .from('users')
-      .select('id')
-      .eq('auth_id', user.id)
-      .single()
-
-    if (!userData) {
-      return NextResponse.json({ error: 'User not found' }, { status: 404 })
-    }
-
     const { data: account, error } = await supabase
       .from('email_accounts')
       .select(`
@@ -34,7 +23,7 @@ export async function GET(
         domain:email_domains(id, domain, verification_status)
       `)
       .eq('id', id)
-      .eq('user_id', userData.id)
+      .eq('user_id', user.id)
       .eq('is_deleted', false)
       .single()
 
@@ -63,23 +52,12 @@ export async function PATCH(
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     }
 
-    // Get user from users table
-    const { data: userData } = await supabase
-      .from('users')
-      .select('id')
-      .eq('auth_id', user.id)
-      .single()
-
-    if (!userData) {
-      return NextResponse.json({ error: 'User not found' }, { status: 404 })
-    }
-
     // Verify the account belongs to the user
     const { data: account } = await supabase
       .from('email_accounts')
       .select('id')
       .eq('id', id)
-      .eq('user_id', userData.id)
+      .eq('user_id', user.id)
       .eq('is_deleted', false)
       .single()
 
@@ -95,7 +73,7 @@ export async function PATCH(
       await getSupabaseAdmin()
         .from('email_accounts')
         .update({ is_primary: false, updated_at: new Date().toISOString() })
-        .eq('user_id', userData.id)
+        .eq('user_id', user.id)
         .eq('is_primary', true)
     }
 
@@ -149,22 +127,12 @@ export async function DELETE(
     }
 
     // Get user from users table
-    const { data: userData } = await supabase
-      .from('users')
-      .select('id')
-      .eq('auth_id', user.id)
-      .single()
-
-    if (!userData) {
-      return NextResponse.json({ error: 'User not found' }, { status: 404 })
-    }
-
     // Verify the account belongs to the user
     const { data: account } = await supabase
       .from('email_accounts')
       .select('id, is_primary')
       .eq('id', id)
-      .eq('user_id', userData.id)
+      .eq('user_id', user.id)
       .eq('is_deleted', false)
       .single()
 
@@ -193,7 +161,7 @@ export async function DELETE(
       const { data: remainingAccounts } = await getSupabaseAdmin()
         .from('email_accounts')
         .select('id')
-        .eq('user_id', userData.id)
+        .eq('user_id', user.id)
         .eq('is_deleted', false)
         .order('created_at', { ascending: true })
         .limit(1)

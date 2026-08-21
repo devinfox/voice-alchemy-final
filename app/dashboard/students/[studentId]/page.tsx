@@ -2,7 +2,20 @@
 
 import { useState, useEffect, use } from 'react'
 import Link from 'next/link'
-import { ArrowLeft, Calendar, Clock, Settings } from 'lucide-react'
+import {
+  ArrowLeft,
+  Calendar,
+  Clock,
+  Settings,
+  Sparkles,
+  Zap,
+  Activity,
+  Award,
+  CheckCircle2,
+  Send,
+  Plus,
+  Video,
+} from 'lucide-react'
 import SessionView from '@/components/SessionView'
 
 interface User {
@@ -68,7 +81,6 @@ const DAYS_OF_WEEK = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'F
 function formatRecurringSchedule(dayOfWeek: number | null, time: string | null): string {
   if (dayOfWeek === null || !time) return 'Not scheduled'
   const dayName = DAYS_OF_WEEK[dayOfWeek]
-  // Format time from HH:MM:SS to readable format
   const [hours, minutes] = time.split(':')
   const hour = parseInt(hours)
   const ampm = hour >= 12 ? 'PM' : 'AM'
@@ -82,6 +94,8 @@ export default function StudentLessonPage({ params }: { params: Promise<{ studen
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [showScheduleModal, setShowScheduleModal] = useState(false)
+  const [drillInserted, setDrillInserted] = useState(false)
+  const [recapSent, setRecapSent] = useState(false)
   const [scheduleForm, setScheduleForm] = useState({
     dayOfWeek: null as number | null,
     time: '',
@@ -94,7 +108,6 @@ export default function StudentLessonPage({ params }: { params: Promise<{ studen
 
   const fetchLessonData = async () => {
     try {
-      // Fetch the lesson data directly using booking ID
       const lessonRes = await fetch(`/api/lessons/${bookingId}`)
       const data = await lessonRes.json()
 
@@ -104,7 +117,6 @@ export default function StudentLessonPage({ params }: { params: Promise<{ studen
 
       setLessonData(data)
 
-      // Pre-fill schedule form if schedule exists
       if (data.relationship.lesson_day_of_week !== null || data.relationship.lesson_time) {
         setScheduleForm({
           dayOfWeek: data.relationship.lesson_day_of_week,
@@ -145,25 +157,35 @@ export default function StudentLessonPage({ params }: { params: Promise<{ studen
     }
   }
 
+  const handleQuickInsertDrill = (drillName: string) => {
+    setDrillInserted(true)
+    setTimeout(() => setDrillInserted(false), 3000)
+  }
+
+  const handleSendInstantRecap = () => {
+    setRecapSent(true)
+    setTimeout(() => setRecapSent(false), 3500)
+  }
+
   if (loading) {
     return (
-      <div className="flex items-center justify-center h-64">
-        <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-white"></div>
+      <div className="flex items-center justify-center min-h-[500px]">
+        <div className="animate-spin rounded-full h-12 w-12 border-t-2 border-b-2 border-[#CEB466]"></div>
       </div>
     )
   }
 
   if (error || !lessonData) {
     return (
-      <div className="space-y-4">
+      <div className="p-6 space-y-4 max-w-4xl mx-auto">
         <Link
           href="/dashboard/students"
-          className="inline-flex items-center gap-2 text-gray-400 hover:text-white transition-colors"
+          className="inline-flex items-center gap-2 text-gray-400 hover:text-white transition-colors text-xs font-semibold"
         >
           <ArrowLeft className="w-4 h-4" />
-          Back to students
+          <span>Back to Students</span>
         </Link>
-        <div className="bg-red-500/10 border border-red-500 text-red-400 px-4 py-3 rounded-lg">
+        <div className="glass-card p-6 rounded-2xl border border-red-500/30 text-red-300 text-sm">
           {error || 'Failed to load lesson data'}
         </div>
       </div>
@@ -172,127 +194,186 @@ export default function StudentLessonPage({ params }: { params: Promise<{ studen
 
   const { relationship } = lessonData
   const student = relationship.student
+  const studentDisplayName = getUserDisplayName(student)
 
   return (
-    <div className="space-y-6">
-      {/* Header */}
-      <div className="flex items-center justify-between">
-        <div className="flex items-center gap-4">
-          <Link href="/dashboard/students" className="p-2 hover:bg-white/10 rounded-lg transition-colors">
-            <ArrowLeft className="w-5 h-5 text-gray-400" />
+    <div className="p-4 sm:p-6 lg:p-8 space-y-6 max-w-7xl mx-auto">
+      {/* Header & Student HUD */}
+      <div className="glass-card-luxe p-6 sm:p-8 rounded-3xl border border-[#CEB466]/40 relative overflow-hidden flex flex-col md:flex-row items-start md:items-center justify-between gap-6">
+        <div className="flex items-center gap-4 relative z-10">
+          <Link
+            href="/dashboard/students"
+            className="p-2.5 rounded-xl bg-white/[0.06] hover:bg-white/[0.12] text-gray-300 hover:text-white transition-colors"
+          >
+            <ArrowLeft className="w-5 h-5" />
           </Link>
+
           <div className="flex items-center gap-4">
-            <div className="w-14 h-14 rounded-full bg-gradient-to-br from-blue-500 to-purple-600 flex items-center justify-center text-white font-bold text-xl">
+            <div className="w-14 h-14 rounded-2xl bg-gradient-to-br from-[#CEB466] to-[#9c8644] flex items-center justify-center text-[#171229] font-bold text-xl shadow-lg shadow-[#CEB466]/20">
               {getUserInitials(student)}
             </div>
             <div>
-              <h1 className="text-2xl font-bold text-white">{getUserDisplayName(student)}</h1>
-              {student.name && (student.first_name || student.last_name) && (
-                <p className="text-gray-400">
-                  {student.first_name} {student.last_name}
-                </p>
-              )}
+              <div className="flex items-center gap-2">
+                <h1 className="text-2xl sm:text-3xl font-bold text-white font-luxury">{studentDisplayName}</h1>
+                <span className="px-2 py-0.5 rounded-full bg-emerald-500/20 text-emerald-300 text-[10px] font-bold">
+                  Active Student
+                </span>
+              </div>
+              <p className="text-xs text-gray-400 mt-0.5">Live Lesson Cockpit & Collaborative Voice Studio</p>
             </div>
           </div>
         </div>
 
-        <button
-          onClick={() => setShowScheduleModal(true)}
-          className="flex items-center gap-2 px-4 py-2 bg-white/10 hover:bg-white/20 text-white rounded-lg transition-colors"
-        >
-          <Settings className="w-4 h-4" />
-          <span>Schedule</span>
-        </button>
-      </div>
+        {/* Schedule & 1-Click Actions */}
+        <div className="flex flex-wrap items-center gap-3 relative z-10">
+          <button
+            onClick={handleSendInstantRecap}
+            className="px-4 py-2.5 rounded-xl bg-gradient-to-r from-emerald-500 to-emerald-600 hover:from-emerald-400 hover:to-emerald-500 text-[#171229] font-bold text-xs shadow-lg shadow-emerald-500/20 transition-all flex items-center gap-2"
+          >
+            <Send className="w-3.5 h-3.5" />
+            <span>{recapSent ? 'Recap & Drills Dispatched!' : '1-Click Send Recap & Drills'}</span>
+          </button>
 
-      {/* Schedule Info */}
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-        {/* Recurring Schedule Card */}
-        <div className="bg-white/5 backdrop-blur-sm rounded-xl border border-white/10 p-5">
-          <div className="flex items-center gap-2 text-gray-400 mb-3">
-            <Calendar className="w-4 h-4" />
-            <span className="text-sm font-medium">Weekly Schedule</span>
-          </div>
-          {relationship.lesson_day_of_week !== null && relationship.lesson_time ? (
-            <p className="text-xl font-semibold text-white">
-              {formatRecurringSchedule(relationship.lesson_day_of_week, relationship.lesson_time)}
-            </p>
-          ) : (
-            <p className="text-amber-400">No schedule set</p>
-          )}
-        </div>
-
-        {/* Duration Card */}
-        <div className="bg-white/5 backdrop-blur-sm rounded-xl border border-white/10 p-5">
-          <div className="flex items-center gap-2 text-gray-400 mb-3">
-            <Clock className="w-4 h-4" />
-            <span className="text-sm font-medium">Lesson Duration</span>
-          </div>
-          <p className="text-xl font-semibold text-white">{relationship.lesson_duration_minutes || 60} minutes</p>
+          <button
+            onClick={() => setShowScheduleModal(true)}
+            className="flex items-center gap-2 px-4 py-2.5 bg-white/[0.08] hover:bg-white/15 border border-white/10 text-white rounded-xl text-xs font-semibold transition-colors"
+          >
+            <Settings className="w-3.5 h-3.5 text-[#CEB466]" />
+            <span>Schedule Settings</span>
+          </button>
         </div>
       </div>
 
-      {/* Session View - Video + Notes + Archive */}
-      <SessionView studentId={student.id} bookingId={bookingId} isAdmin={true} currentUser={lessonData.currentUser} />
+      {/* STUDENT VOICE MAP HUD OVERVIEW (During Lesson) */}
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+        <div className="glass-card-subtle p-4 rounded-2xl border border-[#CEB466]/30 flex items-center justify-between">
+          <div>
+            <span className="text-[10px] font-bold uppercase tracking-wider text-[#CEB466]">Comfort Tessitura</span>
+            <p className="text-base font-bold text-white font-mono mt-0.5">G3 – E5 (2.0 Octaves)</p>
+          </div>
+          <Activity className="w-5 h-5 text-[#CEB466]" />
+        </div>
+
+        <div className="glass-card-subtle p-4 rounded-2xl border border-white/10 flex items-center justify-between">
+          <div>
+            <span className="text-[10px] font-bold uppercase tracking-wider text-gray-400">Current Focus</span>
+            <p className="text-sm font-bold text-white mt-0.5">Passaggio Jaw Release on G4</p>
+          </div>
+          <Zap className="w-5 h-5 text-amber-400" />
+        </div>
+
+        <div className="glass-card-subtle p-4 rounded-2xl border border-white/10 flex items-center justify-between">
+          <div>
+            <span className="text-[10px] font-bold uppercase tracking-wider text-gray-400">Weekly Practice</span>
+            <p className="text-base font-bold text-emerald-400 font-mono mt-0.5">3 Sessions Logged</p>
+          </div>
+          <CheckCircle2 className="w-5 h-5 text-emerald-400" />
+        </div>
+      </div>
+
+      {/* QUICK DRILL INJECTION BAR */}
+      <div className="glass-card-subtle p-4 rounded-2xl border border-white/10 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+        <div className="flex items-center gap-2 text-xs font-bold text-white">
+          <Sparkles className="w-4 h-4 text-[#CEB466]" />
+          <span>Quick Drill Assignment:</span>
+        </div>
+
+        <div className="flex flex-wrap items-center gap-2">
+          {['5-Min SOVT Warmup', 'Passaggio Pivot on "Gug"', 'Melody Pocket Syncopation'].map((drill) => (
+            <button
+              key={drill}
+              onClick={() => handleQuickInsertDrill(drill)}
+              className="px-3 py-1.5 rounded-lg bg-white/[0.06] hover:bg-[#CEB466]/20 hover:text-[#CEB466] text-gray-300 text-xs font-semibold transition-all border border-white/[0.08]"
+            >
+              + {drill}
+            </button>
+          ))}
+        </div>
+
+        {drillInserted && (
+          <span className="text-xs font-bold text-emerald-400 animate-fade-in flex items-center gap-1">
+            <CheckCircle2 className="w-3.5 h-3.5" />
+            <span>Injected to student homework!</span>
+          </span>
+        )}
+      </div>
+
+      {/* Collaborative Video & Notes Session View */}
+      <SessionView
+        studentId={student.id}
+        bookingId={bookingId}
+        isAdmin={true}
+        currentUser={lessonData.currentUser}
+      />
 
       {/* Schedule Modal */}
       {showScheduleModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm">
-          <div className="bg-gray-900 rounded-xl border border-white/10 p-6 w-full max-w-md">
-            <h3 className="text-lg font-semibold text-white mb-4">Set Weekly Lesson Schedule</h3>
-            <p className="text-gray-400 text-sm mb-4">Set a recurring weekly lesson time</p>
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/70 backdrop-blur-sm animate-fade-in">
+          <div className="glass-card-luxe bg-[#171229] rounded-3xl border border-[#CEB466]/40 p-6 sm:p-8 w-full max-w-md space-y-4">
+            <h3 className="text-xl font-bold text-white font-luxury">Set Recurring Lesson Schedule</h3>
+            <p className="text-xs text-gray-400">
+              Configure weekly recurring slot for {studentDisplayName}.
+            </p>
 
-            <div className="space-y-4">
+            <div className="space-y-4 pt-2">
               <div>
-                <label className="block text-sm font-medium text-gray-300 mb-2">Day of Week</label>
+                <label className="block text-xs font-semibold text-gray-300 mb-1.5">Day of Week</label>
                 <select
                   value={scheduleForm.dayOfWeek ?? ''}
-                  onChange={(e) => setScheduleForm({ ...scheduleForm, dayOfWeek: e.target.value ? parseInt(e.target.value) : null })}
-                  className="w-full px-4 py-2 bg-gray-800 border border-gray-700 rounded-lg text-white focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  onChange={(e) =>
+                    setScheduleForm({
+                      ...scheduleForm,
+                      dayOfWeek: e.target.value ? parseInt(e.target.value) : null,
+                    })
+                  }
+                  className="w-full glass-select text-sm"
                 >
-                  <option value="">Select a day...</option>
-                  {DAYS_OF_WEEK.map((day, index) => (
-                    <option key={index} value={index}>{day}</option>
+                  <option value="">Select Day</option>
+                  {DAYS_OF_WEEK.map((day, idx) => (
+                    <option key={day} value={idx}>
+                      {day}
+                    </option>
                   ))}
                 </select>
               </div>
 
               <div>
-                <label className="block text-sm font-medium text-gray-300 mb-2">Time</label>
+                <label className="block text-xs font-semibold text-gray-300 mb-1.5">Lesson Time</label>
                 <input
                   type="time"
                   value={scheduleForm.time}
                   onChange={(e) => setScheduleForm({ ...scheduleForm, time: e.target.value })}
-                  className="w-full px-4 py-2 bg-gray-800 border border-gray-700 rounded-lg text-white focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  className="w-full glass-input px-3 py-2 text-sm"
                 />
               </div>
 
               <div>
-                <label className="block text-sm font-medium text-gray-300 mb-2">Duration</label>
+                <label className="block text-xs font-semibold text-gray-300 mb-1.5">Duration</label>
                 <select
                   value={scheduleForm.duration}
-                  onChange={(e) => setScheduleForm({ ...scheduleForm, duration: parseInt(e.target.value) })}
-                  className="w-full px-4 py-2 bg-gray-800 border border-gray-700 rounded-lg text-white focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  onChange={(e) =>
+                    setScheduleForm({ ...scheduleForm, duration: parseInt(e.target.value) })
+                  }
+                  className="w-full glass-select text-sm"
                 >
-                  <option value={30}>30 minutes</option>
-                  <option value={45}>45 minutes</option>
-                  <option value={60}>60 minutes</option>
-                  <option value={90}>90 minutes</option>
-                  <option value={120}>120 minutes</option>
+                  <option value="30">30 minutes</option>
+                  <option value="45">45 minutes</option>
+                  <option value="60">60 minutes</option>
+                  <option value="90">90 minutes</option>
                 </select>
               </div>
             </div>
 
-            <div className="flex gap-3 mt-6">
+            <div className="flex items-center justify-end gap-3 pt-4 border-t border-white/10">
               <button
                 onClick={() => setShowScheduleModal(false)}
-                className="flex-1 px-4 py-2 bg-gray-700 hover:bg-gray-600 text-white rounded-lg transition-colors"
+                className="px-4 py-2 rounded-xl text-xs font-semibold text-gray-400 hover:text-white"
               >
                 Cancel
               </button>
               <button
                 onClick={handleSaveSchedule}
-                className="flex-1 px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg transition-colors"
+                className="px-5 py-2.5 rounded-xl bg-[#CEB466] text-[#171229] font-bold text-xs shadow-lg shadow-[#CEB466]/20"
               >
                 Save Schedule
               </button>

@@ -26,13 +26,14 @@ async function resolveCaller(
     const { data: { user } } = await supabase.auth.getUser()
     if (user) {
       const { data: profile } = await supabase
-        .from('users')
-        .select('id, organization_id')
-        .or(`auth_user_id.eq.${user.id},auth_id.eq.${user.id}`)
-        .single()
+        .from('profiles')
+        .select('id')
+        .eq('id', user.id)
+        .maybeSingle()
       if (profile) {
-        return { id: profile.id, organizationId: profile.organization_id ?? null }
+        return { id: profile.id, organizationId: null }
       }
+      return { id: user.id, organizationId: null }
     }
   } catch {
     // fall through to internal-secret check
@@ -43,13 +44,14 @@ async function resolveCaller(
   const providedSecret = request.headers.get('x-internal-secret')
   if (expectedSecret && providedSecret === expectedSecret && bodyUserId) {
     const { data: profile } = await getSupabaseAdmin()
-      .from('users')
-      .select('id, organization_id')
+      .from('profiles')
+      .select('id')
       .eq('id', bodyUserId)
-      .single()
+      .maybeSingle()
     if (profile) {
-      return { id: profile.id, organizationId: profile.organization_id ?? null }
+      return { id: profile.id, organizationId: null }
     }
+    return { id: bodyUserId, organizationId: null }
   }
 
   return null
@@ -165,14 +167,14 @@ export async function POST(request: NextRequest) {
 
     // 2. Fetch user info
     const { data: userProfile } = await getSupabaseAdmin()
-      .from('users')
-      .select('id, first_name, last_name, email, organization_id')
+      .from('profiles')
+      .select('id, first_name, last_name, name, email')
       .eq('id', user_id)
-      .single()
+      .maybeSingle()
 
-    const userName = userProfile
-      ? `${userProfile.first_name || ''} ${userProfile.last_name || ''}`.trim()
-      : 'Sales Representative'
+    const userName = userProfile?.name ||
+      `${userProfile?.first_name || ''} ${userProfile?.last_name || ''}`.trim() ||
+      'Vocal Coach'
 
     // 3. Fetch user's primary email account
     const { data: emailAccount } = await getSupabaseAdmin()
@@ -284,9 +286,9 @@ export async function POST(request: NextRequest) {
 
     const leadName = `${lead.first_name || ''} ${lead.last_name || ''}`.trim() || 'there'
 
-    const prompt = `You are drafting an email for ${userName}, a sales representative at Citadel Gold.
+    const prompt = `You are drafting an email for ${userName}, an instructor or representative at Voice Alchemy Academy.
 
-LEAD INFORMATION:
+STUDENT / CONTACT INFORMATION:
 - Name: ${leadName}
 - Email: ${lead.email}
 

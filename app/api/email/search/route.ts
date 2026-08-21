@@ -26,20 +26,10 @@ export async function GET(request: NextRequest) {
     const admin = getSupabaseAdmin()
 
     // Get user's email accounts
-    const { data: userData } = await supabase
-      .from('users')
-      .select('id')
-      .eq('auth_id', user.id)
-      .single()
-
-    if (!userData) {
-      return NextResponse.json({ error: 'User not found' }, { status: 404 })
-    }
-
     const { data: accounts } = await admin
       .from('email_accounts')
       .select('id')
-      .eq('user_id', userData.id)
+      .eq('user_id', user.id)
       .eq('is_deleted', false)
 
     if (!accounts || accounts.length === 0) {

@@ -365,20 +365,20 @@ export function getProviderStyle(provider: EmailProviderType): {
       return {
         color: '#00a4ef',
         bgColor: 'rgba(0, 164, 239, 0.1)',
-        icon: '📧',
+        icon: '',
       }
     case 'gmail':
       return {
         color: '#ea4335',
         bgColor: 'rgba(234, 67, 53, 0.1)',
-        icon: '📧',
+        icon: '',
       }
     case 'sendgrid':
     default:
       return {
         color: '#1a82e2',
         bgColor: 'rgba(26, 130, 226, 0.1)',
-        icon: '📧',
+        icon: '',
       }
   }
 }

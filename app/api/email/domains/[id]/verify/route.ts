@@ -17,23 +17,12 @@ export async function POST(
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     }
 
-    // Get user from users table
-    const { data: userData } = await supabase
-      .from('users')
-      .select('id')
-      .eq('auth_id', user.id)
-      .single()
-
-    if (!userData) {
-      return NextResponse.json({ error: 'User not found' }, { status: 404 })
-    }
-
     // Get the domain
     const { data: domain } = await supabase
       .from('email_domains')
       .select('*')
       .eq('id', id)
-      .eq('created_by', userData.id)
+      .eq('created_by', user.id)
       .eq('is_deleted', false)
       .single()
 

@@ -4,6 +4,7 @@ import Link from 'next/link'
 import { use, useEffect, useMemo, useState } from 'react'
 import { ArrowLeft, CheckCircle2, ChevronDown, ChevronRight, Circle, Clock3, PlayCircle } from 'lucide-react'
 import { getCourseBySlug, type CourseLesson } from '@/lib/courses'
+import { CourseQuizRunner } from '@/components/course-quiz-runner'
 
 interface LessonPointer {
   sectionId: string
@@ -191,6 +192,15 @@ export default function CoursePlayerPage({ params }: { params: Promise<{ slug: s
                 ))}
               </ul>
             </div>
+
+            {/* Optional Quiz / Knowledge Check */}
+            {activeLesson?.quiz && (
+              <CourseQuizRunner
+                key={activeLesson.id}
+                quiz={activeLesson.quiz}
+                onComplete={() => markComplete()}
+              />
+            )}
           </div>
 
           <div className="flex flex-wrap gap-3">

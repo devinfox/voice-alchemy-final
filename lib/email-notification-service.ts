@@ -84,13 +84,10 @@ export async function notifyUserOfEmail(params: NotifyUserParams): Promise<Notif
 
   const { error: tokenError } = await supabase.from('email_notification_tokens').insert({
     user_id: userId,
-    organization_id: user.organization_id,
     token,
     email_id: emailId,
     thread_id: threadId,
     expires_at: expiresAt.toISOString(),
-    notification_sent_via: determineNotificationMethod(user),
-    notification_sent_at: new Date().toISOString(),
   })
 
   if (tokenError) {
@@ -98,7 +95,7 @@ export async function notifyUserOfEmail(params: NotifyUserParams): Promise<Notif
     return { success: false, emailSent: false, smsSent: false, error: 'Failed to create token' }
   }
 
-  const appUrl = process.env.NEXT_PUBLIC_APP_URL || 'https://app.byetalk.com'
+  const appUrl = process.env.NEXT_PUBLIC_APP_URL || 'https://app.voicealchemyacademy.com'
   const magicLink = `${appUrl}/api/auth/magic-link/verify?token=${token}`
   const senderDisplay = fromName ? `${fromName} <${fromEmail}>` : fromEmail
 

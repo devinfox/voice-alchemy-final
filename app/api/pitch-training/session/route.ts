@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase-server'
+import { createSupabaseAdmin } from '@/lib/supabase-admin'
 import { analyzeSessionPerformance } from '@/lib/openai'
 
 // ============================================================================
@@ -160,13 +161,17 @@ export async function POST(request: NextRequest) {
       }
     }
 
-    const startTime = new Date(startedAt)
-    const endTime = new Date(endedAt)
-    const durationSeconds = Math.round((endTime.getTime() - startTime.getTime()) / 1000)
+    const safeStartedAt = startedAt || new Date().toISOString()
+    const safeEndedAt = endedAt || new Date().toISOString()
+    const startTime = new Date(safeStartedAt)
+    const endTime = new Date(safeEndedAt)
+    const durationSeconds = Math.max(1, Math.round((endTime.getTime() - startTime.getTime()) / 1000))
     const sessionDate = startTime.toISOString().split('T')[0]
 
+    const admin = createSupabaseAdmin()
+
     // Check if there's an existing session for today
-    const { data: existingSession } = await supabase
+    const { data: existingSession } = await admin
       .from('pitch_training_sessions')
       .select('id, overall_score')
       .eq('user_id', user.id)
@@ -185,20 +190,20 @@ export async function POST(request: NextRequest) {
 
     // Delete existing session if we're replacing it
     if (existingSession) {
-      await supabase
+      await admin
         .from('pitch_training_sessions')
         .delete()
         .eq('id', existingSession.id)
     }
 
     // Create new session (including new singer-focused metrics)
-    const { data: session, error: sessionError } = await supabase
+    const { data: session, error: sessionError } = await admin
       .from('pitch_training_sessions')
       .insert({
         user_id: user.id,
         session_date: sessionDate,
-        started_at: startedAt,
-        ended_at: endedAt,
+        started_at: safeStartedAt,
+        ended_at: safeEndedAt,
         duration_seconds: durationSeconds,
         // Legacy metrics
         avg_pitch_accuracy: avgPitchAccuracy,
@@ -219,7 +224,7 @@ export async function POST(request: NextRequest) {
 
     if (sessionError) {
       console.error('Session insert error:', sessionError)
-      return NextResponse.json({ error: 'Failed to save session' }, { status: 500 })
+      return NextResponse.json({ error: sessionError.message || 'Failed to save session' }, { status: 500 })
     }
 
     // Insert note metrics (including new singer-focused metrics)

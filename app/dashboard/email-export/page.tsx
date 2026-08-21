@@ -80,22 +80,21 @@ export default function EmailExportPage() {
   useEffect(() => {
     async function fetchUsers() {
       const { data } = await supabase
-        .from('users')
+        .from('profiles')
         .select(`
           id,
           first_name,
           last_name,
-          email,
-          email_accounts!inner (id)
+          name,
+          email
         `)
-        .eq('is_active', true)
         .order('first_name')
 
       const usersWithEmail = (data || []).map((u) => ({
         id: u.id,
-        first_name: u.first_name,
-        last_name: u.last_name,
-        email: u.email,
+        first_name: u.first_name || u.name?.split(' ')[0] || 'User',
+        last_name: u.last_name || u.name?.split(' ').slice(1).join(' ') || '',
+        email: u.email || '',
       }))
 
       setUsers(usersWithEmail)
@@ -349,7 +348,6 @@ export default function EmailExportPage() {
       attachmentsHtml = `
         <div style="margin-top: 16px; padding: 12px; background: #f8fafc; border-radius: 8px; border: 1px solid #e2e8f0;">
           <div style="font-weight: 600; color: #475569; margin-bottom: 10px; display: flex; align-items: center; gap: 6px;">
-            <span style="font-size: 16px;">📎</span>
             <span>ATTACHMENTS (${fileAttachments.length})</span>
           </div>
           <div style="display: flex; flex-direction: column; gap: 8px;">
@@ -431,15 +429,15 @@ export default function EmailExportPage() {
   // Get appropriate icon for file type
   const getFileIcon = (contentType: string | undefined, filename: string): string => {
     const ext = filename.split('.').pop()?.toLowerCase()
-    if (contentType?.startsWith('image/')) return '🖼️'
-    if (contentType?.includes('pdf') || ext === 'pdf') return '📕'
-    if (contentType?.includes('word') || ext === 'doc' || ext === 'docx') return '📘'
-    if (contentType?.includes('excel') || contentType?.includes('spreadsheet') || ext === 'xls' || ext === 'xlsx') return '📗'
-    if (contentType?.includes('powerpoint') || contentType?.includes('presentation') || ext === 'ppt' || ext === 'pptx') return '📙'
-    if (contentType?.includes('zip') || contentType?.includes('compressed') || ext === 'zip' || ext === 'rar') return '📦'
-    if (contentType?.includes('video') || ['mp4', 'mov', 'avi', 'mkv'].includes(ext || '')) return '🎬'
-    if (contentType?.includes('audio') || ['mp3', 'wav', 'ogg', 'm4a'].includes(ext || '')) return '🎵'
-    return '📄'
+    if (contentType?.startsWith('image/')) return '[IMG]'
+    if (contentType?.includes('pdf') || ext === 'pdf') return '[PDF]'
+    if (contentType?.includes('word') || ext === 'doc' || ext === 'docx') return '[DOC]'
+    if (contentType?.includes('excel') || contentType?.includes('spreadsheet') || ext === 'xls' || ext === 'xlsx') return '[XLS]'
+    if (contentType?.includes('powerpoint') || contentType?.includes('presentation') || ext === 'ppt' || ext === 'pptx') return '[PPT]'
+    if (contentType?.includes('zip') || contentType?.includes('compressed') || ext === 'zip' || ext === 'rar') return '[ZIP]'
+    if (contentType?.includes('video') || ['mp4', 'mov', 'avi', 'mkv'].includes(ext || '')) return '[VID]'
+    if (contentType?.includes('audio') || ['mp3', 'wav', 'ogg', 'm4a'].includes(ext || '')) return '[AUD]'
+    return '[FILE]'
   }
 
   // Helper to load image as base64 for PDF embedding
@@ -697,9 +695,9 @@ export default function EmailExportPage() {
               // Fallback: show as download link
               pdf.setFontSize(8)
               pdf.setTextColor(37, 99, 235)
-              pdf.text(`🖼️ ${img.filename} (click to view)`, margin + 6, contentY)
+              pdf.text(`[Image] ${img.filename} (click to view)`, margin + 6, contentY)
               if (img.public_url) {
-                const textWidth = pdf.getTextWidth(`🖼️ ${img.filename} (click to view)`)
+                const textWidth = pdf.getTextWidth(`[Image] ${img.filename} (click to view)`)
                 pdf.link(margin + 6, contentY - 3, textWidth, 5, { url: img.public_url })
               }
               contentY += 6
@@ -1089,7 +1087,7 @@ export default function EmailExportPage() {
                     {allImages.length > 0 && (
                       <div className="mt-4">
                         <p className="text-xs text-gray-500 uppercase font-medium mb-2">
-                          📷 Images in this email ({allImages.length}):
+                          Images in this email ({allImages.length}):
                         </p>
                         <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                           {allImages.map((img) => (
@@ -1140,25 +1138,25 @@ export default function EmailExportPage() {
                               rel="noopener noreferrer"
                               className="flex items-center gap-3 p-3 bg-white/10 hover:bg-white/20 rounded-lg transition-all group border border-white/10 hover:border-blue-400/50"
                             >
-                              <div className="w-12 h-12 rounded-lg bg-gradient-to-br from-blue-500 to-blue-600 flex items-center justify-center text-white text-xl flex-shrink-0 shadow-lg">
+                              <div className="w-12 h-12 rounded-lg bg-gradient-to-br from-blue-500 to-blue-600 flex items-center justify-center text-white text-xs font-bold font-mono flex-shrink-0 shadow-lg">
                                 {att.content_type?.startsWith('image/') ? (
-                                  '🖼️'
+                                  'IMG'
                                 ) : att.content_type?.includes('pdf') ? (
-                                  '📕'
+                                  'PDF'
                                 ) : att.content_type?.includes('word') ? (
-                                  '📘'
+                                  'DOC'
                                 ) : att.content_type?.includes('excel') ||
                                   att.content_type?.includes('spreadsheet') ? (
-                                  '📗'
+                                  'XLS'
                                 ) : att.content_type?.includes('video') ? (
-                                  '🎬'
+                                  'VID'
                                 ) : att.content_type?.includes('audio') ? (
-                                  '🎵'
+                                  'AUD'
                                 ) : att.content_type?.includes('zip') ||
                                   att.content_type?.includes('compressed') ? (
-                                  '📦'
+                                  'ZIP'
                                 ) : (
-                                  '📄'
+                                  'FILE'
                                 )}
                               </div>
                               <div className="flex-1 min-w-0">

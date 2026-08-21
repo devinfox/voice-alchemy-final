@@ -33,13 +33,17 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'Missing required fields' }, { status: 400 })
     }
 
-    const startTime = new Date(startedAt)
-    const endTime = new Date(endedAt)
-    const durationSeconds = Math.round((endTime.getTime() - startTime.getTime()) / 1000)
+    const safeStartedAt = startedAt || new Date().toISOString()
+    const safeEndedAt = endedAt || new Date().toISOString()
+    const startTime = new Date(safeStartedAt)
+    const endTime = new Date(safeEndedAt)
+    const durationSeconds = Math.max(1, Math.round((endTime.getTime() - startTime.getTime()) / 1000))
     const sessionDate = startTime.toISOString().split('T')[0]
 
+    const admin = createSupabaseAdmin()
+
     // Check if there's an existing session for today with this song
-    const { data: existingSession } = await supabase
+    const { data: existingSession } = await admin
       .from('song_key_training_sessions')
       .select('id, in_key_percentage')
       .eq('user_id', user.id)
@@ -59,20 +63,20 @@ export async function POST(request: NextRequest) {
 
     // Delete existing session if we're replacing it
     if (existingSession) {
-      await supabase
+      await admin
         .from('song_key_training_sessions')
         .delete()
         .eq('id', existingSession.id)
     }
 
     // Create new session
-    const { data: session, error: sessionError } = await supabase
+    const { data: session, error: sessionError } = await admin
       .from('song_key_training_sessions')
       .insert({
         user_id: user.id,
         session_date: sessionDate,
-        started_at: startedAt,
-        ended_at: endedAt,
+        started_at: safeStartedAt,
+        ended_at: safeEndedAt,
         duration_seconds: durationSeconds,
         song_key: songKey,
         song_title: songTitle || null,
@@ -96,7 +100,7 @@ export async function POST(request: NextRequest) {
         })
       }
       console.error('Session insert error:', sessionError)
-      return NextResponse.json({ error: 'Failed to save session' }, { status: 500 })
+      return NextResponse.json({ error: sessionError.message || 'Failed to save session' }, { status: 500 })
     }
 
     // Update user's training stats

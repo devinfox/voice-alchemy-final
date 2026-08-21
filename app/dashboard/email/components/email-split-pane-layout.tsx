@@ -48,7 +48,7 @@ function EmailLayoutContent({ userId, accounts, children }: EmailSplitPaneLayout
 
     // Update database in background
     const supabase = createClient()
-    supabase
+    await supabase
       .from('email_threads')
       .update({ folder: 'archive', updated_at: new Date().toISOString() })
       .eq('id', selectedThreadId)
@@ -64,7 +64,7 @@ function EmailLayoutContent({ userId, accounts, children }: EmailSplitPaneLayout
 
     // Update database in background
     const supabase = createClient()
-    supabase
+    await supabase
       .from('email_threads')
       .update({ folder: 'trash', updated_at: new Date().toISOString() })
       .eq('id', selectedThreadId)
@@ -77,15 +77,15 @@ function EmailLayoutContent({ userId, accounts, children }: EmailSplitPaneLayout
       .from('email_threads')
       .select('is_starred')
       .eq('id', selectedThreadId)
-      .single()
+      .maybeSingle()
     if (thread) {
       const newStarredState = !thread.is_starred
       // Dispatch event to update sidebar counts immediately
       window.dispatchEvent(new CustomEvent('email-starred-changed', {
         detail: { threadId: selectedThreadId, isStarred: newStarredState }
       }))
-      // Update database in background (no await)
-      supabase
+      // Update database
+      await supabase
         .from('email_threads')
         .update({ is_starred: newStarredState })
         .eq('id', selectedThreadId)

@@ -68,17 +68,6 @@ export async function POST(request: NextRequest) {
       process.env.SUPABASE_SERVICE_ROLE_KEY!
     )
 
-    // Look up the user in the users table by email
-    let createdBy: string | null = null
-    if (user.email) {
-      const { data: dbUser } = await serviceClient
-        .from('users')
-        .select('id')
-        .eq('email', user.email)
-        .single()
-      createdBy = dbUser?.id || null
-    }
-
     // Create the funnel
     const { data: funnel, error: funnelError } = await serviceClient
       .from('email_funnels')
@@ -86,7 +75,7 @@ export async function POST(request: NextRequest) {
         name,
         description: description || null,
         status: status || 'draft',
-        created_by: createdBy,
+        created_by: user.id,
       })
       .select()
       .single()

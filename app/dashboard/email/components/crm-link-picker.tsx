@@ -116,6 +116,22 @@ export function CrmLinkPicker({
     const supabase = createClient()
     const searchResults: SearchResult[] = []
 
+    // Search profiles (students/teachers)
+    const { data: studentProfiles } = await supabase
+      .from('profiles')
+      .select('id, first_name, last_name, name, email')
+      .or(`first_name.ilike.%${query}%,last_name.ilike.%${query}%,name.ilike.%${query}%,email.ilike.%${query}%`)
+      .limit(5)
+
+    if (studentProfiles) {
+      searchResults.push(...studentProfiles.map(p => ({
+        id: p.id,
+        name: p.name || `${p.first_name || ''} ${p.last_name || ''}`.trim() || p.email || 'Student',
+        email: p.email,
+        type: 'contact' as const,
+      })))
+    }
+
     // Search contacts
     const { data: contacts } = await supabase
       .from('contacts')

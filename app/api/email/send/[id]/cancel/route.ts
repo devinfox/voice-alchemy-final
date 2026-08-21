@@ -16,17 +16,6 @@ export async function POST(
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     }
 
-    // Get user from users table
-    const { data: userData } = await supabase
-      .from('users')
-      .select('id')
-      .eq('auth_id', user.id)
-      .single()
-
-    if (!userData) {
-      return NextResponse.json({ error: 'User not found' }, { status: 404 })
-    }
-
     const admin = getSupabaseAdmin()
 
     // Get the email and verify ownership
@@ -44,7 +33,7 @@ export async function POST(
     }
 
     // Verify ownership
-    if (email.email_account?.user_id !== userData.id) {
+    if (email.email_account?.user_id !== user.id) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 403 })
     }
 
@@ -95,7 +84,7 @@ export async function POST(
       }
     }
 
-    console.log(`Email ${emailId} cancelled by user ${userData.id}`)
+    console.log(`Email ${emailId} cancelled by user ${user.id}`)
 
     return NextResponse.json({ success: true, cancelled: true })
   } catch (error) {

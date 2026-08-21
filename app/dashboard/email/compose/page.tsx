@@ -38,15 +38,8 @@ export default async function ComposePage({
     .eq('is_deleted', false)
     .order('is_primary', { ascending: false })
 
-  // Resolve org from users shim (profiles do not carry organization_id)
-  const { data: userRow } = await supabaseAdmin
-    .from('users')
-    .select('organization_id')
-    .eq('id', user.id)
-    .maybeSingle()
-
-  // Get the org's own email domain (strictly org-scoped — never another company's)
-  const sharedDomain = await getOrgEmailDomain(userRow?.organization_id)
+  // Get the verified email domain
+  const sharedDomain = await getOrgEmailDomain(null)
 
   // If no accounts, show prompt to create email username
   if (!accounts || accounts.length === 0) {

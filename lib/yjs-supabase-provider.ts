@@ -250,7 +250,7 @@ export class YjsSupabaseProvider {
     try {
       const { data: note, error } = await this.supabase
         .from('lesson_current_notes')
-        .select('yjs_document_state')
+        .select('*')
         .eq('student_id', this.documentId)
         .maybeSingle()
 
@@ -261,9 +261,10 @@ export class YjsSupabaseProvider {
         return
       }
 
-      if (note?.yjs_document_state) {
+      const rawState = (note as any)?.yjs_state || (note as any)?.yjs_document_state
+      if (rawState) {
         try {
-          const state = decodeUpdate(note.yjs_document_state)
+          const state = decodeUpdate(rawState)
           Y.applyUpdate(this.ydoc, state, 'remote')
         } catch (error) {
           console.error('[YjsProvider] Error applying initial state:', error)
@@ -334,14 +335,28 @@ export class YjsSupabaseProvider {
 
       const contentHtml = convertXmlToHtml(xmlFragment)
 
-      const { error } = await this.supabase
+      let { error } = await this.supabase
         .from('lesson_current_notes')
         .upsert({
           student_id: this.documentId,
-          yjs_document_state: encodedState,
+          yjs_state: encodedState,
           content: contentHtml,
+          content_html: contentHtml,
           updated_at: new Date().toISOString(),
         })
+
+      if (error && error.code === '42703') {
+        // Retry with yjs_document_state if yjs_state column does not exist
+        const retryResult = await this.supabase
+          .from('lesson_current_notes')
+          .upsert({
+            student_id: this.documentId,
+            yjs_document_state: encodedState,
+            content: contentHtml,
+            updated_at: new Date().toISOString(),
+          })
+        error = retryResult.error
+      }
 
       if (error) {
         console.error('[YjsProvider] Error saving to database:', error)

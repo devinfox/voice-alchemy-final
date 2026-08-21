@@ -55,7 +55,7 @@ export async function POST(request: NextRequest) {
       // Find the email by SendGrid message ID
       const { data: email } = await getSupabaseAdmin()
         .from('emails')
-        .select('id, account_id, status')
+        .select('id, email_account_id, status')
         .or(`sendgrid_message_id.eq.${cleanMessageId},sendgrid_message_id.eq.${sgMessageId}`)
         .limit(1)
         .single()
@@ -65,23 +65,19 @@ export async function POST(request: NextRequest) {
         continue
       }
 
-      // Create event record
+      // Create event record aligned with email_events schema
       await getSupabaseAdmin().from('email_events').insert({
         email_id: email.id,
+        sendgrid_message_id: sgMessageId,
         event_type: event.event,
-        event_data: {
-          email: event.email,
-          timestamp: event.timestamp,
-          useragent: event.useragent,
-          ip: event.ip,
-          url: event.url,
-          reason: event.reason,
-          status: event.status,
-          bounce_classification: event.bounce_classification,
-          response: event.response,
-        },
-        sendgrid_event_id: event.sg_event_id,
-        occurred_at: new Date(event.timestamp * 1000).toISOString(),
+        event_timestamp: new Date(event.timestamp * 1000).toISOString(),
+        recipient: event.email,
+        url: event.url,
+        user_agent: event.useragent,
+        ip_address: event.ip,
+        bounce_type: event.bounce_classification,
+        bounce_reason: event.reason,
+        raw_payload: event,
       })
 
       // Update email status based on event type

@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { getSupabaseAdmin } from '@/lib/supabase-admin'
+import { createClient } from '@/lib/supabase-server'
 import sharp from 'sharp'
 
 
@@ -76,6 +77,12 @@ async function optimizeImage(buffer: Buffer, mimeType: string): Promise<{ buffer
 
 export async function POST(request: NextRequest) {
   try {
+    const supabase = await createClient()
+    const { data: { user } } = await supabase.auth.getUser()
+    if (!user) {
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+    }
+
     const contentType = request.headers.get('content-type') || ''
 
     let fileBuffer: Buffer

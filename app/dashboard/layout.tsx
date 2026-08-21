@@ -21,14 +21,14 @@ export default async function DashboardLayout({
 
   return (
     <div
-      className="min-h-screen flex"
+      className="min-h-screen w-full flex flex-col lg:flex-row relative overflow-x-hidden"
       style={{
         background: 'linear-gradient(135deg, #0f0b1e 0%, #171229 25%, #1f1839 50%, #171229 75%, #0f0b1e 100%)',
       }}
     >
       {/* Futuristic overlay with subtle grid pattern */}
       <div
-        className="fixed inset-0 pointer-events-none opacity-30"
+        className="fixed inset-0 pointer-events-none opacity-30 z-0"
         style={{
           backgroundImage: `
             radial-gradient(ellipse at 20% 20%, rgba(206, 180, 102, 0.08) 0%, transparent 50%),
@@ -38,18 +38,19 @@ export default async function DashboardLayout({
         }}
       />
 
-      {/* Mobile Navigation */}
+      {/* Mobile Navigation Header */}
       <MobileNav user={profile} userEmail={user.email} />
 
       {/* Desktop Sidebar */}
       <Sidebar user={profile} userEmail={user.email} />
 
-      <div className="flex-1 flex flex-col relative z-10">
+      {/* Main Content Area */}
+      <div className="flex-1 flex flex-col min-w-0 w-full relative z-10">
         {/* Desktop Header */}
         <Header user={profile} />
 
-        {/* Main Content - add top padding on mobile for fixed header */}
-        <main className="flex-1 p-4 lg:p-6 overflow-auto pt-20 lg:pt-6">
+        {/* Page Content */}
+        <main className="flex-1 p-3 sm:p-4 lg:p-6 w-full max-w-full">
           {children}
         </main>
       </div>

@@ -68,10 +68,10 @@ export default function GladiatorAvatarUpload({ userId, currentAvatar }: Gladiat
 
       const publicUrl = urlData.publicUrl
 
-      // Update user record
+      // Update profile record
       const { error: updateError } = await supabase
-        .from('users')
-        .update({ gladiator_avatar: publicUrl })
+        .from('profiles')
+        .update({ avatar_url: publicUrl })
         .eq('id', userId)
 
       if (updateError) {
@@ -101,10 +101,10 @@ export default function GladiatorAvatarUpload({ userId, currentAvatar }: Gladiat
         .from('gladiator-avatars')
         .remove([`${userId}/gladiator-avatar.png`, `${userId}/gladiator-avatar.jpg`, `${userId}/gladiator-avatar.jpeg`, `${userId}/gladiator-avatar.webp`])
 
-      // Clear user record
+      // Clear profile record
       const { error: updateError } = await supabase
-        .from('users')
-        .update({ gladiator_avatar: null })
+        .from('profiles')
+        .update({ avatar_url: null })
         .eq('id', userId)
 
       if (updateError) {

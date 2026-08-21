@@ -64,13 +64,13 @@ export async function POST(request: NextRequest) {
     }
 
     // Get the user by email
-    const { data: userList, error: listError } = await adminClient.auth.admin.listUsers()
+    const { data: userList, error: listError } = await adminClient.auth.admin.listUsers({ perPage: 1000 })
     if (listError) {
       console.error('[Dev Login] Error listing users:', listError)
       return NextResponse.json({ error: listError.message }, { status: 500 })
     }
 
-    const targetUser = userList.users.find(u => u.email === targetEmail)
+    const targetUser = userList.users.find(u => u.email?.toLowerCase() === targetEmail.toLowerCase())
     if (!targetUser) {
       return NextResponse.json({ error: 'User not found in auth' }, { status: 404 })
     }

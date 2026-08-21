@@ -247,8 +247,15 @@ const SONG_DATABASE: SongResult[] = [
 
 export async function GET(request: NextRequest) {
   try {
+    const supabase = await createClient()
+    const { data: { user } } = await supabase.auth.getUser()
+    if (!user) {
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+    }
+
     const { searchParams } = new URL(request.url)
-    const query = searchParams.get('q')?.toLowerCase().trim()
+    const rawQuery = searchParams.get('q')?.trim() || ''
+    const query = rawQuery.toLowerCase()
 
     if (!query || query.length < 2) {
       return NextResponse.json({
@@ -257,15 +264,17 @@ export async function GET(request: NextRequest) {
       })
     }
 
+    // Clean query for safe PostgREST filter
+    const safeQuery = rawQuery.replace(/[,()%.]/g, ' ').trim()
+
     // First, check our verified song keys cache (most accurate)
-    const supabase = await createClient()
     let verifiedMatches: SongResult[] = []
 
     try {
       const { data: verified } = await supabase
         .from('verified_song_keys')
         .select('*')
-        .or(`title.ilike.%${query}%,artist.ilike.%${query}%`)
+        .or(`title.ilike.%${safeQuery}%,artist.ilike.%${safeQuery}%`)
         .order('confidence', { ascending: false })
         .limit(5)
 

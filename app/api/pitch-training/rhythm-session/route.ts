@@ -110,8 +110,10 @@ export async function POST(request: NextRequest) {
     const startTime = new Date(startedAt)
     const sessionDate = startTime.toISOString().split('T')[0]
 
+    const admin = createSupabaseAdmin()
+
     // Create new session (allow multiple sessions per day for rhythm training)
-    const { data: session, error: sessionError } = await supabase
+    const { data: session, error: sessionError } = await admin
       .from('rhythm_training_sessions')
       .insert({
         user_id: user.id,
@@ -141,7 +143,7 @@ export async function POST(request: NextRequest) {
 
     if (sessionError) {
       console.error('Rhythm session insert error:', sessionError)
-      return NextResponse.json({ error: 'Failed to save session' }, { status: 500 })
+      return NextResponse.json({ error: sessionError.message || 'Failed to save session' }, { status: 500 })
     }
 
     // Insert beat metrics if provided
@@ -156,7 +158,7 @@ export async function POST(request: NextRequest) {
         timing_result: b.timingResult,
       }))
 
-      const { error: metricsError } = await supabase
+      const { error: metricsError } = await admin
         .from('rhythm_training_beat_metrics')
         .insert(beatMetricsToInsert)
 

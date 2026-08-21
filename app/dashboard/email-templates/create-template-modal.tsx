@@ -149,7 +149,7 @@ export function CreateTemplateModal({
                     type="text"
                     value={formData.subject}
                     onChange={(e) => setFormData({ ...formData, subject: e.target.value })}
-                    placeholder="e.g., Welcome to Citadel Gold!"
+                    placeholder="e.g., Welcome to Voice Alchemy Academy!"
                     className="glass-input w-full px-3 py-2 text-sm"
                   />
                 </div>

@@ -456,78 +456,29 @@ export async function findLeadOrContactByEmail(email: string, organizationId: st
   contact_name: string | null
 }> {
   const normalizedEmail = email.toLowerCase().trim()
-
-  // Org isolation: matching runs with the service-role client (RLS bypassed),
-  // so we MUST scope every lookup to the caller's organization. With no org we
-  // refuse to match rather than risk linking across organizations.
-  if (!organizationId) {
+  if (!normalizedEmail) {
     return { lead_id: null, contact_id: null, lead_name: null, contact_name: null }
   }
 
-  // Prefer contacts (client-side entity) so converted leads stay archived/frozen.
-  const { data: contact } = await supabaseAdmin
-    .from('contacts')
-    .select('id, first_name, last_name')
-    .ilike('email', normalizedEmail)
-    .eq('organization_id', organizationId)
-    .eq('is_deleted', false)
-    .limit(1)
-    .single()
+  try {
+    const { data: profile } = await supabaseAdmin
+      .from('profiles')
+      .select('id, first_name, last_name, name')
+      .ilike('email', normalizedEmail)
+      .limit(1)
+      .maybeSingle()
 
-  if (contact) {
-    return {
-      lead_id: null,
-      contact_id: contact.id,
-      lead_name: null,
-      contact_name: `${contact.first_name || ''} ${contact.last_name || ''}`.trim() || null
-    }
-  }
-
-  // Search leads second, but do not attach to converted leads.
-  const { data: lead } = await supabaseAdmin
-    .from('leads')
-    .select('id, first_name, last_name, status, converted_contact_id')
-    .ilike('email', normalizedEmail)
-    .eq('organization_id', organizationId)
-    .eq('is_deleted', false)
-    .limit(1)
-    .single()
-
-  if (lead) {
-    if (lead.status === 'converted') {
-      if (lead.converted_contact_id) {
-        const { data: convertedContact } = await supabaseAdmin
-          .from('contacts')
-          .select('id, first_name, last_name')
-          .eq('id', lead.converted_contact_id)
-          .eq('organization_id', organizationId)
-          .eq('is_deleted', false)
-          .single()
-
-        if (convertedContact) {
-          return {
-            lead_id: null,
-            contact_id: convertedContact.id,
-            lead_name: null,
-            contact_name: `${convertedContact.first_name || ''} ${convertedContact.last_name || ''}`.trim() || null
-          }
-        }
-      }
-
+    if (profile) {
+      const name = profile.name || `${profile.first_name || ''} ${profile.last_name || ''}`.trim() || null
       return {
         lead_id: null,
-        contact_id: null,
+        contact_id: profile.id,
         lead_name: null,
-        contact_name: null
+        contact_name: name,
       }
     }
-
-    return {
-      lead_id: lead.id,
-      contact_id: null,
-      lead_name: `${lead.first_name || ''} ${lead.last_name || ''}`.trim() || null,
-      contact_name: null
-    }
+  } catch (err) {
+    console.error('Error finding profile by email:', err)
   }
 
   return {
@@ -542,27 +493,7 @@ async function resolveConvertedLeadToContact(leadId: string | null, organization
   leadId: string | null
   contactId: string | null
 }> {
-  if (!leadId || !organizationId) {
-    return { leadId, contactId: null }
-  }
-
-  const { data: lead } = await supabaseAdmin
-    .from('leads')
-    .select('id, status, converted_contact_id')
-    .eq('id', leadId)
-    .eq('organization_id', organizationId)
-    .eq('is_deleted', false)
-    .single()
-
-  if (!lead) {
-    return { leadId, contactId: null }
-  }
-
-  if (lead.status === 'converted' && lead.converted_contact_id) {
-    return { leadId: null, contactId: lead.converted_contact_id }
-  }
-
-  return { leadId: lead.id, contactId: null }
+  return { leadId, contactId: null }
 }
 
 /**

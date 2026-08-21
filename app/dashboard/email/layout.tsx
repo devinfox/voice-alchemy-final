@@ -38,15 +38,8 @@ export default async function EmailLayout({
     )
   }
 
-  // Prefer users mirror (email shim); fall back to auth email
   const admin = getSupabaseAdmin()
-  const { data: userRow } = await admin
-    .from('users')
-    .select('id, email')
-    .eq('id', profile.id)
-    .maybeSingle()
-
-  const userEmail = userRow?.email || authUser.email || ''
+  const userEmail = authUser.email || ''
 
   const { data: accounts } = await admin
     .from('email_accounts')

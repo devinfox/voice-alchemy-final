@@ -12,15 +12,7 @@ async function getUserOrgId() {
 
   if (authError || !user) return { error: 'Unauthorized', status: 401, organizationId: null as string | null }
 
-  const { data: crmUser } = await getSupabaseAdmin()
-    .from('users')
-    .select('id, organization_id')
-    .eq('auth_id', user.id)
-    .single()
-
-  if (!crmUser) return { error: 'User not found', status: 404, organizationId: null as string | null }
-
-  return { error: null as string | null, status: 200, organizationId: crmUser.organization_id || null }
+  return { error: null as string | null, status: 200, organizationId: null as string | null }
 }
 
 function parseKind(value: string | null): ByeTalkFileKind | null {

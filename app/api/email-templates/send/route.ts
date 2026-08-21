@@ -33,15 +33,18 @@ export async function POST(request: NextRequest) {
       process.env.SUPABASE_SERVICE_ROLE_KEY!
     )
 
-    // Get user from users table
-    let { data: userData } = await serviceClient
-      .from('users')
-      .select('id, first_name, last_name, email')
-      .eq('auth_id', user.id)
-      .single()
+    // Get user from profiles table
+    const { data: profile } = await serviceClient
+      .from('profiles')
+      .select('id, first_name, last_name, name, email')
+      .eq('id', user.id)
+      .maybeSingle()
 
-    if (!userData) {
-      return NextResponse.json({ error: 'User profile not found' }, { status: 404 })
+    const userData = {
+      id: user.id,
+      first_name: profile?.first_name || profile?.name?.split(' ')[0] || user.email?.split('@')[0] || 'User',
+      last_name: profile?.last_name || profile?.name?.split(' ').slice(1).join(' ') || '',
+      email: profile?.email || user.email || '',
     }
 
     // Get user's active email account with verified domain
@@ -51,11 +54,11 @@ export async function POST(request: NextRequest) {
         *,
         domain:email_domains(id, domain, verification_status)
       `)
-      .eq('user_id', userData.id)
+      .eq('user_id', user.id)
       .eq('is_active', true)
       .eq('is_deleted', false)
       .limit(1)
-      .single()
+      .maybeSingle()
 
     if (accountError || !emailAccount) {
       return NextResponse.json({
@@ -81,13 +84,11 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'Template not found' }, { status: 404 })
     }
 
-    // VAAA: recipients are users (students/teachers), not CRM leads.
-    // Accept lead_ids for API compatibility with the shared send-template modal.
+    // VAAA: recipients are users (students/teachers) from profiles
     const { data: leads, error: leadsError } = await serviceClient
-      .from('users')
-      .select('id, first_name, last_name, email')
+      .from('profiles')
+      .select('id, first_name, last_name, name, email')
       .in('id', lead_ids)
-      .eq('is_deleted', false)
       .not('email', 'is', null)
 
     if (leadsError) {

@@ -43,3 +43,11 @@ public/nimbus-intro-animation.mov
 scripts/check-sendgrid.mjs
 twilio-numbers/
 push-env.sh
+COMPILED_CODEBASE.md
+*.md.bak
+*.docx
+*.pdf
+screenshots/
+capture_all_flows.py
+generate_flow_pdfs.py
+supabase/.temp/

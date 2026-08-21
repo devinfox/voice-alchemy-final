@@ -4,6 +4,34 @@ import { useState, useEffect, useRef, useCallback } from 'react'
 import Script from 'next/script'
 import { Music, Play, Square, Save, RotateCcw, ChevronUp, ChevronDown, Mic, MicOff, Check, X, ArrowUp, ArrowDown, ArrowUpDown, Maximize2, Minimize2, Volume2, VolumeX } from 'lucide-react'
 import { analyzeBuffer } from '@/lib/pitch-detection'
+import { SpotlightTour, SpotlightTriggerButton, SpotlightStep } from '@/components/spotlight-tour'
+
+const scaleTourSteps: SpotlightStep[] = [
+  {
+    target: '[data-tour="scale-settings"]',
+    title: '1. Configure Your Scale',
+    content: 'Select your scale pattern (Major, Pentatonic, Blues), root note (C, D, E, etc.), and vocal octave range.',
+    placement: 'bottom',
+  },
+  {
+    target: '[data-tour="listen-scale-btn"]',
+    title: '2. Step 1: Always Listen First!',
+    content: 'Click "1. Listen to Scale" to hear the reference notes played out. Internalizing the interval sequence with your ear before you sing is essential for pitch mastery.',
+    placement: 'bottom',
+  },
+  {
+    target: '[data-tour="start-practice-btn"]',
+    title: '3. Step 2: Start Practice & Sing',
+    content: 'Once you know the scale, click "2. Start Practice" and sing each note into your microphone in order. Hold each pitch steady.',
+    placement: 'bottom',
+  },
+  {
+    target: '[data-tour="scale-notes-strip"]',
+    title: '4. Visual Interval Sequence',
+    content: 'Each note box highlights as you sing and turns green with an accuracy percentage as your voice hits the target frequency.',
+    placement: 'top',
+  },
+]
 
 // Audio playback constants
 const MIDDLE_A = 440
@@ -445,15 +473,15 @@ export default function ScaleTrainer({ variant = 'floating' }: ScaleTrainerProps
 
   const updateStats = useCallback(() => {
     const totalExpected = scaleNotes.length
-    const totalSung = sungNotes.length + 1
+    const totalSung = Math.min(totalExpected, sungNotes.length)
 
     const metrics = Array.from(noteMetrics.values())
     const avgPitchAccuracy = metrics.length > 0
       ? metrics.reduce((s, m) => s + m.pitchAccuracy, 0) / metrics.length
       : 0
 
-    const sequenceAccuracy = (totalSung / totalExpected) * 100
-    const overallScore = (sequenceAccuracy * 0.5) + (avgPitchAccuracy * 0.5)
+    const sequenceAccuracy = totalExpected > 0 ? Math.min(100, (totalSung / totalExpected) * 100) : 0
+    const overallScore = Math.min(100, (sequenceAccuracy * 0.5) + (avgPitchAccuracy * 0.5))
 
     setSessionStats({
       notesAttempted: totalExpected,
@@ -613,6 +641,7 @@ export default function ScaleTrainer({ variant = 'floating' }: ScaleTrainerProps
           </div>
 
           <div className="flex items-center gap-2">
+            <SpotlightTriggerButton tourKey="scale_trainer_v4" label="How to" />
             {isListening && (
               <div className="flex items-center gap-2 text-sm text-green-400 mr-2">
                 <Mic size={16} />
@@ -634,8 +663,11 @@ export default function ScaleTrainer({ variant = 'floating' }: ScaleTrainerProps
           </div>
         </div>
 
+        {/* Real On-Page Spotlight Tour */}
+        <SpotlightTour tourKey="scale_trainer_v4" steps={scaleTourSteps} />
+
         {/* Settings */}
-        <div className="grid grid-cols-2 md:grid-cols-5 gap-4 mb-6">
+        <div data-tour="scale-settings" className="grid grid-cols-2 md:grid-cols-5 gap-4 mb-6">
           <div>
             <label className="block text-xs text-white/50 mb-1">Scale</label>
             <select
@@ -783,7 +815,7 @@ export default function ScaleTrainer({ variant = 'floating' }: ScaleTrainerProps
             <Volume2 size={14} className="text-white/40" />
           </div>
 
-          <div className="flex flex-wrap gap-2">
+          <div data-tour="scale-notes-strip" className="flex flex-wrap gap-2">
             {scaleNotes.map((note, idx) => {
               const isCurrentNote = idx === currentNoteIndex
               const isCompleted = idx < currentNoteIndex
@@ -910,32 +942,61 @@ export default function ScaleTrainer({ variant = 'floating' }: ScaleTrainerProps
         )}
 
         {/* Controls */}
-        <div className="flex items-center gap-3">
+        <div className="flex flex-wrap items-center gap-3">
+          {/* 1. Listen to Scale (Step 1 - Listen first) */}
+          <button
+            data-tour="listen-scale-btn"
+            onClick={isPlayingScale ? stopScalePlayback : playEntireScale}
+            disabled={isPracticing}
+            className={`flex items-center gap-2 px-5 py-3 rounded-xl font-medium transition-all ${
+              isPlayingScale
+                ? 'bg-pink-500/20 text-pink-300 border border-pink-500/50 shadow-lg shadow-pink-500/10'
+                : 'glass-button hover:bg-white/10 text-white'
+            } ${isPracticing ? 'opacity-50 cursor-not-allowed' : ''}`}
+            title="Listen to the scale before singing"
+          >
+            {isPlayingScale ? (
+              <>
+                <Square size={18} className="text-pink-400" />
+                <span>Stop Audio</span>
+              </>
+            ) : (
+              <>
+                <Volume2 size={18} className="text-pink-400" />
+                <span>1. Listen to Scale</span>
+              </>
+            )}
+          </button>
+
+          {/* 2. Start Practice (Step 2 - Sing next) */}
           {!isPracticing ? (
             <button
+              data-tour="start-practice-btn"
               onClick={startPractice}
-              className="flex items-center gap-2 px-6 py-3 rounded-xl bg-gradient-to-r from-pink-500 to-purple-500 text-white font-medium hover:from-pink-400 hover:to-purple-400 transition-all"
+              disabled={isPlayingScale}
+              className={`flex items-center gap-2 px-6 py-3 rounded-xl bg-gradient-to-r from-pink-500 to-purple-500 text-white font-medium hover:from-pink-400 hover:to-purple-400 transition-all shadow-lg shadow-purple-500/20 ${isPlayingScale ? 'opacity-50 cursor-not-allowed' : ''}`}
+              title="Sing and practice the scale"
             >
               <Play size={18} />
-              Start Practice
+              <span>2. Start Practice</span>
             </button>
           ) : (
             <button
               onClick={stopPractice}
-              className="glass-button flex items-center gap-2 px-6 py-3 rounded-xl border-red-500/50 text-red-400 hover:bg-red-500/10"
+              className="glass-button flex items-center gap-2 px-6 py-3 rounded-xl border-red-500/50 text-red-400 hover:bg-red-500/10 shadow-lg shadow-red-500/20"
             >
               <Square size={18} />
-              Stop
+              <span>Stop Practice</span>
             </button>
           )}
 
           <button
             onClick={resetSession}
             disabled={isPracticing}
-            className="glass-button flex items-center gap-2 px-4 py-3 rounded-xl disabled:opacity-50"
+            className="glass-button flex items-center gap-2 px-5 py-3 rounded-xl disabled:opacity-50 text-white/80 hover:text-white"
           >
             <RotateCcw size={18} />
-            Reset
+            <span>Reset</span>
           </button>
 
           {sungNotes.length > 0 && !isPracticing && (
@@ -945,7 +1006,7 @@ export default function ScaleTrainer({ variant = 'floating' }: ScaleTrainerProps
               className="glass-button-gold flex items-center gap-2 px-6 py-3 rounded-xl disabled:opacity-50"
             >
               <Save size={18} />
-              {isSaving ? 'Saving...' : 'Save Session'}
+              <span>{isSaving ? 'Saving...' : 'Save Session'}</span>
             </button>
           )}
         </div>

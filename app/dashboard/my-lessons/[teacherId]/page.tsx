@@ -2,7 +2,17 @@
 
 import { useState, useEffect, use } from 'react'
 import Link from 'next/link'
-import { ArrowLeft, Calendar, Clock } from 'lucide-react'
+import {
+  ArrowLeft,
+  Calendar,
+  Clock,
+  Video,
+  Sparkles,
+  Award,
+  CheckCircle2,
+  Activity,
+  Mic,
+} from 'lucide-react'
 import SessionView from '@/components/SessionView'
 
 interface User {
@@ -82,7 +92,6 @@ export default function StudentLessonPage({ params }: { params: Promise<{ teache
 
   const fetchLessonData = async () => {
     try {
-      // Fetch the lesson data directly using booking ID
       const lessonRes = await fetch(`/api/lessons/${bookingId}`)
       const data = await lessonRes.json()
 
@@ -100,23 +109,23 @@ export default function StudentLessonPage({ params }: { params: Promise<{ teache
 
   if (loading) {
     return (
-      <div className="flex items-center justify-center h-64">
-        <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-white"></div>
+      <div className="flex items-center justify-center min-h-[500px]">
+        <div className="animate-spin rounded-full h-12 w-12 border-t-2 border-b-2 border-[#CEB466]"></div>
       </div>
     )
   }
 
   if (error || !lessonData) {
     return (
-      <div className="space-y-4">
+      <div className="p-6 space-y-4 max-w-4xl mx-auto">
         <Link
           href="/dashboard/my-lessons"
-          className="inline-flex items-center gap-2 text-gray-400 hover:text-white transition-colors"
+          className="inline-flex items-center gap-2 text-gray-400 hover:text-white transition-colors text-xs font-semibold"
         >
           <ArrowLeft className="w-4 h-4" />
-          Back to my lessons
+          <span>Back to My Lessons</span>
         </Link>
-        <div className="bg-red-500/10 border border-red-500 text-red-400 px-4 py-3 rounded-lg">
+        <div className="glass-card p-6 rounded-2xl border border-red-500/30 text-red-300 text-sm">
           {error || 'Failed to load lesson data'}
         </div>
       </div>
@@ -126,53 +135,72 @@ export default function StudentLessonPage({ params }: { params: Promise<{ teache
   const { relationship } = lessonData
   const teacher = relationship.instructor
   const student = relationship.student
+  const teacherDisplayName = getUserDisplayName(teacher)
 
   return (
-    <div className="space-y-6">
+    <div className="p-4 sm:p-6 lg:p-8 space-y-6 max-w-7xl mx-auto">
       {/* Header */}
-      <div className="flex items-center gap-4">
-        <Link href="/dashboard/my-lessons" className="p-2 hover:bg-white/10 rounded-lg transition-colors">
-          <ArrowLeft className="w-5 h-5 text-gray-400" />
-        </Link>
-        <div className="flex items-center gap-4">
-          <div className="w-14 h-14 rounded-full bg-gradient-to-br from-green-500 to-teal-600 flex items-center justify-center text-white font-bold text-xl">
-            {getUserInitials(teacher)}
+      <div className="glass-card-luxe p-6 sm:p-8 rounded-3xl border border-[#CEB466]/40 relative overflow-hidden flex flex-col sm:flex-row items-start sm:items-center justify-between gap-6">
+        <div className="flex items-center gap-4 relative z-10">
+          <Link
+            href="/dashboard/my-lessons"
+            className="p-2.5 rounded-xl bg-white/[0.06] hover:bg-white/[0.12] text-gray-300 hover:text-white transition-colors"
+          >
+            <ArrowLeft className="w-5 h-5" />
+          </Link>
+
+          <div className="flex items-center gap-4">
+            <div className="w-14 h-14 rounded-2xl bg-gradient-to-br from-[#CEB466] to-[#9c8644] flex items-center justify-center text-[#171229] font-bold text-xl shadow-lg shadow-[#CEB466]/20">
+              {getUserInitials(teacher)}
+            </div>
+            <div>
+              <div className="flex items-center gap-2">
+                <h1 className="text-2xl sm:text-3xl font-bold text-white font-luxury">
+                  Coaching with {teacherDisplayName}
+                </h1>
+                <span className="px-2.5 py-0.5 rounded-full bg-emerald-500/20 text-emerald-300 text-[10px] font-bold">
+                  Active
+                </span>
+              </div>
+              <p className="text-xs text-gray-400 mt-0.5">Live Video Room & Real-time Collaborative Notes</p>
+            </div>
           </div>
-          <div>
-            <h1 className="text-2xl font-bold text-white">Lessons with {getUserDisplayName(teacher)}</h1>
-            {teacher.name && (teacher.first_name || teacher.last_name) && (
-              <p className="text-gray-400">
-                {teacher.first_name} {teacher.last_name}
-              </p>
-            )}
+        </div>
+
+        <div className="flex items-center gap-3 relative z-10">
+          <div className="glass-card-subtle px-4 py-2 rounded-2xl border border-white/10 text-center">
+            <span className="text-[10px] uppercase text-gray-400 font-bold">Studio Status</span>
+            <p className="text-xs font-bold text-emerald-400 mt-0.5">Ready for Class</p>
           </div>
         </div>
       </div>
 
-      {/* Lesson Info Cards */}
+      {/* Lesson Details Cards */}
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-        {/* Relationship Started Card */}
-        <div className="bg-white/5 backdrop-blur-sm rounded-xl border border-white/10 p-5">
-          <div className="flex items-center gap-2 text-gray-400 mb-3">
-            <Calendar className="w-4 h-4" />
-            <span className="text-sm font-medium">Started</span>
+        <div className="glass-card-subtle p-5 rounded-2xl border border-white/10 space-y-1">
+          <div className="flex items-center gap-2 text-gray-400">
+            <Calendar className="w-4 h-4 text-[#CEB466]" />
+            <span className="text-xs font-semibold uppercase tracking-wider">Coaching Journey Began</span>
           </div>
-          <p className="text-xl font-semibold text-white">{formatDate(relationship.created_at)}</p>
+          <p className="text-lg font-bold text-white pt-1">{formatDate(relationship.created_at)}</p>
         </div>
 
-        {/* Status Card */}
-        <div className="bg-white/5 backdrop-blur-sm rounded-xl border border-white/10 p-5">
-          <div className="flex items-center gap-2 text-gray-400 mb-3">
-            <Clock className="w-4 h-4" />
-            <span className="text-sm font-medium">Status</span>
+        <div className="glass-card-subtle p-5 rounded-2xl border border-white/10 space-y-1">
+          <div className="flex items-center gap-2 text-gray-400">
+            <Clock className="w-4 h-4 text-[#CEB466]" />
+            <span className="text-xs font-semibold uppercase tracking-wider">Lesson Format</span>
           </div>
-          <p className="text-xl font-semibold text-green-400 capitalize">{relationship.status}</p>
+          <p className="text-lg font-bold text-white pt-1">Live 1-on-1 Studio Video & Audio Review</p>
         </div>
       </div>
 
-      {/* Session View - Video + Notes + Archive */}
-      {/* For students, isAdmin=false so they can't start/end class, only view */}
-      <SessionView studentId={student.id} bookingId={bookingId} isAdmin={lessonData.isTeacher} currentUser={lessonData.currentUser} />
+      {/* Session View - Video + Notes */}
+      <SessionView
+        studentId={student.id}
+        bookingId={bookingId}
+        isAdmin={lessonData.isTeacher}
+        currentUser={lessonData.currentUser}
+      />
     </div>
   )
 }

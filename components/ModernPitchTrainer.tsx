@@ -5,6 +5,34 @@ import { Music, X, Maximize2, Minimize2, Circle, Piano, Mic, MicOff, TrendingUp,
 import Script from 'next/script'
 import { getSharedMicStream, subscribeSharedMicStream } from '@/lib/shared-mic-stream'
 import { analyzeBuffer, getNoteFrequency } from '@/lib/pitch-detection'
+import { SpotlightTour, SpotlightTriggerButton, SpotlightStep } from '@/components/spotlight-tour'
+
+const pitchTourSteps: SpotlightStep[] = [
+  {
+    target: '[data-tour="pitch-mic-btn"]',
+    title: '1. Activate Microphone',
+    content: 'Click "Start Mic" to turn on real-time pitch analysis. The engine detects your voice with millisecond precision.',
+    placement: 'bottom',
+  },
+  {
+    target: '[data-tour="pitch-note-display"]',
+    title: '2. Live Pitch & Hertz Display',
+    content: 'Shows your currently sung note (e.g. A4), octave, and exact frequency in Hz with cents deviation (+ sharp / - flat).',
+    placement: 'bottom',
+  },
+  {
+    target: '[data-tour="pitch-wheel-keyboard"]',
+    title: '3. Select Target Note to Match',
+    content: 'Click any note on the Wheel or Keyboard to hear its reference pitch, then sing into your mic to match it.',
+    placement: 'top',
+  },
+  {
+    target: '[data-tour="pitch-octave-selector"]',
+    title: '4. Vocal Octave Range',
+    content: 'Switch octaves (2 to 6) to fit your vocal type—from Bass and Tenor up to Alto and Soprano.',
+    placement: 'top',
+  },
+]
 
 // ============================================================================
 // TUNER LOGIC - Exact port from original tuner.js
@@ -569,7 +597,7 @@ export default function ModernPitchTrainer({ variant = 'floating' }: ModernPitch
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          startedAt: session.startedAt?.toISOString(),
+          startedAt: session.startedAt ? session.startedAt.toISOString() : new Date().toISOString(),
           endedAt: new Date().toISOString(),
           noteMetrics
         })
@@ -577,14 +605,18 @@ export default function ModernPitchTrainer({ variant = 'floating' }: ModernPitch
 
       const result = await response.json()
 
+      if (!response.ok) {
+        throw new Error(result.error || 'Failed to save session')
+      }
+
       if (result.saved) {
-        setSaveMessage(`Session saved! Score: ${result.overallScore.toFixed(1)}%${result.isNewBest ? ' (New best!)' : ''}`)
+        setSaveMessage(`Session saved! Score: ${result.overallScore?.toFixed(1) ?? 0}%${result.isNewBest ? ' (New best!)' : ''}`)
       } else {
         setSaveMessage(result.message || 'Session not saved')
       }
-    } catch (error) {
+    } catch (error: any) {
       console.error('Save error:', error)
-      setSaveMessage('Failed to save session')
+      setSaveMessage(error?.message || 'Failed to save session')
     } finally {
       setIsSaving(false)
       setTimeout(() => setSaveMessage(null), 5000)
@@ -1087,6 +1119,7 @@ export default function ModernPitchTrainer({ variant = 'floating' }: ModernPitch
                 </div>
               </div>
               <div className="flex items-center gap-2">
+                <SpotlightTriggerButton tourKey="pitch_trainer_v4" label="How to" />
                 <button
                   onClick={() => setShowProgress(!showProgress)}
                   className={`p-2.5 rounded-xl transition-colors ${
@@ -1119,6 +1152,9 @@ export default function ModernPitchTrainer({ variant = 'floating' }: ModernPitch
                 </button>
               </div>
             </div>
+
+            {/* Real On-Page Spotlight Tour */}
+            <SpotlightTour tourKey="pitch_trainer_v4" steps={pitchTourSteps} />
 
             {/* Main Content */}
             <div className="p-6 h-[calc(100%-72px)] overflow-y-auto">
@@ -1166,6 +1202,7 @@ export default function ModernPitchTrainer({ variant = 'floating' }: ModernPitch
                 />
                 <span className="text-sm text-slate-300 w-8">{sensitivity}</span>
                 <button
+                  data-tour="pitch-mic-btn"
                   onClick={isListening ? stopListening : startListening}
                   className={`flex items-center gap-2 px-4 py-2 text-sm font-medium rounded-xl transition-all ${
                     isListening
@@ -1197,7 +1234,7 @@ export default function ModernPitchTrainer({ variant = 'floating' }: ModernPitch
               {isListening && renderMeter()}
 
               {/* Detected Note Display */}
-              <div className="text-center mb-6">
+              <div data-tour="pitch-note-display" className="text-center mb-6">
                 <div className="inline-flex items-baseline gap-2 min-h-[60px]">
                   {detectedNote ? (
                     <>
@@ -1253,12 +1290,12 @@ export default function ModernPitchTrainer({ variant = 'floating' }: ModernPitch
               </div>
 
               {/* Note Selector */}
-              <div className="mb-8">
+              <div data-tour="pitch-wheel-keyboard" className="mb-8">
                 {mode === 'wheel' ? renderWheel() : renderKeyboard()}
               </div>
 
               {/* Octave Selector */}
-              <div className="flex justify-center">
+              <div data-tour="pitch-octave-selector" className="flex justify-center">
                 <div className="inline-flex bg-slate-800/50 rounded-2xl p-2 border border-slate-700/50 gap-1">
                   {availableOctaves.map((octave) => (
                     <button

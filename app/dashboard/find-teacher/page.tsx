@@ -156,48 +156,7 @@ export default function FindTeacherPage() {
 
   return (
     <div className="relative min-h-[calc(100vh-8rem)]">
-      {/* Coming Soon Overlay */}
-      <div className="absolute inset-0 z-50 flex items-center justify-center">
-        {/* Glassmorphic backdrop */}
-        <div className="absolute inset-0 bg-[#171229]/80 backdrop-blur-md" />
-
-        {/* Coming Soon Card */}
-        <div className="relative z-10 max-w-md mx-auto text-center px-6">
-          {/* Logo */}
-          <div className="mb-8">
-            <Image
-              src="/voice-alchemy-logo-stacked.png"
-              alt="Voice Alchemy Academy"
-              width={180}
-              height={44}
-              className="mx-auto"
-            />
-          </div>
-
-          {/* Sparkle Icon */}
-          <div className="w-20 h-20 mx-auto mb-6 rounded-full bg-gradient-to-br from-[#CEB466]/20 to-[#CEB466]/5 border border-[#CEB466]/30 flex items-center justify-center">
-            <Sparkles className="w-10 h-10 text-[#CEB466]" />
-          </div>
-
-          {/* Text */}
-          <h2 className="text-3xl font-bold text-white mb-3">Coming Soon</h2>
-          <p className="text-slate-400 mb-8 leading-relaxed">
-            We&apos;re working on something amazing! The teacher discovery feature will be available soon.
-          </p>
-
-          {/* Back Button */}
-          <Link
-            href="/dashboard"
-            className="inline-flex items-center gap-2 px-6 py-3 bg-gradient-to-r from-[#CEB466] to-[#9c8644] text-[#171229] font-semibold rounded-xl hover:from-[#d4bc70] hover:to-[#a8914a] transition-all shadow-lg shadow-[#CEB466]/20"
-          >
-            <ArrowLeft className="w-4 h-4" />
-            Back to Dashboard
-          </Link>
-        </div>
-      </div>
-
-      {/* Original Content (hidden behind overlay) */}
-      <div className="space-y-6 opacity-20 pointer-events-none select-none">
+      <div className="space-y-6">
         {/* Header */}
         <div className="flex items-center gap-4">
           <Link href="/dashboard/my-lessons" className="p-2 hover:bg-white/10 rounded-lg transition-colors">

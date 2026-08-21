@@ -3,7 +3,7 @@
 import { useState, useRef, useEffect } from 'react'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
-import { Search, ChevronDown, Settings, LogOut, Users, GraduationCap, X } from 'lucide-react'
+import { Search, ChevronDown, Settings, LogOut, Users, GraduationCap, X, Sparkles } from 'lucide-react'
 import { createClient } from '@/lib/supabase'
 import type { User } from '@/types/database.types'
 
@@ -57,11 +57,17 @@ export function Header({ user }: HeaderProps) {
       const supabase = createClient()
 
       try {
+        const safeQuery = searchQuery.replace(/[,()%.]/g, ' ').trim()
+        if (!safeQuery) {
+          setSearchResults([])
+          return
+        }
+
         // Search profiles based on user role
         const { data: profiles } = await supabase
           .from('profiles')
           .select('id, first_name, last_name, name, role')
-          .or(`first_name.ilike.%${searchQuery}%,last_name.ilike.%${searchQuery}%,name.ilike.%${searchQuery}%`)
+          .or(`first_name.ilike.%${safeQuery}%,last_name.ilike.%${safeQuery}%,name.ilike.%${safeQuery}%`)
           .limit(10)
 
         const results: SearchResult[] = (profiles || []).map(p => ({
@@ -99,9 +105,9 @@ export function Header({ user }: HeaderProps) {
     setShowResults(false)
     setSearchQuery('')
     if (isTeacher && result.type === 'student') {
-      router.push('/dashboard/students')
+      router.push(`/dashboard/students?search=${encodeURIComponent(result.name)}`)
     } else if (result.type === 'teacher') {
-      router.push('/dashboard/find-teacher')
+      router.push(`/dashboard/find-teacher?search=${encodeURIComponent(result.name)}`)
     }
   }
 
@@ -177,7 +183,17 @@ export function Header({ user }: HeaderProps) {
       </div>
 
       {/* Actions */}
-      <div className="flex items-center gap-4">
+      <div className="flex items-center gap-3 sm:gap-4">
+        {/* Guided Walkthrough Trigger Button */}
+        <button
+          onClick={() => window.dispatchEvent(new CustomEvent('start-spotlight-dashboard_main_v3'))}
+          className="flex items-center gap-1.5 px-3 py-2 rounded-xl bg-gradient-to-r from-[#CEB466]/20 via-[#CEB466]/10 to-transparent hover:from-[#CEB466]/30 hover:to-[#CEB466]/20 border border-[#CEB466]/40 text-[#CEB466] text-xs font-bold shadow-md shadow-[#CEB466]/10 hover:brightness-110 transition-all"
+          title="Start on-page spotlight walkthrough"
+        >
+          <Sparkles className="w-3.5 h-3.5" />
+          <span className="hidden sm:inline">Page Tour</span>
+        </button>
+
         {/* User Menu with Dropdown */}
         {user && (
           <div className="relative" ref={dropdownRef}>
@@ -202,6 +218,18 @@ export function Header({ user }: HeaderProps) {
             {/* Dropdown Menu */}
             {isProfileOpen && (
               <div className="absolute right-0 mt-2 w-52 glass-card rounded-xl shadow-2xl shadow-black/40 py-2 z-50 border border-white/10 animate-slide-up">
+                <button
+                  onClick={() => {
+                    setIsProfileOpen(false)
+                    window.dispatchEvent(new CustomEvent('start-spotlight-dashboard_main_v3'))
+                  }}
+                  className="w-[calc(100%-16px)] flex items-center gap-3 px-4 py-2.5 text-sm text-[#CEB466] hover:bg-white/[0.06] transition-all duration-200 mx-2 rounded-lg text-left font-medium"
+                >
+                  <div className="w-8 h-8 rounded-lg bg-[#CEB466]/20 flex items-center justify-center text-[#CEB466]">
+                    <Sparkles className="w-4 h-4" />
+                  </div>
+                  Page Tour
+                </button>
                 <Link
                   href="/dashboard/settings"
                   onClick={() => setIsProfileOpen(false)}

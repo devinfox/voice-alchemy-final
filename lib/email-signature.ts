@@ -34,9 +34,9 @@ export interface SignatureConfig {
 // Default signature for Devin Fox
 export const DEVIN_FOX_SIGNATURE: SignatureConfig = {
   name: 'Devin Fox',
-  title: 'Director of Technologies',
+  title: 'Founder & Vocal Instructor',
   phone: '818.209.2305',
-  email: 'devinfox@citadelgold.com',
+  email: 'devin@voicealchemyacademy.com',
   includeTrustBadges: true,
   includeAsSeenOn: true,
 }
@@ -67,24 +67,24 @@ export function generateSignatureHtml(config: SignatureConfig): string {
             </tr>` : ''}
             ${formattedPhone ? `<tr>
               <td style="font-family: Arial, sans-serif; font-size: 14px; color: #333; padding-bottom: 6px;">
-                <span style="margin-right: 8px;">📞</span>${formattedPhone}
+                <span style="font-weight: 600; color: #CEB466; margin-right: 6px;">P:</span>${formattedPhone}
               </td>
             </tr>` : ''}
             <tr>
               <td style="font-family: Arial, sans-serif; font-size: 14px; color: #333; padding-bottom: 6px;">
-                <span style="margin-right: 8px;">✉️</span><a href="mailto:${email}" style="color: #333; text-decoration: none;">${email}</a>
+                <span style="font-weight: 600; color: #CEB466; margin-right: 6px;">E:</span><a href="mailto:${email}" style="color: #333; text-decoration: none;">${email}</a>
               </td>
             </tr>
             <tr>
               <td style="font-family: Arial, sans-serif; font-size: 14px; color: #333;">
-                <span style="margin-right: 8px;">🌐</span><a href="https://www.citadelgold.com" style="color: #333; text-decoration: none;">www.citadelgold.com</a>
+                <span style="font-weight: 600; color: #CEB466; margin-right: 6px;">W:</span><a href="https://www.voicealchemyacademy.com" style="color: #333; text-decoration: none;">www.voicealchemyacademy.com</a>
               </td>
             </tr>
           </table>
         </td>
         <td style="vertical-align: top; padding-left: 20px;">
           <!-- Right Column - Logo -->
-          <img src="${EMAIL_IMAGES.sigLogo}" alt="Citadel Gold" style="height: 80px; width: auto;">
+          <img src="${EMAIL_IMAGES.sigLogo}" alt="Voice Alchemy Academy" style="height: 80px; width: auto;">
         </td>
       </tr>
     </table>
@@ -204,20 +204,20 @@ ${name}
 ${title}
 ${phone}
 ${email}
-www.citadelgold.com
+www.voicealchemyacademy.com
 `.trim()
 }
 
 /**
  * Resolve a rep's job title from their email address.
- * Everyone defaults to "Precious Metals Specialist" except specific named users.
+ * Everyone defaults to "Vocal Coach & Instructor" except specific named users.
  */
 export function resolveRepTitle(email: string): string {
   const normalized = (email || '').trim().toLowerCase()
-  if (normalized === 'devinfox@citadelgold.com') {
-    return 'Director of Technologies'
+  if (normalized === 'devin@voicealchemyacademy.com' || normalized === 'devinfox@voicealchemyacademy.com') {
+    return 'Founder & Vocal Instructor'
   }
-  return 'Precious Metals Specialist'
+  return 'Vocal Coach & Instructor'
 }
 
 /**
@@ -271,24 +271,24 @@ export function generateStandardSignatureHtml(config: StandardSignatureConfig): 
             </tr>` : ''}
             ${formattedPhone ? `<tr>
               <td style="font-family: Arial, sans-serif; font-size: 14px; color: #333; padding-bottom: 6px;">
-                <span style="margin-right: 8px;">📞</span>${formattedPhone}
+                <span style="font-weight: 600; color: #CEB466; margin-right: 6px;">P:</span>${formattedPhone}
               </td>
             </tr>` : ''}
             <tr>
               <td style="font-family: Arial, sans-serif; font-size: 14px; color: #333; padding-bottom: 6px;">
-                <span style="margin-right: 8px;">✉️</span><a href="mailto:${email}" style="color: #333; text-decoration: none;">${email}</a>
+                <span style="font-weight: 600; color: #CEB466; margin-right: 6px;">E:</span><a href="mailto:${email}" style="color: #333; text-decoration: none;">${email}</a>
               </td>
             </tr>
             <tr>
               <td style="font-family: Arial, sans-serif; font-size: 14px; color: #333;">
-                <span style="margin-right: 8px;">🌐</span><a href="https://www.citadelgold.com" style="color: #333; text-decoration: none;">www.citadelgold.com</a>
+                <span style="font-weight: 600; color: #CEB466; margin-right: 6px;">W:</span><a href="https://www.voicealchemyacademy.com" style="color: #333; text-decoration: none;">www.voicealchemyacademy.com</a>
               </td>
             </tr>
           </table>
         </td>
         <td style="vertical-align: top; padding-left: 20px;">
           <!-- Right Column - Logo -->
-          <img src="${EMAIL_IMAGES.sigLogo}" alt="Citadel Gold" style="height: 80px; width: auto;">
+          <img src="${EMAIL_IMAGES.sigLogo}" alt="Voice Alchemy Academy" style="height: 80px; width: auto;">
         </td>
       </tr>
     </table>
@@ -309,9 +309,9 @@ export function generateMinimalSignatureHtml(config: Pick<SignatureConfig, 'name
       <div style="font-size: 16px; font-weight: bold; color: #000;">${name}</div>
       <div style="font-size: 14px; color: #666; margin-top: 2px;">${title}</div>
       <div style="font-size: 14px; color: #333; margin-top: 8px;">
-        <span>📞 ${formattedPhone}</span>
+        <span>P: ${formattedPhone}</span>
         <span style="margin: 0 8px;">|</span>
-        <a href="mailto:${email}" style="color: #333; text-decoration: none;">✉️ ${email}</a>
+        <a href="mailto:${email}" style="color: #333; text-decoration: none;">E: ${email}</a>
       </div>
     </div>
   `

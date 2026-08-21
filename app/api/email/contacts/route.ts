@@ -22,22 +22,11 @@ export async function GET(request: NextRequest) {
     const query = searchParams.get('q')?.toLowerCase() || ''
     const limit = parseInt(searchParams.get('limit') || '20')
 
-    // Get the database user ID (users.id) from auth user ID (auth.uid)
-    const { data: dbUser } = await supabase
-      .from('users')
-      .select('id')
-      .eq('auth_id', user.id)
-      .single()
-
-    if (!dbUser) {
-      return NextResponse.json({ contacts: [] })
-    }
-
     // Get user's email accounts
     const { data: accounts } = await supabase
       .from('email_accounts')
       .select('id, email_address')
-      .eq('user_id', dbUser.id)
+      .eq('user_id', user.id)
 
     if (!accounts || accounts.length === 0) {
       return NextResponse.json({ contacts: [] })

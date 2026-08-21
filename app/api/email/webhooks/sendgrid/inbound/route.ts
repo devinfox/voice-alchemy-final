@@ -434,15 +434,7 @@ export async function POST(request: NextRequest) {
       // Inserts here use the service-role client, which bypasses the
       // set_organization_id trigger (no auth.uid()), so a NULL org would make
       // these rows globally visible under the org-isolation RLS policy.
-      let accountOrgId: string | null = account.organization_id ?? null
-      if (!accountOrgId) {
-        const { data: accountUser } = await getSupabaseAdmin()
-          .from('users')
-          .select('organization_id')
-          .eq('id', account.user_id)
-          .single()
-        accountOrgId = accountUser?.organization_id ?? null
-      }
+      const accountOrgId: string | null = account.organization_id ?? null
 
       // Try to find existing thread
       let threadId: string | null = null

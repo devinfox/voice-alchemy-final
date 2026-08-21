@@ -51,8 +51,8 @@ const folders: FolderItem[] = [
 
 export function EmailMobileWrapper({ userId, userEmail, children }: EmailMobileWrapperProps) {
   const pathname = usePathname()
-  const { isCitadelGold, gradientConfig } = useTenant()
-  const useCitadelBrand = isCitadelGold && (userEmail || '').toLowerCase().endsWith('@voicealchemyacademy.com')
+  const { isVoiceAlchemy, gradientConfig } = useTenant()
+  const useVoiceBrand = isVoiceAlchemy && (userEmail || '').toLowerCase().endsWith('@voicealchemyacademy.com')
   const { accentColor, accentColorLight } = gradientConfig
   const [sidebarOpen, setSidebarOpen] = useState(false)
   const [searchOpen, setSearchOpen] = useState(false)
@@ -229,7 +229,7 @@ export function EmailMobileWrapper({ userId, userEmail, children }: EmailMobileW
         className={`fixed inset-y-0 left-0 w-72 border-r z-50 transform transition-transform duration-300 ease-in-out ${
           sidebarOpen ? 'translate-x-0' : '-translate-x-full'
         }`}
-        style={useCitadelBrand ? {
+        style={useVoiceBrand ? {
           background: '#1a1f1a',
           borderColor: 'rgba(255,255,255,0.1)',
         } : {
@@ -266,12 +266,12 @@ export function EmailMobileWrapper({ userId, userEmail, children }: EmailMobileW
                 onClick={() => setSidebarOpen(false)}
                 className={`flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-all ${
                   active
-                    ? useCitadelBrand
+                    ? useVoiceBrand
                       ? 'bg-yellow-500/20 text-yellow-400'
                       : ''
                     : 'text-gray-300 hover:bg-white/5 hover:text-white'
                 }`}
-                style={active && !useCitadelBrand ? {
+                style={active && !useVoiceBrand ? {
                   background: 'rgba(255,255,255,0.1)',
                   color: accentColorLight,
                   border: `1px solid ${accentColor}40`,
@@ -282,7 +282,7 @@ export function EmailMobileWrapper({ userId, userEmail, children }: EmailMobileW
                 {showBadge && (
                   <span
                     className="px-2 py-0.5 text-xs font-medium text-black rounded-full"
-                    style={useCitadelBrand ? { background: '#eab308' } : { background: accentColorLight }}
+                    style={useVoiceBrand ? { background: '#eab308' } : { background: accentColorLight }}
                   >
                     {unreadCount}
                   </span>
@@ -298,12 +298,12 @@ export function EmailMobileWrapper({ userId, userEmail, children }: EmailMobileW
               onClick={() => setSidebarOpen(false)}
               className={`flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-all ${
                 pathname === '/dashboard/email/ai-drafts'
-                  ? useCitadelBrand
+                  ? useVoiceBrand
                     ? 'bg-yellow-500/20 text-yellow-400'
                     : ''
                   : 'text-gray-300 hover:bg-white/5 hover:text-white'
               }`}
-              style={pathname === '/dashboard/email/ai-drafts' && !useCitadelBrand ? {
+              style={pathname === '/dashboard/email/ai-drafts' && !useVoiceBrand ? {
                 background: 'rgba(255,255,255,0.1)',
                 color: accentColorLight,
                 border: `1px solid ${accentColor}40`,
@@ -314,7 +314,7 @@ export function EmailMobileWrapper({ userId, userEmail, children }: EmailMobileW
               {aiDraftsCount > 0 && (
                 <span
                   className="px-2 py-0.5 text-xs font-medium text-black rounded-full"
-                  style={useCitadelBrand
+                  style={useVoiceBrand
                     ? { background: 'linear-gradient(90deg, #eab308, #f59e0b)' }
                     : { background: `linear-gradient(90deg, ${accentColorLight}, ${accentColor})` }}
                 >
@@ -351,7 +351,7 @@ export function EmailMobileWrapper({ userId, userEmail, children }: EmailMobileW
                   {account.is_primary && (
                     <span
                       className="text-xs"
-                      style={useCitadelBrand ? { color: '#facc15' } : { color: accentColorLight }}
+                      style={useVoiceBrand ? { color: '#facc15' } : { color: accentColorLight }}
                     >
                       Primary
                     </span>

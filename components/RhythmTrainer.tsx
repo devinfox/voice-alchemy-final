@@ -2,6 +2,28 @@
 
 import { useState, useEffect, useRef, useCallback } from 'react'
 import { X, Maximize2, Minimize2, Play, Pause, Mic, MicOff, Save, TrendingUp, Settings2, Volume2 } from 'lucide-react'
+import { SpotlightTour, SpotlightTriggerButton, SpotlightStep } from '@/components/spotlight-tour'
+
+const rhythmTourSteps: SpotlightStep[] = [
+  {
+    target: '[data-tour="rhythm-bpm-control"]',
+    title: '1. Set Your Tempo (BPM)',
+    content: 'Adjust your practice speed using the tempo slider, buttons, or Tap Tempo.',
+    placement: 'bottom',
+  },
+  {
+    target: '[data-tour="rhythm-play-btn"]',
+    title: '2. Start the Metronome',
+    content: 'Click Play to start the audible click and rhythmic beat pulse.',
+    placement: 'top',
+  },
+  {
+    target: '[data-tour="rhythm-tap-pad"]',
+    title: '3. Tap or Sing on the Beat',
+    content: 'Tap this pad (or sing with mic on) to track precision: On Beat (Green), Early (Blue), Late (Orange).',
+    placement: 'top',
+  },
+]
 
 // ============================================================================
 // TYPES
@@ -550,10 +572,10 @@ export default function RhythmTrainer({ variant = 'floating' }: RhythmTrainerPro
     tapFeedbackTimerRef.current = setTimeout(() => setTapFeedback(null), 350)
   }, [handleOnset])
 
-  // Spacebar as an alias for the pad. Ignored while typing so it cannot hijack
-  // the BPM field or any future text input.
+  // Spacebar as an alias for the pad. Ignored while typing or when modal is closed.
   useEffect(() => {
     const onKeyDown = (e: KeyboardEvent) => {
+      if (!isOpen) return
       if (e.code !== 'Space' && e.key !== ' ') return
 
       const target = e.target as HTMLElement | null
@@ -567,7 +589,7 @@ export default function RhythmTrainer({ variant = 'floating' }: RhythmTrainerPro
 
     window.addEventListener('keydown', onKeyDown)
     return () => window.removeEventListener('keydown', onKeyDown)
-  }, [registerTap])
+  }, [isOpen, registerTap])
 
   useEffect(() => {
     return () => {
@@ -797,14 +819,18 @@ export default function RhythmTrainer({ variant = 'floating' }: RhythmTrainerPro
 
       const result = await response.json()
 
+      if (!response.ok) {
+        throw new Error(result.error || 'Failed to save session')
+      }
+
       if (result.saved) {
         setSaveMessage(`Session saved! Score: ${result.overallScore?.toFixed(1) || stats.onBeatPercent.toFixed(1)}%`)
       } else {
         setSaveMessage(result.message || 'Session not saved')
       }
-    } catch (error) {
+    } catch (error: any) {
       console.error('Save error:', error)
-      setSaveMessage('Failed to save session')
+      setSaveMessage(error?.message || 'Failed to save session')
     } finally {
       setIsSaving(false)
       setTimeout(() => setSaveMessage(null), 5000)
@@ -900,7 +926,7 @@ export default function RhythmTrainer({ variant = 'floating' }: RhythmTrainerPro
 
   // Render BPM slider + tap tempo
   const renderBpmControl = () => (
-    <div className="bg-slate-800/50 rounded-xl p-4 border border-slate-700/50 mb-4">
+    <div data-tour="rhythm-bpm-control" className="bg-slate-800/50 rounded-xl p-4 border border-slate-700/50 mb-4">
       <div className="flex items-center justify-between mb-2">
         <span className="text-sm text-slate-400">BPM</span>
         <span className="text-2xl font-bold text-white">{bpm}</span>
@@ -1014,9 +1040,9 @@ export default function RhythmTrainer({ variant = 'floating' }: RhythmTrainerPro
             stats.rhythmTendency === 'late' ? 'text-orange-400' :
             'text-green-400'
           }`}>
-            {stats.rhythmTendency === 'early' ? '⏪ Early' :
-             stats.rhythmTendency === 'late' ? '⏩ Late' :
-             '✓ On Time'}
+            {stats.rhythmTendency === 'early' ? 'Early' :
+             stats.rhythmTendency === 'late' ? 'Late' :
+             'On Time'}
           </p>
           <p className="text-xs text-slate-400">Tendency</p>
         </div>
@@ -1194,6 +1220,7 @@ export default function RhythmTrainer({ variant = 'floating' }: RhythmTrainerPro
                 </div>
               </div>
               <div className="flex items-center gap-2">
+                <SpotlightTriggerButton tourKey="rhythm_trainer_v4" label="How to" />
                 <button
                   onClick={() => setShowSettings(!showSettings)}
                   className={`p-2.5 rounded-xl transition-colors ${
@@ -1226,6 +1253,9 @@ export default function RhythmTrainer({ variant = 'floating' }: RhythmTrainerPro
                 </button>
               </div>
             </div>
+
+            {/* Real On-Page Spotlight Tour */}
+            <SpotlightTour tourKey="rhythm_trainer_v4" steps={rhythmTourSteps} />
 
             {/* Main Content */}
             <div className="p-6 h-[calc(100%-72px)] overflow-y-auto">
@@ -1263,6 +1293,7 @@ export default function RhythmTrainer({ variant = 'floating' }: RhythmTrainerPro
               {/* Play/Pause & Mic Controls */}
               <div className="flex justify-center gap-4 mb-6">
                 <button
+                  data-tour="rhythm-play-btn"
                   onClick={togglePlay}
                   className={`w-16 h-16 rounded-full flex items-center justify-center transition-all duration-200 shadow-lg ${
                     isPlaying
@@ -1298,7 +1329,7 @@ export default function RhythmTrainer({ variant = 'floating' }: RhythmTrainerPro
               </div>
 
               {/* Tap pad - primary input, works with or without the microphone */}
-              <div className="mb-6">
+              <div data-tour="rhythm-tap-pad" className="mb-6">
                 <button
                   onPointerDown={(e) => {
                     // pointerdown, not click: fires on contact rather than

@@ -32,19 +32,27 @@ DECLARE
     v_previous_week RECORD;
     v_predominant_tendency VARCHAR(20);
 BEGIN
-    -- Get current week averages
+    -- Get current week beat-weighted averages
     SELECT
-        AVG(avg_timing_offset_ms) as avg_offset,
-        AVG(timing_consistency) as avg_consistency,
-        AVG(on_beat_percent) as avg_on_beat,
-        AVG(overall_score) as avg_score,
+        CASE WHEN SUM(total_beats) > 0
+            THEN SUM(avg_timing_offset_ms * total_beats) / SUM(total_beats)
+            ELSE AVG(avg_timing_offset_ms) END as avg_offset,
+        CASE WHEN SUM(total_beats) > 0
+            THEN SUM(timing_consistency * total_beats) / SUM(total_beats)
+            ELSE AVG(timing_consistency) END as avg_consistency,
+        CASE WHEN SUM(total_beats) > 0
+            THEN SUM(on_beat_percent * total_beats) / SUM(total_beats)
+            ELSE AVG(on_beat_percent) END as avg_on_beat,
+        CASE WHEN SUM(total_beats) > 0
+            THEN SUM(overall_score * total_beats) / SUM(total_beats)
+            ELSE AVG(overall_score) END as avg_score,
         COUNT(*) as total_sessions,
         SUM(total_beats) as total_beats,
         SUM(duration_seconds) as total_time,
         MIN(bpm) as min_bpm,
         MAX(bpm) as max_bpm,
         AVG(bpm) as avg_bpm,
-        -- New: average early/late offsets
+        -- Average early/late offsets
         AVG(avg_early_ms) as avg_early,
         AVG(avg_late_ms) as avg_late
     INTO v_current_week
@@ -53,11 +61,17 @@ BEGIN
     AND session_date >= p_week_start
     AND session_date < p_week_start + INTERVAL '7 days';
 
-    -- Get previous week averages
+    -- Get previous week beat-weighted averages
     SELECT
-        AVG(ABS(avg_timing_offset_ms)) as avg_abs_offset,  -- Use ABS for fair comparison
-        AVG(timing_consistency) as avg_consistency,
-        AVG(on_beat_percent) as avg_on_beat
+        CASE WHEN SUM(total_beats) > 0
+            THEN SUM(ABS(avg_timing_offset_ms) * total_beats) / SUM(total_beats)
+            ELSE AVG(ABS(avg_timing_offset_ms)) END as avg_abs_offset,
+        CASE WHEN SUM(total_beats) > 0
+            THEN SUM(timing_consistency * total_beats) / SUM(total_beats)
+            ELSE AVG(timing_consistency) END as avg_consistency,
+        CASE WHEN SUM(total_beats) > 0
+            THEN SUM(on_beat_percent * total_beats) / SUM(total_beats)
+            ELSE AVG(on_beat_percent) END as avg_on_beat
     INTO v_previous_week
     FROM rhythm_training_sessions
     WHERE user_id = p_user_id
@@ -101,7 +115,7 @@ BEGIN
         v_current_week.total_sessions, v_current_week.total_beats,
         v_current_week.total_time,
         v_current_week.min_bpm, v_current_week.max_bpm, v_current_week.avg_bpm,
-        -- FIXED: For timing offset, compare ABS values - negative change = improvement
+        -- Compare ABS values
         CASE WHEN v_previous_week.avg_abs_offset IS NOT NULL AND v_previous_week.avg_abs_offset > 0
             THEN ((ABS(v_current_week.avg_offset) - v_previous_week.avg_abs_offset) / v_previous_week.avg_abs_offset * 100)
             ELSE NULL END,
@@ -137,6 +151,31 @@ BEGIN
         updated_at = NOW();
 END;
 $$ LANGUAGE plpgsql SECURITY DEFINER;
+
+-- ============================================================================
+-- AUTOMATED TRIGGER FOR RHYTHM SESSIONS
+-- ============================================================================
+CREATE OR REPLACE FUNCTION trigger_calculate_rhythm_weekly_progress()
+RETURNS TRIGGER AS $$
+DECLARE
+    v_week_start DATE;
+BEGIN
+    IF TG_OP = 'DELETE' THEN
+        v_week_start := date_trunc('week', OLD.session_date)::DATE;
+        PERFORM calculate_rhythm_weekly_progress(OLD.user_id, v_week_start);
+        RETURN OLD;
+    ELSE
+        v_week_start := date_trunc('week', NEW.session_date)::DATE;
+        PERFORM calculate_rhythm_weekly_progress(NEW.user_id, v_week_start);
+        RETURN NEW;
+    END IF;
+END;
+$$ LANGUAGE plpgsql SECURITY DEFINER;
+
+DROP TRIGGER IF EXISTS trg_rhythm_sessions_weekly_progress ON rhythm_training_sessions;
+CREATE TRIGGER trg_rhythm_sessions_weekly_progress
+AFTER INSERT OR UPDATE OR DELETE ON rhythm_training_sessions
+FOR EACH ROW EXECUTE FUNCTION trigger_calculate_rhythm_weekly_progress();
 
 -- ============================================================================
 -- COMMENTS

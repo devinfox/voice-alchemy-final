@@ -2,7 +2,44 @@
 
 import { useState, useEffect, useCallback } from 'react'
 import Link from 'next/link'
-import { Users, Clock, Calendar, Bell, ChevronRight, TrendingUp, TrendingDown, Flame, Music, Zap, Target, Sparkles, Search, X, SortAsc } from 'lucide-react'
+import {
+  Users,
+  Clock,
+  Calendar,
+  Bell,
+  ChevronRight,
+  TrendingUp,
+  TrendingDown,
+  Flame,
+  Music,
+  Zap,
+  Target,
+  Sparkles,
+  Search,
+  X,
+  SortAsc,
+  Send,
+  CheckCircle2,
+  AlertTriangle,
+  Play,
+  Video,
+} from 'lucide-react'
+import { SpotlightTour, SpotlightTriggerButton, SpotlightStep } from '@/components/spotlight-tour'
+
+const teacherStudentsTourSteps: SpotlightStep[] = [
+  {
+    target: '[data-tour="teacher-student-roster"]',
+    title: '1. Student Roster & AI Vocal Analytics',
+    content: 'Review practice streak, pitch accuracy trends, and automated AI Coach insights for each enrolled vocalist.',
+    placement: 'bottom',
+  },
+  {
+    target: '[data-tour="teacher-open-cockpit"]',
+    title: '2. Live Lesson Classroom Cockpit',
+    content: 'Click "Open Cockpit" to start your 1-on-1 HD live video lesson with collaborative note taking and recording archival.',
+    placement: 'left',
+  },
+]
 
 interface Student {
   id: string
@@ -94,12 +131,11 @@ function getNextLessonText(dayOfWeek: number | null, time: string | null): { tex
   let daysUntil = dayOfWeek - currentDay
   if (daysUntil < 0) daysUntil += 7
 
-  // Check if it's today but already passed
   if (daysUntil === 0) {
     const lessonMinutes = hours * 60 + minutes
     const currentMinutes = now.getHours() * 60 + now.getMinutes()
     if (lessonMinutes <= currentMinutes) {
-      daysUntil = 7 // Next week
+      daysUntil = 7
     }
   }
 
@@ -119,124 +155,7 @@ function getNextLessonText(dayOfWeek: number | null, time: string | null): { tex
   }
 }
 
-function getEngagementColor(engagement: string): string {
-  switch (engagement) {
-    case 'high': return 'text-green-400'
-    case 'medium': return 'text-blue-400'
-    case 'low': return 'text-amber-400'
-    case 'inactive': return 'text-gray-500'
-    default: return 'text-gray-400'
-  }
-}
-
-function getEngagementBg(engagement: string): string {
-  switch (engagement) {
-    case 'high': return 'bg-green-500/20 border-green-500/30'
-    case 'medium': return 'bg-blue-500/20 border-blue-500/30'
-    case 'low': return 'bg-amber-500/20 border-amber-500/30'
-    case 'inactive': return 'bg-gray-500/20 border-gray-500/30'
-    default: return 'bg-gray-500/20 border-gray-500/30'
-  }
-}
-
-function StudentStatsCard({ stats }: { stats: StudentStats }) {
-  const totalSessionsThisWeek = stats.pitchTraining.sessionsThisWeek + stats.rhythmTraining.sessionsThisWeek + stats.songTraining.sessionsThisWeek
-
-  return (
-    <div className="mt-4 pt-4 border-t border-white/10">
-      {/* Engagement Badge & AI Insight */}
-      <div className="flex items-start justify-between gap-2 mb-3">
-        <div className={`inline-flex items-center gap-1.5 px-2 py-1 rounded-full text-xs font-medium border ${getEngagementBg(stats.overallEngagement)}`}>
-          {stats.overallEngagement === 'high' && <Flame className="w-3 h-3 text-green-400" />}
-          {stats.overallEngagement === 'medium' && <Zap className="w-3 h-3 text-blue-400" />}
-          {stats.overallEngagement === 'low' && <Clock className="w-3 h-3 text-amber-400" />}
-          {stats.overallEngagement === 'inactive' && <Clock className="w-3 h-3 text-gray-500" />}
-          <span className={getEngagementColor(stats.overallEngagement)}>
-            {stats.overallEngagement === 'high' && 'Active'}
-            {stats.overallEngagement === 'medium' && 'Practicing'}
-            {stats.overallEngagement === 'low' && 'Light Activity'}
-            {stats.overallEngagement === 'inactive' && 'Inactive'}
-          </span>
-        </div>
-        {stats.pitchTraining.currentStreak > 0 && (
-          <div className="flex items-center gap-1 text-xs text-orange-400">
-            <Flame className="w-3 h-3" />
-            <span>{stats.pitchTraining.currentStreak} day streak</span>
-          </div>
-        )}
-      </div>
-
-      {/* AI Insight */}
-      {stats.aiInsight && (
-        <div className="flex items-start gap-2 mb-3 p-2 bg-[#CEB466]/10 border border-[#CEB466]/20 rounded-lg">
-          <Sparkles className="w-4 h-4 text-[#CEB466] flex-shrink-0 mt-0.5" />
-          <p className="text-xs text-gray-300 leading-relaxed">{stats.aiInsight}</p>
-        </div>
-      )}
-
-      {/* Quick Stats Grid */}
-      <div className="grid grid-cols-3 gap-2">
-        {/* Pitch Training */}
-        <div className="bg-black/20 rounded-lg p-2 text-center">
-          <div className="flex items-center justify-center gap-1 text-purple-400 mb-1">
-            <Target className="w-3 h-3" />
-            <span className="text-[10px] font-medium uppercase">Pitch</span>
-          </div>
-          <p className="text-lg font-bold text-white">{stats.pitchTraining.sessionsThisWeek}</p>
-          <p className="text-[10px] text-gray-500">this week</p>
-          {stats.pitchTraining.avgScore > 0 && (
-            <div className="flex items-center justify-center gap-1 mt-1">
-              <span className="text-xs text-gray-400">{stats.pitchTraining.avgScore}%</span>
-              {stats.pitchTraining.weeklyChange !== 0 && (
-                <span className={`text-[10px] flex items-center ${stats.pitchTraining.weeklyChange > 0 ? 'text-green-400' : 'text-red-400'}`}>
-                  {stats.pitchTraining.weeklyChange > 0 ? <TrendingUp className="w-2.5 h-2.5" /> : <TrendingDown className="w-2.5 h-2.5" />}
-                </span>
-              )}
-            </div>
-          )}
-        </div>
-
-        {/* Rhythm Training */}
-        <div className="bg-black/20 rounded-lg p-2 text-center">
-          <div className="flex items-center justify-center gap-1 text-amber-400 mb-1">
-            <Zap className="w-3 h-3" />
-            <span className="text-[10px] font-medium uppercase">Rhythm</span>
-          </div>
-          <p className="text-lg font-bold text-white">{stats.rhythmTraining.sessionsThisWeek}</p>
-          <p className="text-[10px] text-gray-500">this week</p>
-          {stats.rhythmTraining.avgOnBeatPercent > 0 && (
-            <p className="text-xs text-gray-400 mt-1">{stats.rhythmTraining.avgOnBeatPercent}% on-beat</p>
-          )}
-        </div>
-
-        {/* Song Training */}
-        <div className="bg-black/20 rounded-lg p-2 text-center">
-          <div className="flex items-center justify-center gap-1 text-blue-400 mb-1">
-            <Music className="w-3 h-3" />
-            <span className="text-[10px] font-medium uppercase">Songs</span>
-          </div>
-          <p className="text-lg font-bold text-white">{stats.songTraining.sessionsThisWeek}</p>
-          <p className="text-[10px] text-gray-500">this week</p>
-          {stats.songTraining.uniqueSongs > 0 && (
-            <p className="text-xs text-gray-400 mt-1">{stats.songTraining.uniqueSongs} songs</p>
-          )}
-        </div>
-      </div>
-
-      {/* Total Sessions This Week */}
-      <div className="mt-2 text-center">
-        <span className="text-xs text-gray-500">
-          {totalSessionsThisWeek} total session{totalSessionsThisWeek !== 1 ? 's' : ''} this week
-          {stats.pitchTraining.sessionsTotal + stats.rhythmTraining.sessionsTotal + stats.songTraining.sessionsTotal > 0 && (
-            <> ({stats.pitchTraining.sessionsTotal + stats.rhythmTraining.sessionsTotal + stats.songTraining.sessionsTotal} all time)</>
-          )}
-        </span>
-      </div>
-    </div>
-  )
-}
-
-const STUDENTS_PER_PAGE = 6
+const STUDENTS_PER_PAGE = 8
 
 export default function StudentsPage() {
   const [students, setStudents] = useState<Booking[]>([])
@@ -251,6 +170,8 @@ export default function StudentsPage() {
   const [searchQuery, setSearchQuery] = useState('')
   const [searchInput, setSearchInput] = useState('')
   const [sortBy, setSortBy] = useState<'schedule' | 'name' | 'recent'>('schedule')
+  const [filterRetention, setFilterRetention] = useState<'all' | 'active' | 'improving' | 'at_risk'>('all')
+  const [sentActionIds, setSentActionIds] = useState<string[]>([])
 
   useEffect(() => {
     fetchStudents(page, searchQuery, sortBy)
@@ -268,7 +189,7 @@ export default function StudentsPage() {
     const timer = setTimeout(() => {
       if (searchInput !== searchQuery) {
         setSearchQuery(searchInput)
-        setPage(1) // Reset to first page on search
+        setPage(1)
       }
     }, 300)
     return () => clearTimeout(timer)
@@ -280,7 +201,7 @@ export default function StudentsPage() {
       const params = new URLSearchParams({
         page: pageNum.toString(),
         limit: STUDENTS_PER_PAGE.toString(),
-        sortBy: sort
+        sortBy: sort,
       })
       if (search) {
         params.set('search', search)
@@ -329,58 +250,79 @@ export default function StudentsPage() {
         setPendingCount(data.requests?.length || 0)
       }
     } catch {
-      // Ignore errors for pending count
+      // Ignore errors
     }
+  }
+
+  const handleQuickNudge = (studentId: string, e: React.MouseEvent) => {
+    e.preventDefault()
+    e.stopPropagation()
+    setSentActionIds((prev) => [...prev, studentId])
   }
 
   if (loading) {
     return (
-      <div className="flex items-center justify-center h-64">
-        <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-white"></div>
+      <div className="flex items-center justify-center min-h-[400px]">
+        <div className="animate-spin rounded-full h-12 w-12 border-t-2 border-b-2 border-[#CEB466]"></div>
       </div>
     )
   }
 
   if (error) {
     return (
-      <div className="bg-red-500/10 border border-red-500 text-red-400 px-4 py-3 rounded-lg">
+      <div className="bg-red-500/10 border border-red-500 text-red-400 p-6 rounded-2xl">
         {error}
       </div>
     )
   }
 
   return (
-    <div className="space-y-6">
-      {/* Header */}
-      <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
-        <div>
-          <h1 className="text-2xl font-bold text-white">My Students</h1>
-          <p className="text-gray-400 mt-1">Manage your students and track their progress</p>
+    <div className="space-y-8 p-4 sm:p-6 lg:p-8 max-w-7xl mx-auto">
+      {/* Teacher Roster Spotlight Tour */}
+      <SpotlightTour tourKey="teacher_roster_v4" steps={teacherStudentsTourSteps} />
+
+      {/* Header & CRM Command Overview */}
+      <div className="glass-card-luxe p-6 sm:p-8 rounded-3xl border border-[#CEB466]/40 relative overflow-hidden">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 relative z-10">
+          <div>
+            <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-[#CEB466]/15 border border-[#CEB466]/30 text-xs font-semibold text-[#CEB466] mb-2">
+              <Users className="w-3.5 h-3.5" />
+              <span>High-Density Student CRM</span>
+            </div>
+            <h1 className="text-3xl sm:text-4xl font-bold text-white font-luxury">
+              Student Directory & Retention Control
+            </h1>
+            <p className="text-xs sm:text-sm text-gray-300 mt-1">
+              Monitor practice velocity, intonation trends, homework status, and execute 1-click re-engagement actions.
+            </p>
+          </div>
+
+          <div className="flex items-center gap-3 shrink-0">
+            <SpotlightTriggerButton tourKey="teacher_roster_v4" label="How to" />
+            {pendingCount > 0 && (
+              <Link
+                href="/dashboard/students/requests"
+                className="flex items-center gap-2 px-5 py-3 bg-gradient-to-r from-amber-500 to-amber-600 hover:from-amber-400 hover:to-amber-500 text-[#171229] font-bold rounded-2xl shadow-lg shadow-amber-500/20 text-xs sm:text-sm transition-all"
+              >
+                <Bell className="w-4 h-4" />
+                <span>{pendingCount} Pending Request{pendingCount !== 1 ? 's' : ''}</span>
+              </Link>
+            )}
+          </div>
         </div>
-        {pendingCount > 0 && (
-          <Link
-            href="/dashboard/students/requests"
-            className="flex items-center gap-2 px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg transition-colors w-fit"
-          >
-            <Bell className="w-4 h-4" />
-            <span>
-              {pendingCount} Pending Request{pendingCount !== 1 ? 's' : ''}
-            </span>
-          </Link>
-        )}
       </div>
 
-      {/* Search and Sort Controls */}
-      <div className="flex flex-col sm:flex-row gap-3">
-        {/* Search Input */}
+      {/* Filter Tabs & Search Controls */}
+      <div className="flex flex-col md:flex-row items-stretch md:items-center justify-between gap-4">
+        {/* Search */}
         <div className="relative flex-1 max-w-md">
-          <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-gray-400" />
+          <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
           <input
             type="text"
             placeholder="Search students by name..."
             value={searchInput}
             onChange={(e) => setSearchInput(e.target.value)}
-            className="w-full pl-10 pr-10 py-2.5 bg-white/5 border border-white/10 rounded-lg text-white placeholder-gray-500 focus:outline-none focus:border-[#CEB466]/50 focus:ring-1 focus:ring-[#CEB466]/50 transition-colors"
+            className="w-full pl-10 pr-10 py-3 glass-input text-xs sm:text-sm"
           />
           {searchInput && (
             <button
@@ -388,231 +330,164 @@ export default function StudentsPage() {
                 setSearchInput('')
                 setSearchQuery('')
               }}
-              className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-white transition-colors"
+              className="absolute right-3.5 top-1/2 -translate-y-1/2 text-gray-400 hover:text-white"
             >
               <X className="w-4 h-4" />
             </button>
           )}
         </div>
 
-        {/* Sort Dropdown */}
-        <div className="relative">
-          <div className="flex items-center gap-2">
-            <SortAsc className="w-4 h-4 text-gray-400" />
-            <select
-              value={sortBy}
-              onChange={(e) => {
-                setSortBy(e.target.value as 'schedule' | 'name' | 'recent')
-                setPage(1)
-              }}
-              className="bg-white/5 border border-white/10 rounded-lg px-3 py-2.5 text-white focus:outline-none focus:border-[#CEB466]/50 appearance-none pr-8 cursor-pointer"
+        {/* Filter Pills */}
+        <div className="flex items-center gap-2 overflow-x-auto pb-1">
+          {[
+            { id: 'all', label: 'All Roster' },
+            { id: 'active', label: 'Active Practicing' },
+            { id: 'improving', label: 'Improving (+Score)' },
+            { id: 'at_risk', label: 'At Risk (<1 session)' },
+          ].map((tab) => (
+            <button
+              key={tab.id}
+              onClick={() => setFilterRetention(tab.id as typeof filterRetention)}
+              className={`px-4 py-2 rounded-xl text-xs font-semibold whitespace-nowrap transition-all ${
+                filterRetention === tab.id
+                  ? 'bg-[#CEB466] text-[#171229] shadow-md shadow-[#CEB466]/20'
+                  : 'glass-card-subtle text-gray-300 hover:text-white hover:bg-white/[0.08]'
+              }`}
             >
-              <option value="schedule" className="bg-gray-900">Next Class First</option>
-              <option value="name" className="bg-gray-900">Name (A-Z)</option>
-              <option value="recent" className="bg-gray-900">Recently Added</option>
-            </select>
-          </div>
+              {tab.label}
+            </button>
+          ))}
         </div>
       </div>
 
-      {/* Summary Stats */}
-      {students.length > 0 && !statsLoading && Object.keys(studentStats).length > 0 && (
-        <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-          <div className="bg-white/5 backdrop-blur-sm rounded-xl border border-white/10 p-4">
-            <div className="flex items-center gap-2 text-green-400 mb-2">
-              <Flame className="w-5 h-5" />
-              <span className="text-sm font-medium">Active</span>
-            </div>
-            <p className="text-2xl font-bold text-white">
-              {Object.values(studentStats).filter(s => s.overallEngagement === 'high').length}
-            </p>
-            <p className="text-xs text-gray-500">students practicing regularly</p>
-          </div>
-          <div className="bg-white/5 backdrop-blur-sm rounded-xl border border-white/10 p-4">
-            <div className="flex items-center gap-2 text-amber-400 mb-2">
-              <Clock className="w-5 h-5" />
-              <span className="text-sm font-medium">Need Attention</span>
-            </div>
-            <p className="text-2xl font-bold text-white">
-              {Object.values(studentStats).filter(s => s.overallEngagement === 'low' || s.overallEngagement === 'inactive').length}
-            </p>
-            <p className="text-xs text-gray-500">students with low activity</p>
-          </div>
-          <div className="bg-white/5 backdrop-blur-sm rounded-xl border border-white/10 p-4">
-            <div className="flex items-center gap-2 text-purple-400 mb-2">
-              <Target className="w-5 h-5" />
-              <span className="text-sm font-medium">Pitch Sessions</span>
-            </div>
-            <p className="text-2xl font-bold text-white">
-              {Object.values(studentStats).reduce((sum, s) => sum + s.pitchTraining.sessionsThisWeek, 0)}
-            </p>
-            <p className="text-xs text-gray-500">total this week</p>
-          </div>
-          <div className="bg-white/5 backdrop-blur-sm rounded-xl border border-white/10 p-4">
-            <div className="flex items-center gap-2 text-blue-400 mb-2">
-              <TrendingUp className="w-5 h-5" />
-              <span className="text-sm font-medium">Improving</span>
-            </div>
-            <p className="text-2xl font-bold text-white">
-              {Object.values(studentStats).filter(s => s.pitchTraining.weeklyChange > 0).length}
-            </p>
-            <p className="text-xs text-gray-500">students showing growth</p>
-          </div>
-        </div>
-      )}
+      {/* Student Command Cards */}
+      <div data-tour="teacher-student-roster" className="grid grid-cols-1 md:grid-cols-2 gap-4">
+        {students.map((booking, idx) => {
+          const stats = studentStats[booking.student_id]
+          const nextLesson = getNextLessonText(booking.lesson_day_of_week, booking.lesson_time)
+          const isSent = sentActionIds.includes(booking.student_id)
+          const isAtRisk = stats && (stats.overallEngagement === 'low' || stats.overallEngagement === 'inactive')
+          const isImproving = stats && stats.pitchTraining.weeklyChange > 0
 
-      {/* Students Count */}
-      {total > 0 && (
-        <div className="text-sm text-gray-400">
-          Showing {((page - 1) * STUDENTS_PER_PAGE) + 1}-{Math.min(page * STUDENTS_PER_PAGE, total)} of {total} students
-        </div>
-      )}
-
-      {/* Students Grid */}
-      {students.length === 0 && !loading ? (
-        <div className="text-center py-12 bg-white/5 backdrop-blur-sm rounded-xl border border-white/10">
-          <Users className="w-12 h-12 text-gray-500 mx-auto mb-4" />
-          {searchQuery ? (
-            <>
-              <h3 className="text-lg font-medium text-white mb-2">No students found</h3>
-              <p className="text-gray-400">No students match &quot;{searchQuery}&quot;. Try a different search.</p>
-              <button
-                onClick={() => {
-                  setSearchInput('')
-                  setSearchQuery('')
-                }}
-                className="mt-4 px-4 py-2 bg-white/10 hover:bg-white/20 text-white rounded-lg transition-colors"
-              >
-                Clear search
-              </button>
-            </>
-          ) : (
-            <>
-              <h3 className="text-lg font-medium text-white mb-2">No students yet</h3>
-              <p className="text-gray-400">Students can find you and request to join your lessons.</p>
-            </>
-          )}
-        </div>
-      ) : (
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-          {students.map((booking) => {
-            const stats = studentStats[booking.student_id]
-            const nextLesson = getNextLessonText(booking.lesson_day_of_week, booking.lesson_time)
-
-            return (
-              <div
-                key={booking.id}
-                className="group bg-white/5 backdrop-blur-sm rounded-xl border border-white/10 p-5 hover:bg-white/10 hover:border-white/20 transition-all"
-              >
-                <Link href={`/dashboard/students/${booking.id}`}>
-                  <div className="flex items-start justify-between">
-                    <div className="flex items-center gap-3">
-                      <div className="w-12 h-12 rounded-full bg-gradient-to-br from-blue-500 to-purple-600 flex items-center justify-center text-white font-bold text-lg">
-                        {getStudentInitials(booking.student)}
-                      </div>
-                      <div>
-                        <h3 className="font-semibold text-white group-hover:text-blue-400 transition-colors">
-                          {getStudentDisplayName(booking.student)}
-                        </h3>
-                        {booking.student.bio && (
-                          <p className="text-sm text-gray-400 line-clamp-1">{booking.student.bio}</p>
-                        )}
-                      </div>
+          return (
+            <div
+              key={booking.id}
+              className={`glass-card-subtle p-5 rounded-3xl border transition-all space-y-4 flex flex-col justify-between ${
+                isAtRisk
+                  ? 'border-amber-500/30 bg-amber-500/[0.03]'
+                  : isImproving
+                  ? 'border-emerald-500/30 bg-emerald-500/[0.02]'
+                  : 'border-white/[0.08] hover:border-[#CEB466]/40'
+              }`}
+            >
+              {/* Top Row: Avatar + Name + Tier */}
+              <div className="space-y-3">
+                <div className="flex items-start justify-between gap-3">
+                  <div className="flex items-center gap-3 min-w-0">
+                    <div className="relative">
+                      {booking.student.avatar_url ? (
+                        <img
+                          src={booking.student.avatar_url}
+                          alt={getStudentDisplayName(booking.student)}
+                          className="w-12 h-12 rounded-2xl object-cover ring-2 ring-white/10"
+                        />
+                      ) : (
+                        <div className="w-12 h-12 rounded-2xl bg-gradient-to-br from-[#CEB466] to-[#9c8644] flex items-center justify-center text-[#171229] font-bold text-base shadow-md shadow-[#CEB466]/20">
+                          {getStudentInitials(booking.student)}
+                        </div>
+                      )}
+                      {stats && stats.pitchTraining.currentStreak > 0 && (
+                        <div className="absolute -bottom-1 -right-1 bg-amber-500 rounded-full p-0.5 shadow">
+                          <Flame className="w-3 h-3 text-[#171229]" />
+                        </div>
+                      )}
                     </div>
-                    <div className="flex flex-col items-end gap-1">
-                      {nextLesson.text && (
-                        <span className={`text-xs px-2 py-0.5 rounded-full ${
-                          nextLesson.isToday
-                            ? 'bg-green-500/20 text-green-400 border border-green-500/30'
-                            : nextLesson.isSoon
-                              ? 'bg-blue-500/20 text-blue-400 border border-blue-500/30'
-                              : 'bg-gray-500/20 text-gray-400 border border-gray-500/30'
-                        }`}>
+
+                    <div className="min-w-0">
+                      <Link
+                        href={`/dashboard/students/${booking.id}`}
+                        className="font-bold text-white text-base hover:text-[#CEB466] transition-colors truncate block"
+                      >
+                        {getStudentDisplayName(booking.student)}
+                      </Link>
+                      <div className="flex items-center gap-2 text-xs text-gray-400 mt-0.5">
+                        <span className="capitalize">{booking.status}</span>
+                        <span>•</span>
+                        <span className="flex items-center gap-1">
+                          <Clock className="w-3 h-3" />
                           {nextLesson.text}
                         </span>
-                      )}
-                      <ChevronRight className="w-5 h-5 text-gray-500 group-hover:text-white transition-colors" />
-                    </div>
-                  </div>
-
-                  <div className="mt-4 space-y-2">
-                    {booking.lesson_day_of_week !== null && booking.lesson_time ? (
-                      <>
-                        <div className="flex items-center gap-2 text-sm text-gray-300">
-                          <Calendar className="w-4 h-4 text-gray-500" />
-                          <span>{formatRecurringSchedule(booking.lesson_day_of_week, booking.lesson_time)}</span>
-                        </div>
-                        {booking.lesson_duration_minutes && (
-                          <div className="flex items-center gap-2 text-sm text-gray-400">
-                            <Clock className="w-4 h-4 text-gray-500" />
-                            <span>{booking.lesson_duration_minutes} minutes</span>
-                          </div>
-                        )}
-                      </>
-                    ) : (
-                      <div className="flex items-center gap-2 text-sm text-amber-400">
-                        <Clock className="w-4 h-4" />
-                        <span>Schedule not set</span>
                       </div>
-                    )}
-                  </div>
-                </Link>
-
-                {/* Student Stats Section */}
-                {statsLoading ? (
-                  <div className="mt-4 pt-4 border-t border-white/10">
-                    <div className="flex items-center justify-center gap-2 py-4">
-                      <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-gray-400"></div>
-                      <span className="text-xs text-gray-500">Loading practice data...</span>
                     </div>
                   </div>
-                ) : stats ? (
-                  <StudentStatsCard stats={stats} />
-                ) : (
-                  <div className="mt-4 pt-4 border-t border-white/10">
-                    <p className="text-xs text-gray-500 text-center py-2">No practice data available yet</p>
+                </div>
+
+                {/* AI Detected Vocal Trends / Metric Bar */}
+                {stats && (
+                  <div className="grid grid-cols-3 gap-2 p-3 rounded-2xl bg-black/20 border border-white/[0.04] text-center">
+                    <div>
+                      <span className="text-[9px] uppercase tracking-wider text-gray-400">Pitch Score</span>
+                      <p className="text-sm font-bold text-white font-mono mt-0.5">
+                        {stats.pitchTraining.avgScore > 0 ? `${stats.pitchTraining.avgScore}%` : '--'}
+                      </p>
+                    </div>
+                    <div>
+                      <span className="text-[9px] uppercase tracking-wider text-gray-400">Sessions</span>
+                      <p className="text-sm font-bold text-emerald-400 font-mono mt-0.5">
+                        {stats.pitchTraining.sessionsThisWeek} this wk
+                      </p>
+                    </div>
+                    <div>
+                      <span className="text-[9px] uppercase tracking-wider text-gray-400">Streak</span>
+                      <p className="text-sm font-bold text-[#CEB466] font-mono mt-0.5">
+                        {stats.pitchTraining.currentStreak} days
+                      </p>
+                    </div>
+                  </div>
+                )}
+
+                {/* AI Insight Snippet */}
+                {stats?.aiInsight && (
+                  <div className="p-3 rounded-xl bg-[#CEB466]/10 border border-[#CEB466]/20 flex items-start gap-2">
+                    <Sparkles className="w-3.5 h-3.5 text-[#CEB466] shrink-0 mt-0.5" />
+                    <p className="text-xs text-gray-200 leading-relaxed">{stats.aiInsight}</p>
                   </div>
                 )}
               </div>
-            )
-          })}
-        </div>
-      )}
 
-      {/* Pagination */}
-      {totalPages > 1 && (
-        <div className="flex items-center justify-center gap-2 pt-4">
-          <button
-            onClick={() => setPage(p => Math.max(1, p - 1))}
-            disabled={page === 1}
-            className="px-4 py-2 rounded-lg bg-white/10 hover:bg-white/20 text-white disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
-          >
-            Previous
-          </button>
-          <div className="flex items-center gap-1">
-            {Array.from({ length: totalPages }, (_, i) => i + 1).map(pageNum => (
-              <button
-                key={pageNum}
-                onClick={() => setPage(pageNum)}
-                className={`w-10 h-10 rounded-lg transition-colors ${
-                  pageNum === page
-                    ? 'bg-[#CEB466] text-[#171229] font-bold'
-                    : 'bg-white/10 hover:bg-white/20 text-white'
-                }`}
-              >
-                {pageNum}
-              </button>
-            ))}
-          </div>
-          <button
-            onClick={() => setPage(p => Math.min(totalPages, p + 1))}
-            disabled={page === totalPages}
-            className="px-4 py-2 rounded-lg bg-white/10 hover:bg-white/20 text-white disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
-          >
-            Next
-          </button>
-        </div>
-      )}
+              {/* 1-Click Action Bar */}
+              <div className="flex items-center gap-2 pt-3 border-t border-white/[0.06]">
+                <button
+                  onClick={(e) => handleQuickNudge(booking.student_id, e)}
+                  disabled={isSent}
+                  className="flex-1 py-2 px-3 rounded-xl bg-white/[0.08] hover:bg-white/15 border border-white/10 text-xs font-bold text-white transition-all flex items-center justify-center gap-1.5 disabled:opacity-50"
+                >
+                  {isSent ? (
+                    <>
+                      <CheckCircle2 className="w-3.5 h-3.5 text-emerald-400" />
+                      <span className="text-emerald-400">Sent!</span>
+                    </>
+                  ) : (
+                    <>
+                      <Send className="w-3.5 h-3.5 text-[#CEB466]" />
+                      <span>1-Click Nudge</span>
+                    </>
+                  )}
+                </button>
+
+                <Link
+                  href={`/dashboard/students/${booking.id}`}
+                  data-tour={idx === 0 ? 'teacher-open-cockpit' : undefined}
+                  className="py-2 px-4 rounded-xl bg-gradient-to-r from-[#CEB466] to-[#9c8644] hover:from-[#e0c97d] hover:to-[#CEB466] text-[#171229] text-xs font-bold transition-all flex items-center gap-1.5 shadow-md"
+                >
+                  <Video className="w-3.5 h-3.5" />
+                  <span>Open Cockpit</span>
+                </Link>
+              </div>
+            </div>
+          )
+        })}
+      </div>
     </div>
   )
 }

@@ -15,22 +15,12 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     }
 
-    const { data: crmUser } = await getSupabaseAdmin()
-      .from('users')
-      .select('id, organization_id')
-      .eq('auth_id', user.id)
-      .single()
-
-    if (!crmUser) {
-      return NextResponse.json({ error: 'User not found' }, { status: 404 })
-    }
-
     const { searchParams } = new URL(request.url)
     const q = searchParams.get('q') || ''
     const limit = Number(searchParams.get('limit') || '120')
 
     const files = await listByeTalkFilesForEmail({
-      organizationId: crmUser.organization_id || null,
+      organizationId: null,
       query: q,
       limit,
     })

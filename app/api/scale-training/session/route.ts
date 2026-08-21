@@ -73,9 +73,10 @@ export async function POST(request: NextRequest) {
     }
 
     const tempoBpm = body.tempo || 80 // Default to 80 BPM
+    const admin = createSupabaseAdmin()
 
     // Check if there's already a session for today with this scale at this tempo
-    const { data: existingSession } = await supabase
+    const { data: existingSession } = await admin
       .from('scale_training_sessions')
       .select('id, overall_score')
       .eq('user_id', user.id)
@@ -84,7 +85,7 @@ export async function POST(request: NextRequest) {
       .eq('root_note', body.rootNote)
       .eq('direction', body.direction)
       .eq('tempo_bpm', tempoBpm)
-      .single()
+      .maybeSingle()
 
     let sessionId: string
     let isNewBest = false
@@ -93,7 +94,7 @@ export async function POST(request: NextRequest) {
       // Check if new score is better
       if (body.overallScore > (existingSession.overall_score || 0)) {
         // Update existing session
-        const { data: updatedSession, error: updateError } = await supabase
+        const { data: updatedSession, error: updateError } = await admin
           .from('scale_training_sessions')
           .update({
             started_at: body.startedAt,
@@ -121,7 +122,7 @@ export async function POST(request: NextRequest) {
         isNewBest = true
 
         // Delete old note metrics
-        await supabase
+        await admin
           .from('scale_training_note_metrics')
           .delete()
           .eq('session_id', sessionId)
@@ -137,7 +138,7 @@ export async function POST(request: NextRequest) {
       }
     } else {
       // Create new session
-      const { data: newSession, error: insertError } = await supabase
+      const { data: newSession, error: insertError } = await admin
         .from('scale_training_sessions')
         .insert({
           user_id: user.id,

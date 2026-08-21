@@ -45,29 +45,8 @@ export default function AiDraftsPage() {
     const { data: { user } } = await supabase.auth.getUser()
     if (!user) return
 
-    // Get user profile
-    const { data: profile } = await supabase
-      .from('users')
-      .select('id')
-      .eq('auth_id', user.id)
-      .single()
-
-    if (!profile) {
-      // Try direct ID match
-      const { data: profileDirect } = await supabase
-        .from('users')
-        .select('id')
-        .eq('id', user.id)
-        .single()
-
-      if (profileDirect) {
-        setUserId(profileDirect.id)
-      }
-    } else {
-      setUserId(profile.id)
-    }
-
-    const effectiveUserId = profile?.id || user.id
+    setUserId(user.id)
+    const effectiveUserId = user.id
 
     // Fetch AI drafts
     const { data: draftsData, error } = await supabase

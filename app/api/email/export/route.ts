@@ -52,35 +52,9 @@ export async function POST(request: NextRequest) {
     const searchEmailLower = searchEmail.toLowerCase().trim()
     const supabaseAdmin = getSupabaseAdmin()
 
-    const { data: userRow } = await supabaseAdmin
-      .from('users')
-      .select('organization_id')
-      .eq('id', user.id)
-      .maybeSingle()
-
-    if (!userRow?.organization_id) {
-      return NextResponse.json({ error: 'No organization associated with user' }, { status: 403 })
-    }
-
-    const orgId = userRow.organization_id
-
-    // Org-scoped: only this tenant's accounts (never Citadel/Meridian crossover).
     let accountsQuery = supabaseAdmin
       .from('email_accounts')
-      .select(`
-        id,
-        email_address,
-        user_id,
-        organization_id,
-        users!inner (
-          id,
-          first_name,
-          last_name,
-          email,
-          organization_id
-        )
-      `)
-      .eq('organization_id', orgId)
+      .select('id, email_address, user_id, display_name')
       .eq('is_deleted', false)
       .eq('is_active', true)
 
@@ -122,25 +96,21 @@ export async function POST(request: NextRequest) {
           filename,
           content_type,
           size_bytes,
-          storage_path,
-          public_url,
-          is_inline,
-          content_id
+          storage_path
         )
       `)
       .in('email_account_id', accountIds)
-      .eq('organization_id', orgId)
-      .eq('is_deleted', false)
-      .order('sent_at', { ascending: true, nullsFirst: false })
+      .order('created_at', { ascending: false })
 
     // Date filters
     if (dateFrom) {
-      emailQuery = emailQuery.gte('sent_at', new Date(dateFrom).toISOString())
+      emailQuery = emailQuery.gte('created_at', dateFrom)
     }
     if (dateTo) {
-      const endDate = new Date(dateTo)
-      endDate.setHours(23, 59, 59, 999)
-      emailQuery = emailQuery.lte('sent_at', endDate.toISOString())
+      // Add one day to include the full end date
+      const toDate = new Date(dateTo)
+      toDate.setDate(toDate.getDate() + 1)
+      emailQuery = emailQuery.lt('created_at', toDate.toISOString())
     }
 
     const { data: emails, error: emailsError } = await emailQuery
@@ -150,7 +120,7 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'Failed to fetch emails' }, { status: 500 })
     }
 
-    // Filter emails by the search email (from or to)
+    // Filter emails where searchEmail is in from, to, or cc
     const filteredEmails = (emails || []).filter(email => {
       const fromMatch = email.from_address?.toLowerCase() === searchEmailLower
 
@@ -166,14 +136,24 @@ export async function POST(request: NextRequest) {
     })
 
     // Map account IDs to user info
+    const userIdsToFetch = accounts.map(a => a.user_id).filter(Boolean) as string[]
+    const { data: profiles } = userIdsToFetch.length > 0
+      ? await supabaseAdmin
+          .from('profiles')
+          .select('id, first_name, last_name, name, email')
+          .in('id', userIdsToFetch)
+      : { data: [] }
+
+    const profileMap = new Map(profiles?.map(p => [p.id, p]) || [])
+
     const accountUserMap = new Map(
       accounts.map(a => {
-        const user = a.users as unknown as { first_name: string; last_name: string; email: string }
+        const prof = a.user_id ? profileMap.get(a.user_id) : null
         return [
           a.id,
           {
-            userName: `${user.first_name} ${user.last_name}`,
-            userEmail: user.email,
+            userName: prof?.name || `${prof?.first_name || ''} ${prof?.last_name || ''}`.trim() || a.display_name || 'Coach',
+            userEmail: prof?.email || a.email_address,
           }
         ]
       })

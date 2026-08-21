@@ -25,14 +25,18 @@ interface VerifiedSongKey {
 
 export async function POST(request: NextRequest) {
   try {
+    const supabase = await createClient()
+    const { data: { user } } = await supabase.auth.getUser()
+    if (!user) {
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+    }
+
     const body: VerifyKeyRequest = await request.json()
     const { title, artist, currentKey, currentMode } = body
 
     if (!title || !artist) {
       return NextResponse.json({ error: 'Title and artist required' }, { status: 400 })
     }
-
-    const supabase = await createClient()
 
     // First, check if we already have a verified key in our cache
     const { data: cached } = await supabase

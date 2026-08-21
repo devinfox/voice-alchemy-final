@@ -2,7 +2,7 @@
 
 import { useState } from 'react'
 import { EmailBlock } from '@/lib/email-builder-context'
-import { Type, ImageIcon, Upload, Loader2 } from 'lucide-react'
+import { Type, ImageIcon, Upload, Loader2, X } from 'lucide-react'
 import { ensureReadableColor, isLightColor } from '../utils/color-utils'
 
 interface ColumnContent {
@@ -472,9 +472,9 @@ export function ColumnsBlockSettings({
                   <button
                     type="button"
                     onClick={() => updateColumnContent(activeColumn, { src: '' })}
-                    className="absolute top-2 right-2 p-1 bg-red-500/80 rounded-full text-white hover:bg-red-500"
+                    className="absolute top-2 right-2 p-1 bg-red-500/80 rounded-full text-white hover:bg-red-500 flex items-center justify-center"
                   >
-                    <span className="text-xs">✕</span>
+                    <X className="w-3.5 h-3.5" />
                   </button>
                 </div>
               )}

@@ -12,6 +12,28 @@ import Collaboration from '@tiptap/extension-collaboration'
 import * as Y from 'yjs'
 import { YjsSupabaseProvider, AwarenessUser } from '@/lib/yjs-supabase-provider'
 import { Trash2, ChevronDown, ChevronRight, Video, PlayCircle, StopCircle, Bold, Italic, List, ListOrdered, Heading1, Heading2, Quote, Undo, Redo } from 'lucide-react'
+import { SpotlightTour, SpotlightTriggerButton, SpotlightStep } from '@/components/spotlight-tour'
+
+const classroomTourSteps: SpotlightStep[] = [
+  {
+    target: '[data-tour="classroom-video"]',
+    title: '1. HD Live Video Classroom',
+    content: 'Ultra-low latency WebRTC video for vocal coaching, piano accompaniment, and technique drills.',
+    placement: 'bottom',
+  },
+  {
+    target: '[data-tour="classroom-notes"]',
+    title: '2. Collaborative Live Notes',
+    content: 'Teacher and student share this document simultaneously. Lyric adjustments and practice assignments sync live.',
+    placement: 'left',
+  },
+  {
+    target: '[data-tour="classroom-controls"]',
+    title: '3. Lesson Controls & Archival',
+    content: 'Click "Start Class" to begin and record. When ended, recordings and notes automatically archive for review.',
+    placement: 'top',
+  },
+]
 
 type Props = {
   studentId: string
@@ -388,6 +410,9 @@ export default function SessionView({ studentId, bookingId, isAdmin = false, cur
         .no-select { user-select: none; }
       `}</style>
       <div className="grid gap-6">
+        {/* Real On-Page Spotlight Tour */}
+        <SpotlightTour tourKey="classroom_v4" steps={classroomTourSteps} />
+
         {/* Video Section */}
         <VideoSection
           studentId={studentId}
@@ -409,7 +434,7 @@ export default function SessionView({ studentId, bookingId, isAdmin = false, cur
         />
 
         {/* Notes Section */}
-        <section className="bg-white/5 backdrop-blur-sm rounded-xl border border-white/10 overflow-hidden">
+        <section data-tour="classroom-notes" className="bg-white/5 backdrop-blur-sm rounded-xl border border-white/10 overflow-hidden">
           {/* Collaborative editor + awareness - entirely self-contained to avoid parent re-renders */}
           {providerReady && yDocState && providerState ? (
             <CollaborativeEditor
@@ -641,18 +666,21 @@ const VideoSection = React.memo(function VideoSection({
   )
 
   return (
-    <section className="bg-white/5 backdrop-blur-sm rounded-xl border border-white/10 overflow-hidden">
+    <section data-tour="classroom-video" className="bg-white/5 backdrop-blur-sm rounded-xl border border-white/10 overflow-hidden">
       <div className="flex items-center justify-between p-4 pb-3">
         <div className="flex items-center gap-2 text-gray-400">
           <Video className="w-4 h-4" />
           <span className="text-sm font-medium">Video Room</span>
         </div>
-        {active && (
-          <span className="flex items-center gap-1 text-xs text-green-400">
-            <span className="w-2 h-2 bg-green-500 rounded-full animate-pulse"></span>
-            Live
-          </span>
-        )}
+        <div className="flex items-center gap-3">
+          <SpotlightTriggerButton tourKey="classroom_v4" label="How to" />
+          {active && (
+            <span className="flex items-center gap-1 text-xs text-green-400">
+              <span className="w-2 h-2 bg-green-500 rounded-full animate-pulse"></span>
+              Live
+            </span>
+          )}
+        </div>
       </div>
       <div ref={videoWrapperRef} className="relative aspect-video" style={{ background: 'black' }}>
         {/* Video rendered via portal to escape backdrop-blur containing block */}
@@ -661,7 +689,7 @@ const VideoSection = React.memo(function VideoSection({
         {isMiniPlayer && <div className="absolute inset-0 flex items-center justify-center text-gray-500 text-sm bg-black/80 rounded-lg pointer-events-none">Video in mini player ↘</div>}
       </div>
       {isAdmin ? (
-        <div className="p-4 border-t border-white/10 flex items-center gap-2">
+        <div data-tour="classroom-controls" className="p-4 border-t border-white/10 flex items-center gap-2">
           {!active ? (
             <button onClick={onStartClass} className="flex items-center gap-2 px-4 py-2 rounded-lg bg-[#CEB466] hover:bg-[#e0c97d] text-[#171229] font-medium transition-colors"><PlayCircle className="w-5 h-5" />Start Class</button>
           ) : (
@@ -998,7 +1026,7 @@ function ArchivedNoteAccordion({ id, bookingId, title, subtitle, isAdmin, onDele
               onClick={() => setActiveTab('ai')}
               className={`flex-1 px-4 py-2 text-sm font-medium transition-colors ${activeTab === 'ai' ? 'text-[#CEB466] border-b-2 border-[#CEB466]' : 'text-gray-400 hover:text-white'}`}
             >
-              AI Summary {aiStatus === 'processing' && '⏳'}
+              AI Summary {aiStatus === 'processing' && '(Processing...)'}
             </button>
           </div>
 
@@ -1097,7 +1125,7 @@ function ArchivedNoteAccordion({ id, bookingId, title, subtitle, isAdmin, onDele
 
                     {(aiSummary.notesHighlights?.length ?? 0) > 0 && (
                       <div className="bg-[#CEB466]/10 border border-[#CEB466]/20 rounded-lg p-3">
-                        <h4 className="text-xs font-semibold text-[#CEB466] uppercase tracking-wide mb-1">📝 From Class Notes</h4>
+                        <h4 className="text-xs font-semibold text-[#CEB466] uppercase tracking-wide mb-1">From Class Notes</h4>
                         <ul className="list-disc list-inside text-sm text-gray-300 space-y-0.5">
                           {aiSummary.notesHighlights!.map((note, i) => <li key={i}>{note}</li>)}
                         </ul>

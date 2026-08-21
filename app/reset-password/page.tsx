@@ -54,6 +54,22 @@ export default function ResetPasswordPage() {
         window.history.replaceState({}, '', '/reset-password')
       }
 
+      // If we have a token_hash (OTP flow), verify it
+      const tokenHash = urlParams.get('token_hash')
+      const type = urlParams.get('type')
+      if (tokenHash && type === 'recovery') {
+        const { error: verifyError } = await supabase.auth.verifyOtp({
+          token_hash: tokenHash,
+          type: 'recovery',
+        })
+        if (verifyError) {
+          console.error('Failed to verify recovery token:', verifyError)
+          setIsValidSession(false)
+          return
+        }
+        window.history.replaceState({}, '', '/reset-password')
+      }
+
       // If we have a code (PKCE flow), exchange it
       if (code) {
         const { error: exchangeError } = await supabase.auth.exchangeCodeForSession(code)

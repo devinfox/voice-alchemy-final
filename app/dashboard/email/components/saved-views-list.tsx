@@ -45,7 +45,7 @@ export function SavedViewsList({ userId }: SavedViewsListProps) {
   const [loading, setLoading] = useState(true)
   const [expanded, setExpanded] = useState(true)
 
-  const { isCitadelGold, gradientConfig } = useTenant()
+  const { isVoiceAlchemy, gradientConfig } = useTenant()
   const { accentColor } = gradientConfig
 
   useEffect(() => {
@@ -72,13 +72,13 @@ export function SavedViewsList({ userId }: SavedViewsListProps) {
 
   const getActiveClasses = (active: boolean) => {
     if (!active) return 'text-gray-300 hover:bg-white/10 hover:text-white'
-    if (isCitadelGold) return 'bg-yellow-500/20 text-yellow-400'
+    if (isVoiceAlchemy) return 'bg-yellow-500/20 text-yellow-400'
     return 'bg-white/10'
   }
 
   const getActiveStyle = (active: boolean) => {
     if (!active) return undefined
-    if (isCitadelGold) return undefined
+    if (isVoiceAlchemy) return undefined
     return {
       color: accentColor,
       borderColor: `${accentColor}40`,

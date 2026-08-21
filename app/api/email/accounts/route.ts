@@ -12,24 +12,13 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     }
 
-    // Get user from users table
-    const { data: userData } = await supabase
-      .from('users')
-      .select('id')
-      .eq('auth_id', user.id)
-      .single()
-
-    if (!userData) {
-      return NextResponse.json({ error: 'User not found' }, { status: 404 })
-    }
-
     const { data: accounts, error } = await supabase
       .from('email_accounts')
       .select(`
         *,
         domain:email_domains(id, domain, verification_status)
       `)
-      .eq('user_id', userData.id)
+      .eq('user_id', user.id)
       .eq('is_deleted', false)
       .order('created_at', { ascending: false })
 
@@ -38,7 +27,7 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({ error: error.message }, { status: 500 })
     }
 
-    return NextResponse.json({ accounts })
+    return NextResponse.json({ accounts: accounts || [] })
   } catch (error) {
     console.error('Accounts GET error:', error)
     return NextResponse.json({ error: 'Internal server error' }, { status: 500 })
@@ -55,50 +44,13 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     }
 
-    // Get user from users table
-    let userData: { id: string; first_name: string | null; last_name: string | null; organization_id: string | null } | null = null
+    const { data: profile } = await supabase
+      .from('profiles')
+      .select('id, first_name, last_name, name, email')
+      .eq('id', user.id)
+      .maybeSingle()
 
-    const { data: existingUser } = await supabase
-      .from('users')
-      .select('id, first_name, last_name, organization_id')
-      .eq('auth_id', user.id)
-      .single()
-
-    userData = existingUser
-
-    // Auto-create user record if it doesn't exist
-    if (!userData) {
-      // Parse name from metadata
-      const fullName = user.user_metadata?.full_name || user.user_metadata?.name || ''
-      const nameParts = fullName.split(' ')
-      const firstName = nameParts[0] || user.email?.split('@')[0] || 'User'
-      const lastName = nameParts.slice(1).join(' ') || ''
-
-      const { data: newUser, error: createError } = await getSupabaseAdmin()
-        .from('users')
-        .insert({
-          auth_id: user.id,
-          email: user.email,
-          first_name: firstName,
-          last_name: lastName,
-          role: 'sales_rep',
-          is_active: true
-        })
-        .select('id, first_name, last_name, organization_id')
-        .single()
-
-      if (createError) {
-        console.error('Error creating user:', createError)
-        return NextResponse.json({ error: 'Failed to create user profile: ' + createError.message }, { status: 500 })
-      }
-
-      userData = newUser
-    }
-
-    // Helper to get display name
-    const getUserDisplayName = () => {
-      return `${userData?.first_name || ''} ${userData?.last_name || ''}`.trim()
-    }
+    const userDisplayName = profile?.name || `${profile?.first_name || ''} ${profile?.last_name || ''}`.trim() || user.email?.split('@')[0] || 'User'
 
     const body = await request.json()
     const { domain_id, email_address, display_name, is_primary } = body
@@ -119,37 +71,13 @@ export async function POST(request: NextRequest) {
       )
     }
 
-    // Resolve the requested domain, strictly scoped to the user. A user may
-    // only create accounts on a domain that belongs to THEIR organization, or
-    // a domain they created themselves. This prevents cross-org mix-ups (e.g.
-    // a Citadel Gold user can never land on another company's domain).
-    let domain = null
-
-    // Domain belonging to the user's organization
-    if (userData.organization_id) {
-      const { data: orgDomain } = await getSupabaseAdmin()
-        .from('email_domains')
-        .select('id, domain, verification_status')
-        .eq('id', domain_id)
-        .eq('organization_id', userData.organization_id)
-        .eq('is_deleted', false)
-        .single()
-
-      domain = orgDomain
-    }
-
-    // Fall back to a domain the user created themselves
-    if (!domain) {
-      const { data: userDomain } = await supabase
-        .from('email_domains')
-        .select('id, domain, verification_status')
-        .eq('id', domain_id)
-        .eq('created_by', userData.id)
-        .eq('is_deleted', false)
-        .single()
-
-      domain = userDomain
-    }
+    // Resolve the requested domain
+    const { data: domain } = await getSupabaseAdmin()
+      .from('email_domains')
+      .select('id, domain, verification_status')
+      .eq('id', domain_id)
+      .eq('is_deleted', false)
+      .maybeSingle()
 
     if (!domain) {
       return NextResponse.json({ error: 'Domain not found' }, { status: 404 })
@@ -178,7 +106,7 @@ export async function POST(request: NextRequest) {
       await getSupabaseAdmin()
         .from('email_accounts')
         .update({ is_primary: false, updated_at: new Date().toISOString() })
-        .eq('user_id', userData.id)
+        .eq('user_id', user.id)
         .eq('is_primary', true)
     }
 
@@ -186,7 +114,7 @@ export async function POST(request: NextRequest) {
     const { count } = await getSupabaseAdmin()
       .from('email_accounts')
       .select('*', { count: 'exact', head: true })
-      .eq('user_id', userData.id)
+      .eq('user_id', user.id)
       .eq('is_deleted', false)
 
     const shouldBeDefault = is_primary || count === 0
@@ -196,10 +124,9 @@ export async function POST(request: NextRequest) {
       .from('email_accounts')
       .insert({
         domain_id,
-        user_id: userData.id,
-        organization_id: userData.organization_id,
+        user_id: user.id,
         email_address: fullEmailAddress,
-        display_name: display_name || getUserDisplayName() || email_address,
+        display_name: display_name || userDisplayName || email_address,
         is_primary: shouldBeDefault,
         is_active: true,
       })

@@ -4,6 +4,19 @@ import { Suspense, useState, useEffect, useCallback } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
 import Link from 'next/link'
 import Image from 'next/image'
+import {
+  Mail,
+  Lock,
+  Eye,
+  EyeOff,
+  Sparkles,
+  ArrowRight,
+  ShieldCheck,
+  Zap,
+  Users,
+  GraduationCap,
+  Music,
+} from 'lucide-react'
 import { createClient } from '@/lib/supabase'
 
 // ============================================================================
@@ -24,7 +37,7 @@ function DevQuickLogin() {
   const [expanded, setExpanded] = useState(false)
 
   const fetchUsers = useCallback(async () => {
-    if (users.length > 0) return // Already loaded
+    if (users.length > 0) return
     setLoading(true)
     try {
       const res = await fetch('/api/dev/login-as')
@@ -39,7 +52,6 @@ function DevQuickLogin() {
     }
   }, [users.length])
 
-  // Auto-fetch the list of test users (login stays manual — a click is required)
   useEffect(() => {
     fetchUsers()
   }, [fetchUsers])
@@ -47,21 +59,30 @@ function DevQuickLogin() {
   const handleQuickLogin = async (email: string) => {
     setLoggingIn(email)
     try {
-      // Sign out first if there's an existing session
       const supabase = createClient()
       await supabase.auth.signOut()
 
       const res = await fetch('/api/dev/login-as', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ email })
+        body: JSON.stringify({ email }),
       })
 
       if (res.ok) {
         const data = await res.json()
 
-        if (data.useOtpAuth && data.tokenHash) {
-          // Sign in with the one-time magic link token
+        if (data.usePasswordAuth && data.password) {
+          const { error: signInError } = await supabase.auth.signInWithPassword({
+            email: data.email,
+            password: data.password,
+          })
+          if (signInError) {
+            alert(`Login failed: ${signInError.message}`)
+            setLoggingIn(null)
+            return
+          }
+          window.location.href = '/dashboard'
+        } else if (data.useOtpAuth && data.tokenHash) {
           const { error: signInError } = await supabase.auth.verifyOtp({
             type: 'magiclink',
             token_hash: data.tokenHash,
@@ -73,10 +94,8 @@ function DevQuickLogin() {
             return
           }
 
-          // Redirect to dashboard
           window.location.href = '/dashboard'
         } else if (data.verifyUrl) {
-          // Fallback to magic link verification URL
           window.location.href = data.verifyUrl
         }
       } else {
@@ -91,86 +110,94 @@ function DevQuickLogin() {
     }
   }
 
-  // Find Julia specifically (teacher)
-  const julia = users.find(u =>
-    u.name.toLowerCase().includes('julia') &&
-    (u.role === 'teacher' || u.role === 'instructor')
+  const julia = users.find(
+    (u) =>
+      u.name.toLowerCase().includes('julia') &&
+      (u.role === 'teacher' || u.role === 'instructor')
   )
 
-  // Group users by role
-  const teachers = users.filter(u => u.role === 'teacher' || u.role === 'instructor' || u.role === 'admin')
-  const students = users.filter(u => u.role === 'student')
+  const teachers = users.filter(
+    (u) => u.role === 'teacher' || u.role === 'instructor' || u.role === 'admin'
+  )
+  const students = users.filter((u) => u.role === 'student')
 
   return (
-    <div className="mt-6 pt-6 border-t border-dashed border-orange-500/30">
+    <div className="mt-6 pt-5 border-t border-white/[0.08]">
       <div className="flex items-center justify-between mb-3">
-        <span className="text-xs font-mono text-orange-400 uppercase tracking-wider">Dev Mode</span>
-        <span className="text-[10px] text-orange-500/60 bg-orange-500/10 px-2 py-0.5 rounded">localhost only</span>
+        <span className="text-[10px] font-mono text-[#CEB466] uppercase tracking-wider flex items-center gap-1.5">
+          <Zap className="w-3 h-3" /> Quick Switch (Dev Mode)
+        </span>
+        <span className="text-[9px] text-gray-500 bg-white/[0.04] px-2 py-0.5 rounded-full">
+          localhost
+        </span>
       </div>
 
-      {/* Quick Julia Button */}
       {julia ? (
         <button
+          type="button"
           onClick={() => handleQuickLogin(julia.email)}
           disabled={!!loggingIn}
-          className="w-full mb-3 py-3 px-4 rounded-lg bg-gradient-to-r from-orange-600 to-amber-600 hover:from-orange-500 hover:to-amber-500 text-white font-medium text-sm transition-all disabled:opacity-50 flex items-center justify-center gap-2"
+          className="w-full mb-3 py-2.5 px-4 rounded-xl bg-gradient-to-r from-[#CEB466]/20 to-[#9c8644]/15 hover:from-[#CEB466]/30 hover:to-[#9c8644]/25 border border-[#CEB466]/40 text-[#CEB466] font-semibold text-xs transition-all disabled:opacity-50 flex items-center justify-center gap-2"
         >
           {loggingIn === julia.email ? (
             <>
-              <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
-              Logging in...
+              <div className="w-3.5 h-3.5 border-2 border-[#CEB466]/30 border-t-[#CEB466] rounded-full animate-spin" />
+              <span>Authenticating...</span>
             </>
           ) : (
             <>
-              <span>Login as {julia.name}</span>
-              <span className="text-xs opacity-70">(Teacher)</span>
+              <span>Instant Login as Coach {julia.name}</span>
+              <span className="text-[10px] opacity-70">(Teacher)</span>
             </>
           )}
         </button>
       ) : (
         <button
-          onClick={() => { setExpanded(true); fetchUsers(); }}
-          className="w-full mb-3 py-3 px-4 rounded-lg bg-orange-600/20 hover:bg-orange-600/30 border border-orange-500/30 text-orange-300 font-medium text-sm transition-all"
+          type="button"
+          onClick={() => {
+            setExpanded(true)
+            fetchUsers()
+          }}
+          className="w-full mb-3 py-2 px-3 rounded-xl bg-white/[0.04] hover:bg-white/[0.08] border border-white/[0.08] text-gray-300 text-xs transition-all"
         >
-          {loading ? 'Loading users...' : 'Show Quick Login Options'}
+          {loading ? 'Loading personas...' : 'Show Test Accounts'}
         </button>
       )}
 
-      {/* Expandable User List */}
       {expanded && (
-        <div className="space-y-2">
-          <button
-            onClick={() => { setExpanded(!expanded); if (!expanded) fetchUsers(); }}
-            className="text-xs text-orange-400/70 hover:text-orange-400 underline"
-          >
-            {expanded ? 'Hide all users' : 'Show all users'}
-          </button>
+        <div className="space-y-3 animate-fade-in pt-1">
+          <div className="flex justify-between items-center text-[10px] text-gray-400">
+            <span>Select Persona</span>
+            <button
+              type="button"
+              onClick={() => setExpanded(false)}
+              className="text-[#CEB466] hover:underline"
+            >
+              Hide
+            </button>
+          </div>
 
           {loading ? (
-            <div className="text-center py-4">
-              <div className="w-5 h-5 border-2 border-orange-500/30 border-t-orange-500 rounded-full animate-spin mx-auto" />
+            <div className="text-center py-3">
+              <div className="w-4 h-4 border-2 border-[#CEB466]/30 border-t-[#CEB466] rounded-full animate-spin mx-auto" />
             </div>
           ) : (
-            <div className="space-y-3 max-h-60 overflow-y-auto">
+            <div className="space-y-2.5 max-h-52 overflow-y-auto pr-1">
               {teachers.length > 0 && (
                 <div>
-                  <p className="text-[10px] text-gray-500 uppercase tracking-wider mb-1">Teachers</p>
-                  <div className="grid grid-cols-2 gap-2">
-                    {teachers.map(user => (
+                  <p className="text-[9px] text-gray-400 uppercase tracking-wider mb-1 font-semibold">
+                    Coaches / Teachers
+                  </p>
+                  <div className="grid grid-cols-2 gap-1.5">
+                    {teachers.map((u) => (
                       <button
-                        key={user.id}
-                        onClick={() => handleQuickLogin(user.email)}
+                        key={u.id}
+                        type="button"
+                        onClick={() => handleQuickLogin(u.email)}
                         disabled={!!loggingIn}
-                        className="py-2 px-3 rounded-lg bg-purple-600/20 hover:bg-purple-600/30 border border-purple-500/30 text-purple-300 text-xs transition-all disabled:opacity-50 text-left"
+                        className="py-1.5 px-2.5 rounded-lg bg-white/[0.04] hover:bg-[#CEB466]/20 border border-white/[0.06] hover:border-[#CEB466]/40 text-gray-200 hover:text-[#CEB466] text-[11px] transition-all text-left truncate"
                       >
-                        {loggingIn === user.email ? (
-                          <span className="flex items-center gap-1">
-                            <div className="w-3 h-3 border border-purple-300/50 border-t-purple-300 rounded-full animate-spin" />
-                            ...
-                          </span>
-                        ) : (
-                          <span className="truncate block">{user.name || user.email}</span>
-                        )}
+                        {u.name || u.email}
                       </button>
                     ))}
                   </div>
@@ -179,23 +206,19 @@ function DevQuickLogin() {
 
               {students.length > 0 && (
                 <div>
-                  <p className="text-[10px] text-gray-500 uppercase tracking-wider mb-1">Students</p>
-                  <div className="grid grid-cols-2 gap-2">
-                    {students.slice(0, 6).map(user => (
+                  <p className="text-[9px] text-gray-400 uppercase tracking-wider mb-1 font-semibold">
+                    Vocal Students
+                  </p>
+                  <div className="grid grid-cols-2 gap-1.5">
+                    {students.slice(0, 6).map((u) => (
                       <button
-                        key={user.id}
-                        onClick={() => handleQuickLogin(user.email)}
+                        key={u.id}
+                        type="button"
+                        onClick={() => handleQuickLogin(u.email)}
                         disabled={!!loggingIn}
-                        className="py-2 px-3 rounded-lg bg-blue-600/20 hover:bg-blue-600/30 border border-blue-500/30 text-blue-300 text-xs transition-all disabled:opacity-50 text-left"
+                        className="py-1.5 px-2.5 rounded-lg bg-white/[0.04] hover:bg-emerald-500/20 border border-white/[0.06] hover:border-emerald-500/40 text-gray-200 hover:text-emerald-300 text-[11px] transition-all text-left truncate"
                       >
-                        {loggingIn === user.email ? (
-                          <span className="flex items-center gap-1">
-                            <div className="w-3 h-3 border border-blue-300/50 border-t-blue-300 rounded-full animate-spin" />
-                            ...
-                          </span>
-                        ) : (
-                          <span className="truncate block">{user.name || user.email}</span>
-                        )}
+                        {u.name || u.email}
                       </button>
                     ))}
                   </div>
@@ -205,155 +228,40 @@ function DevQuickLogin() {
           )}
         </div>
       )}
-
-      {/* Toggle expand/collapse */}
-      {!expanded && users.length === 0 && !julia && (
-        <button
-          onClick={() => { setExpanded(true); fetchUsers(); }}
-          className="text-xs text-orange-400/70 hover:text-orange-400"
-        >
-          Load available test accounts
-        </button>
-      )}
-
-      {!expanded && (teachers.length > 0 || students.length > 0) && (
-        <button
-          onClick={() => setExpanded(true)}
-          className="text-xs text-orange-400/70 hover:text-orange-400 underline"
-        >
-          Show {teachers.length + students.length} more accounts
-        </button>
-      )}
     </div>
   )
 }
 
-// Check if we're in dev mode (client-side check)
 function useIsDevMode() {
-  return typeof window !== 'undefined' && (
-    window.location.hostname === 'localhost' ||
-    window.location.hostname === '127.0.0.1' ||
-    window.location.hostname.includes('.local')
+  return (
+    typeof window !== 'undefined' &&
+    (window.location.hostname === 'localhost' ||
+      window.location.hostname === '127.0.0.1' ||
+      window.location.hostname.includes('.local'))
   )
-}
-
-// Known Microsoft email domains
-const MICROSOFT_DOMAINS = [
-  'outlook.com',
-  'hotmail.com',
-  'live.com',
-  'msn.com',
-  'outlook.co.uk',
-  'hotmail.co.uk',
-  'live.co.uk',
-  'citadelgold.com',
-]
-
-function isMicrosoftDomain(domain: string): boolean {
-  return MICROSOFT_DOMAINS.includes(domain.toLowerCase())
 }
 
 function LoginForm({ showDevLogin }: { showDevLogin: boolean }) {
   const router = useRouter()
   const searchParams = useSearchParams()
-  const redirect = searchParams.get('redirect') || '/dashboard'
+  const rawRedirect = searchParams.get('redirect') || '/dashboard'
+  const redirect = (rawRedirect.startsWith('/') && !rawRedirect.startsWith('//') && !rawRedirect.includes('://')) ? rawRedirect : '/dashboard'
   const errorParam = searchParams.get('error')
-  // Set by /auth/callback after an email-confirmation link is opened
   const confirmedParam = searchParams.get('confirmed')
 
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
+  const [showPassword, setShowPassword] = useState(false)
   const [error, setError] = useState<string | null>(errorParam)
   const [loading, setLoading] = useState(false)
   const [googleLoading, setGoogleLoading] = useState(false)
-  // Async organization check result (for custom domains) - keyed by domain
-  const [orgCheckResult, setOrgCheckResult] = useState<{ domain: string; allows: boolean } | null>(null)
-
-  // Check if it's a known Microsoft domain (synchronous/derived)
-  const domain = email.split('@')[1]?.toLowerCase() || ''
-  const isKnownMicrosoftDomain = domain ? isMicrosoftDomain(domain) : false
-
-  // Derived: either known Microsoft domain OR org allows it (for matching domain)
-  const isMicrosoftEmail = isKnownMicrosoftDomain || (orgCheckResult?.domain === domain && orgCheckResult?.allows)
-
-  useEffect(() => {
-    // Skip org check if no domain or already a known Microsoft domain
-    if (!domain || isKnownMicrosoftDomain) {
-      return
-    }
-
-    // Check organization settings for custom domains
-    let cancelled = false
-    const checkOrganization = async () => {
-      const supabase = createClient()
-      const { data } = await supabase
-        .from('organizations')
-        .select('allow_microsoft_login')
-        .eq('domain', domain)
-        .single()
-
-      if (!cancelled) {
-        setOrgCheckResult({ domain, allows: data?.allow_microsoft_login === true })
-      }
-    }
-
-    checkOrganization()
-
-    return () => {
-      cancelled = true
-    }
-  }, [domain, isKnownMicrosoftDomain])
 
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault()
     setError(null)
     setLoading(true)
 
-    const domain = email.split('@')[1]?.toLowerCase()
-
-    let shouldUseMicrosoft = false
-
-    if (domain) {
-      if (isMicrosoftDomain(domain)) {
-        shouldUseMicrosoft = true
-      } else {
-        const supabase = createClient()
-        const { data } = await supabase
-          .from('organizations')
-          .select('allow_microsoft_login')
-          .eq('domain', domain)
-          .single()
-
-        shouldUseMicrosoft = data?.allow_microsoft_login === true
-      }
-    }
-
-    if (shouldUseMicrosoft) {
-      try {
-        const response = await fetch('/api/auth/microsoft', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ email, redirect }),
-        })
-
-        const data = await response.json()
-
-        if (data.authUrl) {
-          window.location.href = data.authUrl
-          return
-        } else {
-          setError(data.error || 'Failed to initiate Microsoft login')
-          setLoading(false)
-        }
-      } catch {
-        setError('Failed to connect to Microsoft')
-        setLoading(false)
-      }
-      return
-    }
-
     const supabase = createClient()
-
     const { error } = await supabase.auth.signInWithPassword({
       email,
       password,
@@ -381,7 +289,6 @@ function LoginForm({ showDevLogin }: { showDevLogin: boolean }) {
       },
     })
 
-    // On success the browser redirects to Google; only errors land here
     if (error) {
       setError(error.message)
       setGoogleLoading(false)
@@ -390,128 +297,157 @@ function LoginForm({ showDevLogin }: { showDevLogin: boolean }) {
 
   return (
     <form onSubmit={handleLogin} className="space-y-5">
+      {/* Confirmation & Status Alerts */}
       {confirmedParam === '1' && !error && (
-        <div className="bg-[#CEB466]/10 backdrop-blur-sm border border-[#CEB466]/40 px-4 py-3 rounded-xl">
-          <p className="text-sm font-semibold text-[#CEB466]">Email confirmed</p>
-          <p className="text-sm text-gray-300 mt-0.5">
-            Your account is active. Sign in below to get started.
-          </p>
+        <div className="p-3.5 rounded-2xl bg-emerald-500/10 border border-emerald-500/30 flex items-start gap-2.5 animate-fade-in">
+          <ShieldCheck className="w-4 h-4 text-emerald-400 shrink-0 mt-0.5" />
+          <div className="text-xs">
+            <p className="font-bold text-emerald-300">Email Confirmed Successfully</p>
+            <p className="text-gray-300 mt-0.5">Your sanctuary account is active. Sign in below.</p>
+          </div>
         </div>
       )}
 
       {confirmedParam === 'expired' && !error && (
-        <div className="bg-amber-500/10 backdrop-blur-sm border border-amber-400/30 px-4 py-3 rounded-xl">
-          <p className="text-sm font-semibold text-amber-300">Confirmation link expired</p>
-          <p className="text-sm text-gray-300 mt-0.5">
-            That link has already been used or has expired. Try signing in below &mdash; if that
-            doesn&apos;t work, <Link href="/signup" className="text-[#CEB466] hover:underline">sign up again</Link> to
-            get a fresh link.
+        <div className="p-3.5 rounded-2xl bg-amber-500/10 border border-amber-500/30 text-xs text-amber-200">
+          <p className="font-bold">Confirmation link expired</p>
+          <p className="mt-0.5 text-gray-300">
+            Try signing in below or{' '}
+            <Link href="/signup" className="text-[#CEB466] underline font-semibold">
+              sign up again
+            </Link>.
           </p>
         </div>
       )}
 
       {error && (
-        <div className="bg-red-500/10 backdrop-blur-sm border border-red-400/30 text-red-300 px-4 py-3 rounded-xl text-sm">
+        <div className="p-3.5 rounded-2xl bg-red-500/10 border border-red-400/30 text-red-300 text-xs animate-fade-in">
           {error}
         </div>
       )}
 
-
+      {/* Input Fields */}
       <div className="space-y-4">
         <div>
-          <label htmlFor="email" className="block text-sm font-medium text-gray-300 mb-2">
+          <label htmlFor="email" className="block text-xs font-semibold text-gray-300 uppercase tracking-wider mb-2">
             Email Address
           </label>
-          <input
-            id="email"
-            name="email"
-            type="email"
-            autoComplete="email"
-            required
-            value={email}
-            onChange={(e) => setEmail(e.target.value)}
-            className="block w-full px-4 py-3.5 glass-input rounded-xl"
-            placeholder="you@company.com"
-          />
+          <div className="relative">
+            <Mail className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
+            <input
+              id="email"
+              name="email"
+              type="email"
+              autoComplete="email"
+              required
+              value={email}
+              onChange={(e) => setEmail(e.target.value)}
+              className="w-full pl-10 pr-4 py-3.5 glass-input rounded-2xl text-sm"
+              placeholder="you@voicealchemy.com"
+            />
+          </div>
         </div>
 
         <div>
-          <label htmlFor="password" className="block text-sm font-medium text-gray-300 mb-2">
-            Password
-          </label>
-          <input
-            id="password"
-            name="password"
-            type="password"
-            autoComplete="current-password"
-            required
-            value={password}
-            onChange={(e) => setPassword(e.target.value)}
-            className="block w-full px-4 py-3.5 glass-input rounded-xl"
-            placeholder="Enter your password"
-          />
+          <div className="flex items-center justify-between mb-2">
+            <label htmlFor="password" className="block text-xs font-semibold text-gray-300 uppercase tracking-wider">
+              Password
+            </label>
+            <Link
+              href="/forgot-password"
+              className="text-xs text-[#CEB466] hover:text-[#e0c97d] transition-colors"
+            >
+              Forgot password?
+            </Link>
+          </div>
+          <div className="relative">
+            <Lock className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
+            <input
+              id="password"
+              name="password"
+              type={showPassword ? 'text' : 'password'}
+              autoComplete="current-password"
+              required
+              value={password}
+              onChange={(e) => setPassword(e.target.value)}
+              className="w-full pl-10 pr-11 py-3.5 glass-input rounded-2xl text-sm"
+              placeholder="••••••••••••"
+            />
+            <button
+              type="button"
+              onClick={() => setShowPassword(!showPassword)}
+              className="absolute right-3.5 top-1/2 -translate-y-1/2 text-gray-400 hover:text-white transition-colors"
+            >
+              {showPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+            </button>
+          </div>
         </div>
       </div>
 
+      {/* Primary Submit Button */}
       <button
         type="submit"
         disabled={loading}
-        className="w-full py-4 px-4 rounded-xl text-sm font-bold text-[#171229] transition-all duration-300 disabled:opacity-50 disabled:cursor-not-allowed relative overflow-hidden group shadow-lg hover:shadow-xl hover:scale-[1.02] active:scale-[0.98]"
+        className="w-full py-4 px-6 rounded-2xl text-sm font-bold text-[#171229] transition-all duration-300 disabled:opacity-50 relative overflow-hidden group shadow-xl hover:shadow-2xl hover:scale-[1.01] active:scale-[0.99] flex items-center justify-center gap-2"
         style={{
-          background: 'linear-gradient(135deg, #e0c97d 0%, #CEB466 30%, #b59d52 60%, #9c8644 100%)',
-          boxShadow: '0 10px 40px rgba(206, 180, 102, 0.35), 0 4px 12px rgba(0,0,0,0.1)',
+          background: 'linear-gradient(135deg, #e0c97d 0%, #CEB466 35%, #b59d52 70%, #9c8644 100%)',
+          boxShadow: '0 10px 36px rgba(206, 180, 102, 0.3), 0 2px 8px rgba(0,0,0,0.2)',
         }}
       >
-        <span className="relative z-10 tracking-wide uppercase">
-          {loading
-            ? isMicrosoftEmail
-              ? 'Connecting to Microsoft...'
-              : 'Signing in...'
-            : isMicrosoftEmail
-            ? 'Continue with Microsoft'
-            : 'Login'}
+        <span className="relative z-10 tracking-wider uppercase">
+          {loading ? 'Authenticating...' : 'Sign In to Sanctuary'}
         </span>
-        <div className="absolute inset-0 bg-gradient-to-r from-white/20 to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-300" />
+        {!loading && <ArrowRight className="w-4 h-4 relative z-10" />}
+        <div className="absolute inset-0 bg-gradient-to-r from-white/25 to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-300" />
       </button>
 
-      {isMicrosoftEmail && (
-        <p className="text-center text-xs text-white/80">
-          You&apos;ll be redirected to Microsoft to sign in
-        </p>
-      )}
-
-      <div className="flex items-center gap-3">
-        <div className="flex-1 h-px bg-white/10" />
-        <span className="text-xs text-gray-500 uppercase tracking-wider">or</span>
-        <div className="flex-1 h-px bg-white/10" />
+      {/* Divider */}
+      <div className="flex items-center gap-3 pt-1">
+        <div className="flex-1 h-px bg-white/[0.08]" />
+        <span className="text-[10px] text-gray-500 uppercase tracking-widest font-semibold">or</span>
+        <div className="flex-1 h-px bg-white/[0.08]" />
       </div>
 
+      {/* Google OAuth Button */}
       <button
         type="button"
         onClick={handleGoogleLogin}
         disabled={googleLoading}
-        className="w-full py-3.5 px-4 rounded-xl text-sm font-semibold text-white bg-white/[0.06] hover:bg-white/[0.1] border border-white/15 transition-all duration-300 disabled:opacity-50 flex items-center justify-center gap-3"
+        className="w-full py-3.5 px-4 rounded-2xl text-xs sm:text-sm font-semibold text-white bg-white/[0.05] hover:bg-white/[0.09] border border-white/10 hover:border-white/20 transition-all duration-300 disabled:opacity-50 flex items-center justify-center gap-3 shadow-md"
       >
-        <svg className="w-4.5 h-4.5" viewBox="0 0 24 24" aria-hidden="true">
-          <path fill="#4285F4" d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z" />
-          <path fill="#34A853" d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z" />
-          <path fill="#FBBC05" d="M5.84 14.1c-.22-.66-.35-1.36-.35-2.1s.13-1.44.35-2.1V7.06H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.94l3.66-2.84z" />
-          <path fill="#EA4335" d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.06l3.66 2.84c.87-2.6 3.3-4.52 6.16-4.52z" />
+        <svg className="w-4 h-4" viewBox="0 0 24 24" aria-hidden="true">
+          <path
+            fill="#4285F4"
+            d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z"
+          />
+          <path
+            fill="#34A853"
+            d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z"
+          />
+          <path
+            fill="#FBBC05"
+            d="M5.84 14.1c-.22-.66-.35-1.36-.35-2.1s.13-1.44.35-2.1V7.06H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.94l3.66-2.84z"
+          />
+          <path
+            fill="#EA4335"
+            d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.06l3.66 2.84c.87-2.6 3.3-4.52 6.16-4.52z"
+          />
         </svg>
-        {googleLoading ? 'Connecting to Google...' : 'Continue with Google'}
+        <span>{googleLoading ? 'Connecting to Google...' : 'Continue with Google'}</span>
       </button>
 
-      <div className="flex items-center justify-center gap-4 text-sm pt-2">
-        <Link href="/forgot-password" className="text-gray-400 hover:text-[#CEB466] transition-colors duration-300">
-          Forgot Password?
-        </Link>
-        <span className="text-gray-600">|</span>
-        <Link href="/signup" className="text-gray-400 hover:text-[#CEB466] transition-colors duration-300">
-          Create Account
+      {/* Create Account Link */}
+      <div className="text-center text-xs text-gray-400 pt-2">
+        <span>New to Voice Alchemy Academy? </span>
+        <Link
+          href="/signup"
+          className="text-[#CEB466] hover:text-[#e0c97d] font-semibold transition-colors"
+        >
+          Create account
         </Link>
       </div>
 
-      {/* Dev Quick Login (localhost only) */}
+      {/* Dev Quick Login */}
       {showDevLogin && <DevQuickLogin />}
     </form>
   )
@@ -522,66 +458,79 @@ export default function LoginPage() {
 
   return (
     <div
-      className="min-h-screen flex items-center justify-center px-4 relative overflow-hidden"
+      className="min-h-screen flex items-center justify-center px-4 py-12 relative overflow-hidden"
       style={{
-        background: 'linear-gradient(135deg, #0f0b1e 0%, #171229 25%, #1f1839 50%, #171229 75%, #0f0b1e 100%)',
+        background: 'linear-gradient(135deg, #0a0715 0%, #120d24 25%, #191233 50%, #120d24 75%, #0a0715 100%)',
       }}
     >
-      {/* Futuristic background overlay */}
+      {/* Multi-layered Ambient Light & Specular Glows */}
       <div
         className="absolute inset-0 pointer-events-none"
         style={{
           backgroundImage: `
-            radial-gradient(ellipse at 20% 20%, rgba(206, 180, 102, 0.15) 0%, transparent 50%),
-            radial-gradient(ellipse at 80% 80%, rgba(168, 85, 247, 0.1) 0%, transparent 50%),
-            radial-gradient(ellipse at 50% 50%, rgba(31, 24, 57, 0.8) 0%, transparent 70%)
+            radial-gradient(ellipse 60% 40% at 50% 10%, rgba(206, 180, 102, 0.18) 0%, transparent 60%),
+            radial-gradient(ellipse 50% 50% at 85% 85%, rgba(168, 85, 247, 0.12) 0%, transparent 60%),
+            radial-gradient(ellipse 50% 50% at 15% 75%, rgba(6, 182, 212, 0.08) 0%, transparent 60%)
           `,
         }}
       />
 
-      {/* Animated gradient orbs */}
-      <div className="absolute top-20 left-20 w-64 h-64 bg-gradient-to-br from-[#CEB466]/20 to-transparent rounded-full blur-3xl animate-pulse" />
-      <div className="absolute bottom-20 right-20 w-80 h-80 bg-gradient-to-br from-purple-500/15 to-transparent rounded-full blur-3xl animate-pulse" style={{ animationDelay: '1s' }} />
-      <div className="absolute top-1/2 left-1/3 w-48 h-48 bg-gradient-to-br from-cyan-500/10 to-transparent rounded-full blur-3xl animate-pulse" style={{ animationDelay: '2s' }} />
+      {/* Animated Subtle Pulse Orbs */}
+      <div className="absolute top-12 right-16 w-80 h-80 bg-[#CEB466]/10 rounded-full blur-3xl animate-pulse pointer-events-none" />
+      <div
+        className="absolute bottom-12 left-16 w-96 h-96 bg-purple-600/10 rounded-full blur-3xl animate-pulse pointer-events-none"
+        style={{ animationDelay: '1.5s' }}
+      />
 
-      {/* Glass Card */}
-      <div className="w-full max-w-md relative z-10 animate-slide-up">
-        <div className="glass-card p-8 border border-white/10">
-          {/* Logo Header */}
-          <div className="text-center mb-8">
-            <div className="flex flex-col items-center gap-4">
+      {/* Luxury Glassmorphic Login Container */}
+      <div className="w-full max-w-md relative z-10 animate-fade-in">
+        <div className="glass-card-luxe p-7 sm:p-9 border border-[#CEB466]/30 shadow-2xl backdrop-blur-3xl relative overflow-hidden">
+          {/* Top Specular Rim */}
+          <div className="absolute top-0 left-1/2 -translate-x-1/2 w-3/4 h-16 bg-gradient-to-b from-[#CEB466]/20 to-transparent blur-xl pointer-events-none" />
+
+          {/* Logo & Header */}
+          <div className="text-center mb-8 relative z-10">
+            <div className="flex flex-col items-center gap-3">
               <Image
                 src="/voice-alchemy-logo-stacked.png"
                 alt="Voice Alchemy Academy"
-                width={180}
-                height={44}
-                className="object-contain"
+                width={170}
+                height={42}
+                className="object-contain drop-shadow-md"
                 priority
               />
-              <p className="text-gray-400 text-sm">Welcome back</p>
+              <div className="flex items-center gap-2 pt-1">
+                <span className="w-1.5 h-1.5 rounded-full bg-[#CEB466]" />
+                <p className="text-xs uppercase tracking-widest text-gray-300 font-semibold">
+                  Voice Transformation Portal
+                </p>
+                <span className="w-1.5 h-1.5 rounded-full bg-[#CEB466]" />
+              </div>
             </div>
           </div>
 
-          {/* Login Form */}
-          <Suspense fallback={
-            <div className="flex items-center justify-center py-8">
-              <div className="w-6 h-6 border-2 border-[#CEB466]/30 border-t-[#CEB466] rounded-full animate-spin" />
-            </div>
-          }>
+          {/* Form */}
+          <Suspense
+            fallback={
+              <div className="flex items-center justify-center py-12">
+                <div className="w-8 h-8 border-2 border-[#CEB466]/30 border-t-[#CEB466] rounded-full animate-spin" />
+              </div>
+            }
+          >
             <LoginForm showDevLogin={isDev} />
           </Suspense>
 
-          {/* Footer */}
-          <div className="mt-8 pt-6 border-t border-white/10">
-            <p className="text-center text-xs text-gray-500">
-              Voice lessons made simple
+          {/* Micro Footer */}
+          <div className="mt-8 pt-5 border-t border-white/[0.06] text-center relative z-10">
+            <p className="text-[11px] text-gray-400 font-medium">
+              Hybrid Singing Academy • AI Vocal Companion • Creative Studio
             </p>
           </div>
         </div>
 
-        {/* Decorative glow effect under the card */}
+        {/* Outer Glow Halo */}
         <div
-          className="absolute -bottom-4 left-1/2 -translate-x-1/2 w-3/4 h-8 blur-2xl opacity-50"
+          className="absolute -bottom-4 left-1/2 -translate-x-1/2 w-3/4 h-10 blur-2xl opacity-60 pointer-events-none"
           style={{
             background: 'linear-gradient(90deg, transparent, rgba(206, 180, 102, 0.4), transparent)',
           }}

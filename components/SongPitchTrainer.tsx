@@ -4,6 +4,28 @@ import { useState, useEffect, useRef, useCallback } from 'react'
 import { Music, X, Maximize2, Minimize2, Mic, MicOff, Search, Loader2, TrendingUp, Save, Music2, ChevronRight, Volume2, Zap, RefreshCw, Check, AlertCircle } from 'lucide-react'
 import Script from 'next/script'
 import { analyzeBuffer } from '@/lib/pitch-detection'
+import { SpotlightTour, SpotlightTriggerButton, SpotlightStep } from '@/components/spotlight-tour'
+
+const songTourSteps: SpotlightStep[] = [
+  {
+    target: '[data-tour="song-search-input"]',
+    title: '1. Search for Any Song',
+    content: 'Type any song title or artist. The system finds the track, key signature, and tempo.',
+    placement: 'bottom',
+  },
+  {
+    target: '[data-tour="song-key-card"]',
+    title: '2. Key Signature & Scale Notes',
+    content: 'Displays the detected musical key and highlights all valid in-key vocal notes.',
+    placement: 'bottom',
+  },
+  {
+    target: '[data-tour="song-mic-toggle"]',
+    title: '3. Sing in Key & Track Accuracy',
+    content: 'Turn on the mic. Sung notes highlight green when in-key and red when out of key.',
+    placement: 'top',
+  },
+]
 
 // ============================================================================
 // CONSTANTS & TYPES
@@ -276,11 +298,11 @@ export default function SongPitchTrainer({ variant = 'floating' }: SongPitchTrai
     if (!selectedSong || totalNotes === 0) return
     setIsSaving(true)
     try {
-      await fetch('/api/pitch-training/song-key-session', {
+      const response = await fetch('/api/pitch-training/song-key-session', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          startedAt: startTime?.toISOString(),
+          startedAt: startTime ? startTime.toISOString() : new Date().toISOString(),
           endedAt: new Date().toISOString(),
           songKey: selectedSong.key,
           songTitle: selectedSong.title,
@@ -290,8 +312,12 @@ export default function SongPitchTrainer({ variant = 'floating' }: SongPitchTrai
           totalNotes
         })
       })
+      const result = await response.json()
+      if (!response.ok) {
+        throw new Error(result.error || 'Failed to save session')
+      }
     } catch (e) {
-      console.error(e)
+      console.error('Error saving song session:', e)
     } finally {
       setIsSaving(false)
     }
@@ -343,24 +369,28 @@ export default function SongPitchTrainer({ variant = 'floating' }: SongPitchTrai
       {isOpen && (
         <div className="fixed inset-0 z-[100] flex">
           <div className="absolute inset-0 bg-black/90" onClick={() => setIsOpen(false)} />
+          <SpotlightTour tourKey="song_trainer_v4" steps={songTourSteps} />
 
           <div className={`relative flex w-full h-full ${isFullscreen ? '' : 'lg:m-8 lg:rounded-3xl overflow-hidden'}`}>
             {/* Left Panel - Song Search */}
             <div className="w-80 bg-slate-900 border-r border-slate-700/50 flex flex-col z-10">
               {/* Search Header */}
               <div className="p-4 border-b border-slate-700/50">
-                <div className="flex items-center gap-3 mb-4">
-                  <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-emerald-500 to-teal-500 flex items-center justify-center">
-                    <Music className="w-5 h-5 text-white" />
+                <div className="flex items-center justify-between mb-4">
+                  <div className="flex items-center gap-3">
+                    <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-emerald-500 to-teal-500 flex items-center justify-center">
+                      <Music className="w-5 h-5 text-white" />
+                    </div>
+                    <div>
+                      <h2 className="font-bold text-white">Song Key Trainer</h2>
+                      <p className="text-xs text-slate-400">Search & sing in key</p>
+                    </div>
                   </div>
-                  <div>
-                    <h2 className="font-bold text-white">Song Key Trainer</h2>
-                    <p className="text-xs text-slate-400">Search & sing in key</p>
-                  </div>
+                  <SpotlightTriggerButton tourKey="song_trainer_v4" label="How to" />
                 </div>
 
                 {/* Search Input */}
-                <div className="relative">
+                <div data-tour="song-search-input" className="relative">
                   <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
                   <input
                     type="text"
@@ -373,6 +403,9 @@ export default function SongPitchTrainer({ variant = 'floating' }: SongPitchTrai
                   {isSearching && <Loader2 className="absolute right-3 top-1/2 -translate-y-1/2 w-4 h-4 text-emerald-400 animate-spin" />}
                 </div>
               </div>
+
+              {/* Real On-Page Spotlight Tour */}
+              <SpotlightTour tourKey="song_trainer_v2" steps={songTourSteps} />
 
               {/* Search Results */}
               <div className="flex-1 overflow-y-auto">
@@ -398,7 +431,7 @@ export default function SongPitchTrainer({ variant = 'floating' }: SongPitchTrai
 
                 {/* Selected Song Info */}
                 {selectedSong && searchResults.length === 0 && (
-                  <div className="p-4">
+                  <div data-tour="song-key-card" className="p-4">
                     <div className="bg-gradient-to-br from-emerald-500/20 to-teal-500/20 rounded-xl p-4 border border-emerald-500/30">
                       <p className="text-white font-bold">{selectedSong.title}</p>
                       <p className="text-slate-400 text-sm">{selectedSong.artist}</p>
@@ -608,6 +641,7 @@ export default function SongPitchTrainer({ variant = 'floating' }: SongPitchTrai
                       />
                     </div>
                     <button
+                      data-tour="song-mic-toggle"
                       onClick={isListening ? stopListening : startListening}
                       className={`flex items-center gap-2 px-6 py-3 rounded-xl font-semibold transition-all ${
                         isListening

@@ -25,17 +25,6 @@ export async function POST(
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     }
 
-    // Get user from users table
-    const { data: userData } = await supabase
-      .from('users')
-      .select('id, first_name, last_name')
-      .eq('auth_id', user.id)
-      .single()
-
-    if (!userData) {
-      return NextResponse.json({ error: 'User not found' }, { status: 404 })
-    }
-
     const admin = getSupabaseAdmin()
 
     // Get the email with all required data
@@ -57,7 +46,7 @@ export async function POST(
     }
 
     // Verify ownership
-    if (email.email_account?.user_id !== userData.id) {
+    if (email.email_account?.user_id !== user.id) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 403 })
     }
 
@@ -98,7 +87,7 @@ export async function POST(
         const { data: tokenData } = await admin
           .from('microsoft_oauth_tokens')
           .select('access_token, refresh_token, expires_at')
-          .eq('user_id', userData.id)
+          .eq('user_id', user.id)
           .eq('email', fromAccount.email_address.toLowerCase())
           .single()
 
@@ -118,7 +107,7 @@ export async function POST(
                 refresh_token: newTokens.refresh_token || tokenData.refresh_token,
                 expires_at: new Date(Date.now() + newTokens.expires_in * 1000).toISOString(),
               })
-              .eq('user_id', userData.id)
+              .eq('user_id', user.id)
               .eq('email', fromAccount.email_address.toLowerCase())
           }
         )
@@ -155,7 +144,7 @@ export async function POST(
         const { data: tokenData } = await admin
           .from('gmail_oauth_tokens')
           .select('id, access_token, refresh_token, expires_at')
-          .eq('user_id', userData.id)
+          .eq('user_id', user.id)
           .eq('email', fromAccount.email_address.toLowerCase())
           .single()
 
@@ -267,7 +256,7 @@ export async function POST(
           email.body_text || null,
           email.body_html || null,
           false,
-          userData.id
+          user.id
         )
       } catch (aiError) {
         console.error('AI processing error:', aiError)
