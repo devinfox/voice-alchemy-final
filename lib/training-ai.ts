@@ -91,25 +91,7 @@ async function complete(systemPrompt: string, userPrompt: string, maxTokens = 90
       { role: 'system', content: systemPrompt },
       { role: 'user', content: userPrompt },
     ],
-    response_format: {
-      type: 'json_schema',
-      json_schema: {
-        name: 'TrainingCoachingResult',
-        strict: true,
-        schema: {
-          type: 'object',
-          properties: {
-            summary: { type: 'string' },
-            strengths: { type: 'array', items: { type: 'string' } },
-            areasForImprovement: { type: 'array', items: { type: 'string' } },
-            personalizedTips: { type: 'array', items: { type: 'string' } },
-            recommendedExercises: { type: 'array', items: { type: 'string' } },
-          },
-          required: ['summary', 'strengths', 'areasForImprovement', 'personalizedTips', 'recommendedExercises'],
-          additionalProperties: false,
-        },
-      },
-    },
+    response_format: { type: 'json_object' },
     temperature: 0.7,
     max_tokens: maxTokens,
   })
@@ -127,39 +109,37 @@ export async function analyzeRhythmSession(
   metrics: RhythmSessionMetrics,
   context?: { lessonNotes?: string[]; previousScores?: number[] }
 ): Promise<PitchAnalysisResult> {
-  const systemPrompt = `You are an expert vocal coach specialising in rhythm, groove, subdivisions, and timing for singers.
+  const systemPrompt = `You are an expert vocal coach specialising in rhythm and timing for singers.
 
-You are analysing a latency-compensated rhythm session. Interpret the deterministic acoustic metrics pedagogically:
-- Overall Score: Multiplicative score combining hit rate, in-pocket accuracy (MAE), and consistency.
-- On-beat percentage: Represents accuracy within the tempo-scaled pocket window. 85%+ is solid, 95%+ is exceptional groove.
-- Timing consistency: Measures pulse steadiness. A steady pulse is foundational for ensemble work and live performance.
-- Rhythm tendency: Indicates systematic rushing ("early") or dragging ("late"). Provide actionable groove exercises (e.g. backbeat clicks, subdivision vocalizing, breath preparation on upbeat).
-- Missed beats: Reflect lost pulse or coordination.
+You are analysing a metronome-based rhythm session. Interpret the numbers like a coach, not a statistician:
+- On-beat percentage is the headline accuracy figure. 85%+ is good, 95%+ is excellent.
+- Timing consistency measures steadiness. A singer can be consistently early and still be musical; a singer who is erratic is much harder to accompany.
+- Rhythm tendency matters more than raw offset. Rushing ("early") and dragging ("late") have different causes and different fixes: rushing usually comes from tension or breath anxiety, dragging from late breath preparation or over-thinking.
+- Missed beats indicate loss of pulse, which is more serious than being slightly off.
+- Faster tempos naturally produce larger absolute offsets. Judge the offset relative to the beat length, not in absolute milliseconds.
 
-Be encouraging, specific, and provide practical metronome-based rhythm exercises tailored to the tempo and meter.`
+Be encouraging and specific. Give exercises a singer can actually do with a metronome.`
 
   const beatLengthMs = 60000 / metrics.bpm
   const offsetAsPercentOfBeat = (Math.abs(metrics.avgTimingOffsetMs) / beatLengthMs) * 100
 
-  const userPrompt = `Analyse this rhythm and groove training session:
+  const userPrompt = `Analyse this rhythm training session:
 
-TEMPO & METER: ${metrics.bpm} BPM (${metrics.timeSignature}), one beat = ${beatLengthMs.toFixed(0)}ms
+TEMPO: ${metrics.bpm} BPM (${metrics.timeSignature}), one beat = ${beatLengthMs.toFixed(0)}ms
 DURATION: ${Math.round(metrics.durationSeconds / 60)} minutes
 
-PERFORMANCE METRICS:
-- Overall Score: ${metrics.overallScore.toFixed(1)}%
-- Total Beats Presented: ${metrics.totalBeats}
-- Beats Successfully Hit: ${metrics.onBeatCount + metrics.earlyCount + metrics.lateCount} (${((metrics.onBeatCount + metrics.earlyCount + metrics.lateCount) / Math.max(1, metrics.totalBeats) * 100).toFixed(0)}% hit rate)
-- In-Pocket (On Beat): ${metrics.onBeatPercent.toFixed(1)}% (${metrics.onBeatCount} hits)
-- Early (Rushing): ${metrics.earlyCount} | Late (Dragging): ${metrics.lateCount} | Missed: ${metrics.missedCount}
-- Longest Streak: ${metrics.bestStreak} consecutive locked beats
+ACCURACY:
+- Overall score: ${metrics.overallScore.toFixed(1)}%
+- On-beat: ${metrics.onBeatPercent.toFixed(1)}% (${metrics.onBeatCount}/${metrics.totalBeats} beats)
+- Early: ${metrics.earlyCount} | Late: ${metrics.lateCount} | Missed: ${metrics.missedCount}
+- Best streak: ${metrics.bestStreak} consecutive beats
 
-TIMING PRECISION:
-- Average Offset: ${metrics.avgTimingOffsetMs > 0 ? '+' : ''}${metrics.avgTimingOffsetMs.toFixed(0)}ms (${offsetAsPercentOfBeat.toFixed(1)}% of a beat)
-- Timing Consistency: ${metrics.timingConsistency.toFixed(1)}%
-- Groove Bias / Tendency: ${metrics.rhythmTendency ?? 'on-time'}
-${metrics.avgEarlyMs ? `- When early: average ${metrics.avgEarlyMs.toFixed(0)}ms early` : ''}
-${metrics.avgLateMs ? `- When late: average ${metrics.avgLateMs.toFixed(0)}ms late` : ''}
+TIMING:
+- Average offset: ${metrics.avgTimingOffsetMs.toFixed(0)}ms (${offsetAsPercentOfBeat.toFixed(1)}% of a beat)
+- Timing consistency: ${metrics.timingConsistency.toFixed(1)}%
+- Tendency: ${metrics.rhythmTendency ?? 'unknown'}
+${metrics.avgEarlyMs ? `- When early, average ${metrics.avgEarlyMs.toFixed(0)}ms early` : ''}
+${metrics.avgLateMs ? `- When late, average ${metrics.avgLateMs.toFixed(0)}ms late` : ''}
 
 ${context?.previousScores?.length ? `RECENT SCORES: ${context.previousScores.map(s => s.toFixed(0) + '%').join(', ')}` : ''}
 ${context?.lessonNotes?.length ? `FROM RECENT LESSONS: ${context.lessonNotes.slice(0, 3).join('; ')}` : ''}

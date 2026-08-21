@@ -243,7 +243,7 @@ async function sendEmailNotification(params: {
 }
 
 /**
- * Send SMS notification via Telnyx
+ * Send SMS notification via Twilio
  */
 async function sendSmsNotification(params: {
   to: string

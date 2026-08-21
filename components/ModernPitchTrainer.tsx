@@ -1,69 +1,46 @@
 'use client'
 
 import { useState, useEffect, useRef, useCallback, useMemo } from 'react'
-import { Music, X, Maximize2, Minimize2, Circle, Piano, Mic, MicOff, TrendingUp, Save, Volume2, Sparkles, CheckCircle2 } from 'lucide-react'
+import { Music, X, Maximize2, Minimize2, Circle, Piano, Mic, MicOff, TrendingUp, Save } from 'lucide-react'
 import Script from 'next/script'
 import { getSharedMicStream, subscribeSharedMicStream } from '@/lib/shared-mic-stream'
-import {
-  analyzeBuffer,
-  getNoteFrequency,
-  getTargetCentsError,
-  calculateCentsStdDev,
-  calculateMedian,
-  calculateTargetAccuracy,
-  NOTE_STRINGS,
-  NOTE_STRINGS_ASCII,
-  IN_TUNE_THRESHOLD_CENTS
-} from '@/lib/pitch-detection'
+import { analyzeBuffer, getNoteFrequency } from '@/lib/pitch-detection'
 
 // ============================================================================
-// TUNER & PITCH CONSTANTS
+// TUNER LOGIC - Exact port from original tuner.js
 // ============================================================================
 
+const NOTE_STRINGS = ['C', 'C♯', 'D', 'D♯', 'E', 'F', 'F♯', 'G', 'G♯', 'A', 'A♯', 'B']
 const NOTE_STRINGS_DISPLAY = ['C', 'C#', 'D', 'D#', 'E', 'F', 'F#', 'G', 'G#', 'A', 'A#', 'B']
+
+// Constants from original tuner.js
+// MIDDLE_A / SEMITONE now live in lib/pitch-detection alongside the note math.
 const BUFFER_SIZE = 4096
-const IN_TUNE_THRESHOLD = IN_TUNE_THRESHOLD_CENTS // 15 cents
-const IN_WINDOW_THRESHOLD = 50 // 50 cents (quarter tone)
 
-// Usable human vocal octaves (C2 ~65Hz to B6 ~1975Hz)
-const AVAILABLE_OCTAVES = [2, 3, 4, 5, 6]
+// In-tune threshold (cents)
+const IN_TUNE_THRESHOLD = 15
 
-type AubioPitchDetector = { do: (buffer: Float32Array) => number }
-type AubioModule = { Pitch: new (method: string, bufferSize: number, hopSize: number, sampleRate: number) => AubioPitchDetector }
-type AudioContextConstructor = typeof AudioContext
+// Maximum semitone range to track (±4 semitones = major third)
+// Notes outside this range are likely mistakes, not actual attempts
+const TRACKING_RANGE_SEMITONES = 4
 
 declare global {
   interface Window {
-    aubio: () => Promise<AubioModule>
-    webkitAudioContext?: AudioContextConstructor
+    aubio: () => Promise<any>
   }
 }
 
 interface DetectedNote {
   name: string
-  nameAscii: string
   value: number
   cents: number
   octave: number
   frequency: number
-  isInTune: boolean
 }
 
 // ============================================================================
 // SESSION TRACKING TYPES
 // ============================================================================
-
-interface PitchSample {
-  frequency: number
-  centsFromNearestNote: number
-  targetErrorCents: number
-  timestamp: number
-  isInTune: boolean
-  isInWindow: boolean
-  detectedNoteName: string
-  detectedOctave: number
-  detectedNoteValue: number
-}
 
 interface NoteAttempt {
   noteName: string
@@ -71,32 +48,43 @@ interface NoteAttempt {
   targetFrequency: number
   startTime: number
   samples: PitchSample[]
-  attemptNumber: number
-  isComplete: boolean
-
-  // Statistically rigorous acoustic metrics
-  targetAccuracy: number        // 0-100% based on Mean Absolute Error in cents
-  maeCents: number              // Mean Absolute Error in cents from target
-  pitchBiasCents: number        // Median signed error in cents (- = flat, + = sharp)
-  pitchDirection: 'sharp' | 'flat' | 'on-target'
-  voiceStability: number        // 0-100% based on logarithmic cents standard deviation
-  centsStdDev: number           // Standard deviation in cents from singer's center
-  inTunePercent: number         // % of frames within ±15 cents
-  inWindowPercent: number       // % of frames within ±50 cents
-  pitchOnsetSpeedMs: number     // ms to settle (3 consecutive frames in-window)
-  inTuneSustainMs: number       // Max continuous in-tune duration with 1-frame grace
-  timeToFirstSound: number      // ms until voiced sound detected
-  mostSungNote: string | null
-  mostSungOctave: number | null
-
   // Legacy fields (kept for API compatibility)
   pitchAccuracy: number
+  pitchOnsetSpeedMs: number
   pitchStability: number
+  inTuneSustainMs: number
   avgDetectedFrequency: number
   avgCentsDeviation: number
   maxCentsDeviation: number
   minCentsDeviation: number
-  avgSemitoneDeviation: number
+  attemptNumber: number
+  isComplete: boolean
+  // NEW: Separate metrics for singing students
+  targetAccuracy: number        // How close to the target note (0-100, considers semitones)
+  voiceStability: number        // How steady the voice is regardless of target (0-100)
+  avgSemitoneDeviation: number  // Average semitones away from target (can be negative = flat)
+  mostSungNote: string | null   // The note they sang most often
+  mostSungOctave: number | null // The octave they sang most often
+  pitchDirection: 'sharp' | 'flat' | 'on-target' // Tendency
+  timeToFirstSound: number      // Time until any pitch was detected (ms)
+}
+
+interface BasePitchSample {
+  frequency: number
+  cents: number
+  timestamp: number
+  isInTune: boolean
+}
+
+interface PitchSample extends BasePitchSample {
+  // New fields to track what was actually sung (added in handleSampleRecorded)
+  detectedNoteName: string
+  detectedOctave: number
+  detectedNoteValue: number
+  // Distance from target (in semitones, can be negative)
+  semitoneDeviationFromTarget: number
+  // Cents deviation from the detected note's perfect pitch
+  centsFromDetectedNote: number
 }
 
 interface SessionMetrics {
@@ -106,96 +94,36 @@ interface SessionMetrics {
   isActive: boolean
 }
 
-type TrainerState = 'idle' | 'listening_ref' | 'guard' | 'singing'
-
 // ============================================================================
-// NEEDLE & METER HELPERS
+// PITCH DETECTION HELPERS
 // ============================================================================
+// getNote / getStandardFrequency / getCents / getNoteFrequency now come from
+// lib/pitch-detection so this trainer, ScaleTrainer and SongPitchTrainer share
+// one implementation and cannot drift apart again.
 
-/**
- * Maps cents deviation (-50 to +50) across the full 90-degree arc (-45 deg to +45 deg)
- */
 function getMeterDegree(cents: number): number {
-  const clamped = Math.max(-50, Math.min(50, cents))
-  return Math.round((clamped / 50) * 45)
+  return Math.round((cents / 250) * 45)
 }
 
 // ============================================================================
-// RIGOROUS METRICS CALCULATION
+// METRICS CALCULATION HELPERS
 // ============================================================================
 
 function calculateNoteMetrics(attempt: NoteAttempt): NoteAttempt {
   const samples = attempt.samples
   if (samples.length === 0) return attempt
 
-  // 1. Target errors in continuous cents
-  const targetErrors = samples.map(s => s.targetErrorCents)
-  const absErrors = targetErrors.map(e => Math.min(1200, Math.abs(e))) // Cap at 1 octave to dampen wild artifacts without ignoring errors
-  const maeCents = absErrors.reduce((a, b) => a + b, 0) / absErrors.length
-  const pitchBiasCents = calculateMedian(targetErrors)
+  // === CENTS DEVIATION (from detected note's perfect pitch) ===
+  const centsDeviations = samples.map(s => s.centsFromDetectedNote)
+  const avgCentsDeviation = centsDeviations.reduce((a, b) => a + b, 0) / centsDeviations.length
+  const maxCentsDeviation = Math.max(...centsDeviations.map(Math.abs))
+  const minCentsDeviation = Math.min(...centsDeviations.map(Math.abs))
 
-  // 2. Pitch direction / tendency based on median signed cents
-  let pitchDirection: 'sharp' | 'flat' | 'on-target' = 'on-target'
-  if (pitchBiasCents > 10) pitchDirection = 'sharp'
-  else if (pitchBiasCents < -10) pitchDirection = 'flat'
+  // === SEMITONE DEVIATION (from target note) ===
+  const semitoneDeviations = samples.map(s => s.semitoneDeviationFromTarget)
+  const avgSemitoneDeviation = semitoneDeviations.reduce((a, b) => a + b, 0) / semitoneDeviations.length
 
-  // 3. Target Accuracy (0-100%): Steep pedagogical curve (10c=95%, 15c=83%, 25c=60%, 50c=20%, >=75c=0%)
-  const targetAccuracy = calculateTargetAccuracy(maeCents)
-
-  // 4. Voice Stability in Logarithmic Cents (Standard deviation in cents relative to singer's own mean frequency)
-  const frequencies = samples.map(s => s.frequency)
-  const centsStdDev = calculateCentsStdDev(frequencies)
-  // 0 cents stdDev = 100%, 25 cents stdDev = 50%, 50 cents stdDev = 0%
-  const voiceStability = Math.max(0, Math.min(100, Math.round(100 - (centsStdDev * 2))))
-
-  // 5. In-tune and In-window frame percentages
-  const inTuneCount = samples.filter(s => s.isInTune).length
-  const inWindowCount = samples.filter(s => s.isInWindow).length
-  const inTunePercent = Math.round((inTuneCount / samples.length) * 100)
-  const inWindowPercent = Math.round((inWindowCount / samples.length) * 100)
-
-  // 6. Settled Onset Speed: Requires 3 consecutive in-window frames (<= 25 cents from target) to avoid transient false positives
-  let settledIndex = -1
-  for (let i = 0; i < samples.length - 2; i++) {
-    if (
-      Math.abs(samples[i].targetErrorCents) <= 25 &&
-      Math.abs(samples[i + 1].targetErrorCents) <= 25 &&
-      Math.abs(samples[i + 2].targetErrorCents) <= 25
-    ) {
-      settledIndex = i
-      break
-    }
-  }
-  const pitchOnsetSpeedMs = settledIndex >= 0
-    ? Math.max(0, samples[settledIndex].timestamp - attempt.startTime)
-    : Math.max(0, samples[samples.length - 1].timestamp - attempt.startTime)
-
-  // 7. Time to first voiced sound
-  const timeToFirstSound = Math.max(0, samples[0].timestamp - attempt.startTime)
-
-  // 8. In-Tune Sustain (with 1-frame grace period hysteresis)
-  let maxSustain = 0
-  let currentSustain = 0
-  let graceUsed = false
-
-  for (let i = 1; i < samples.length; i++) {
-    const dt = samples[i].timestamp - samples[i - 1].timestamp
-    if (samples[i].isInTune) {
-      currentSustain += dt
-      graceUsed = false
-      maxSustain = Math.max(maxSustain, currentSustain)
-    } else if (!graceUsed && i < samples.length - 1 && samples[i + 1].isInTune) {
-      // 1 frame grace glitch allowed
-      currentSustain += dt
-      graceUsed = true
-    } else {
-      currentSustain = 0
-      graceUsed = false
-    }
-  }
-  const inTuneSustainMs = maxSustain
-
-  // 9. Most sung note
+  // === MOST SUNG NOTE (mode of detected notes) ===
   const noteCount: Record<string, number> = {}
   samples.forEach(s => {
     const key = `${s.detectedNoteName}-${s.detectedOctave}`
@@ -205,38 +133,88 @@ function calculateNoteMetrics(attempt: NoteAttempt): NoteAttempt {
   const [mostSungNote, mostSungOctaveStr] = mostSungKey?.split('-') || [null, null]
   const mostSungOctave = mostSungOctaveStr ? parseInt(mostSungOctaveStr) : null
 
-  // 10. Legacy fields for DB compatibility
-  const avgDetectedFrequency = frequencies.reduce((a, b) => a + b, 0) / frequencies.length
-  const nearestCentsDeviations = samples.map(s => s.centsFromNearestNote)
-  const avgCentsDeviation = nearestCentsDeviations.reduce((a, b) => a + b, 0) / nearestCentsDeviations.length
-  const maxCentsDeviation = Math.max(...nearestCentsDeviations.map(Math.abs))
-  const minCentsDeviation = Math.min(...nearestCentsDeviations.map(Math.abs))
-  const avgSemitoneDeviation = pitchBiasCents / 100
+  // === PITCH DIRECTION (tendency) ===
+  const sharpCount = semitoneDeviations.filter(d => d > 0).length
+  const flatCount = semitoneDeviations.filter(d => d < 0).length
+  const onTargetCount = semitoneDeviations.filter(d => d === 0).length
+  let pitchDirection: 'sharp' | 'flat' | 'on-target' = 'on-target'
+  if (sharpCount > flatCount && sharpCount > onTargetCount) pitchDirection = 'sharp'
+  else if (flatCount > sharpCount && flatCount > onTargetCount) pitchDirection = 'flat'
+
+  // === TARGET ACCURACY (NEW - considers semitone distance) ===
+  // 100% = hit target note with <15 cents deviation
+  // Decreases by 25% per semitone away, plus cents penalty
+  // This means singing 1 semitone off = max 75%, 2 semitones = max 50%, etc.
+  const avgAbsSemitones = Math.abs(avgSemitoneDeviation)
+  const semitonePenalty = avgAbsSemitones * 25 // 25% per semitone
+  const avgAbsCents = Math.abs(avgCentsDeviation)
+  const centsPenalty = Math.min(25, avgAbsCents * 0.5) // Max 25% for cents, 0.5% per cent
+  const targetAccuracy = Math.max(0, Math.min(100, 100 - semitonePenalty - centsPenalty))
+
+  // === VOICE STABILITY (NEW - independent of target) ===
+  // Measures how steady their pitch is, regardless of which note they're singing
+  // Based on variance of their detected frequencies
+  const frequencies = samples.map(s => s.frequency)
+  const avgFreq = frequencies.reduce((a, b) => a + b, 0) / frequencies.length
+  const freqVariance = frequencies.reduce((sum, f) => sum + Math.pow(f - avgFreq, 2), 0) / frequencies.length
+  const freqStdDev = Math.sqrt(freqVariance)
+  // Convert to percentage: 0 stdDev = 100%, 50Hz stdDev = 0%
+  // (50Hz stdDev would mean their pitch is all over the place)
+  const voiceStability = Math.max(0, Math.min(100, 100 - (freqStdDev * 2)))
+
+  // === LEGACY: Pitch Accuracy (old formula for API compatibility) ===
+  const pitchAccuracy = Math.max(0, Math.min(100, 100 - (Math.abs(avgCentsDeviation) * 2)))
+
+  // === PITCH ONSET SPEED (time to first in-tune sample) ===
+  const firstInTuneIndex = samples.findIndex(s => s.isInTune)
+  const pitchOnsetSpeedMs = firstInTuneIndex >= 0
+    ? samples[firstInTuneIndex].timestamp - attempt.startTime
+    : samples.length > 0 ? samples[samples.length - 1].timestamp - attempt.startTime : 5000
+
+  // === TIME TO FIRST SOUND ===
+  const timeToFirstSound = samples.length > 0 ? samples[0].timestamp - attempt.startTime : 5000
+
+  // === LEGACY: Pitch Stability (old formula for API compatibility) ===
+  const variance = centsDeviations.reduce((sum, c) => sum + Math.pow(c - avgCentsDeviation, 2), 0) / centsDeviations.length
+  const stdDev = Math.sqrt(variance)
+  const pitchStability = Math.max(0, Math.min(100, 100 - (stdDev * 3.33)))
+
+  // === IN-TUNE SUSTAIN ===
+  let maxSustain = 0
+  let currentSustain = 0
+  for (let i = 1; i < samples.length; i++) {
+    if (samples[i].isInTune && samples[i - 1].isInTune) {
+      currentSustain += samples[i].timestamp - samples[i - 1].timestamp
+      maxSustain = Math.max(maxSustain, currentSustain)
+    } else if (!samples[i].isInTune) {
+      currentSustain = 0
+    }
+  }
+  const inTuneSustainMs = maxSustain
+
+  // === AVERAGE DETECTED FREQUENCY ===
+  const avgDetectedFrequency = avgFreq
 
   return {
     ...attempt,
-    targetAccuracy,
-    maeCents: Math.round(maeCents * 10) / 10,
-    pitchBiasCents: Math.round(pitchBiasCents * 10) / 10,
-    pitchDirection,
-    voiceStability,
-    centsStdDev: Math.round(centsStdDev * 10) / 10,
-    inTunePercent,
-    inWindowPercent,
+    // Legacy metrics
+    pitchAccuracy,
     pitchOnsetSpeedMs,
+    pitchStability,
     inTuneSustainMs,
-    timeToFirstSound,
+    avgDetectedFrequency,
+    avgCentsDeviation,
+    maxCentsDeviation,
+    minCentsDeviation,
+    isComplete: true,
+    // New singer-focused metrics
+    targetAccuracy,
+    voiceStability,
+    avgSemitoneDeviation,
     mostSungNote,
     mostSungOctave,
-    // Legacy metrics
-    pitchAccuracy: targetAccuracy,
-    pitchStability: voiceStability,
-    avgDetectedFrequency: Math.round(avgDetectedFrequency * 10) / 10,
-    avgCentsDeviation: Math.round(avgCentsDeviation * 10) / 10,
-    maxCentsDeviation: Math.round(maxCentsDeviation * 10) / 10,
-    minCentsDeviation: Math.round(minCentsDeviation * 10) / 10,
-    avgSemitoneDeviation: Math.round(avgSemitoneDeviation * 100) / 100,
-    isComplete: true,
+    pitchDirection,
+    timeToFirstSound,
   }
 }
 
@@ -248,7 +226,7 @@ interface UsePitchDetectionOptions {
   sensitivity: number
   externalMicStream?: MediaStream | null
   onNoteDetected?: (note: DetectedNote) => void
-  onSampleRecorded?: (note: DetectedNote) => void
+  onSampleRecorded?: (sample: BasePitchSample) => void
 }
 
 function usePitchDetection({ sensitivity, externalMicStream, onNoteDetected, onSampleRecorded }: UsePitchDetectionOptions) {
@@ -258,7 +236,7 @@ function usePitchDetection({ sensitivity, externalMicStream, onNoteDetected, onS
   const audioContextRef = useRef<AudioContext | null>(null)
   const analyserRef = useRef<AnalyserNode | null>(null)
   const scriptProcessorRef = useRef<ScriptProcessorNode | null>(null)
-  const pitchDetectorRef = useRef<AubioPitchDetector | null>(null)
+  const pitchDetectorRef = useRef<any>(null)
   const streamRef = useRef<MediaStream | null>(null)
   const sensitivityRef = useRef(sensitivity)
   const onNoteDetectedRef = useRef(onNoteDetected)
@@ -288,9 +266,7 @@ function usePitchDetection({ sensitivity, externalMicStream, onNoteDetected, onS
         return
       }
 
-      const AudioContextCtor = window.AudioContext || window.webkitAudioContext
-      if (!AudioContextCtor) throw new Error('Web Audio is not supported in this browser')
-      audioContextRef.current = new AudioContextCtor()
+      audioContextRef.current = new (window.AudioContext || (window as any).webkitAudioContext)()
       analyserRef.current = audioContextRef.current.createAnalyser()
       scriptProcessorRef.current = audioContextRef.current.createScriptProcessor(BUFFER_SIZE, 1, 1)
 
@@ -307,17 +283,10 @@ function usePitchDetection({ sensitivity, externalMicStream, onNoteDetected, onS
       const externalAudioTrack = externalStream?.getAudioTracks()[0]
 
       if (externalAudioTrack && externalAudioTrack.readyState === 'live') {
+        // Clone the class mic track so tuner analysis never mutates the live class stream.
         inputStream = new MediaStream([externalAudioTrack.clone()])
       } else {
-        // High fidelity vocal microphone constraints (disable aggressive AGC / noise suppression for musical purity)
-        inputStream = await navigator.mediaDevices.getUserMedia({
-          audio: {
-            echoCancellation: true,
-            autoGainControl: false,
-            noiseSuppression: false,
-            channelCount: 1
-          }
-        })
+        inputStream = await navigator.mediaDevices.getUserMedia({ audio: true })
       }
 
       streamRef.current = inputStream
@@ -325,16 +294,14 @@ function usePitchDetection({ sensitivity, externalMicStream, onNoteDetected, onS
       const source = audioContextRef.current.createMediaStreamSource(inputStream)
       source.connect(analyserRef.current)
       analyserRef.current.connect(scriptProcessorRef.current)
-
-      const muteGain = audioContextRef.current.createGain()
-      muteGain.gain.value = 0
-      scriptProcessorRef.current.connect(muteGain)
-      muteGain.connect(audioContextRef.current.destination)
+      scriptProcessorRef.current.connect(audioContextRef.current.destination)
 
       scriptProcessorRef.current.addEventListener('audioprocess', (event: AudioProcessingEvent) => {
         const input = event.inputBuffer.getChannelData(0)
-        if (!pitchDetectorRef.current) return
 
+        // Amplitude gate, pitch detection and the 60-2000Hz plausibility gate
+        // all happen inside analyzeBuffer, identical to the Scale Trainer.
+        // Returns null for anything that should not count as a sung note.
         const detected = analyzeBuffer(input, pitchDetectorRef.current, sensitivityRef.current)
         if (!detected) return
 
@@ -342,15 +309,21 @@ function usePitchDetection({ sensitivity, externalMicStream, onNoteDetected, onS
           onNoteDetectedRef.current(detected)
         }
 
+        // Record sample for metrics
         if (onSampleRecordedRef.current) {
-          onSampleRecordedRef.current(detected)
+          onSampleRecordedRef.current({
+            frequency: detected.frequency,
+            cents: detected.cents,
+            timestamp: Date.now(),
+            isInTune: detected.isInTune,
+          })
         }
       })
 
       setIsListening(true)
-    } catch (error) {
+    } catch (error: any) {
       console.error('Microphone error:', error)
-      alert(error instanceof Error ? `${error.name}: ${error.message}` : 'Could not access microphone')
+      alert(error.name + ': ' + error.message)
     }
   }, [])
 
@@ -398,18 +371,13 @@ export default function ModernPitchTrainer({ variant = 'floating' }: ModernPitch
   const [mode, setMode] = useState<'wheel' | 'keyboard'>('wheel')
   const [selectedOctave, setSelectedOctave] = useState(4)
   const [selectedNote, setSelectedNote] = useState<string | null>(null)
+  const [isPlaying, setIsPlaying] = useState(false)
   const [sensitivity, setSensitivity] = useState(50)
   const [detectedNote, setDetectedNote] = useState<DetectedNote | null>(null)
   const [showProgress, setShowProgress] = useState(false)
   const [isSaving, setIsSaving] = useState(false)
   const [saveMessage, setSaveMessage] = useState<string | null>(null)
   const [sharedMicStream, setSharedMicStream] = useState<MediaStream | null>(() => getSharedMicStream())
-
-  // Lifecycle state machine to prevent reference audio bleed into microphone scoring
-  const [trainerState, setTrainerState] = useState<TrainerState>('idle')
-
-  // Real-time pitch history for scrolling vocal contour display
-  const [pitchHistory, setPitchHistory] = useState<Array<{ timestamp: number; centsError: number; isInTune: boolean }>>([])
 
   // Session tracking state
   const [session, setSession] = useState<SessionMetrics>({
@@ -421,18 +389,71 @@ export default function ModernPitchTrainer({ variant = 'floating' }: ModernPitch
   const [currentAttempt, setCurrentAttempt] = useState<NoteAttempt | null>(null)
 
   const audioRef = useRef<HTMLAudioElement | null>(null)
-  const guardTimerRef = useRef<NodeJS.Timeout | null>(null)
-  const trainerStateRef = useRef(trainerState)
+  const sessionRef = useRef(session)
 
+  // Keep session ref in sync
   useEffect(() => {
-    trainerStateRef.current = trainerState
-  }, [trainerState])
+    sessionRef.current = session
+  }, [session])
 
   useEffect(() => {
     return subscribeSharedMicStream(setSharedMicStream)
   }, [])
 
-  // Start session on first note interaction
+  const availableOctaves = [0, 2, 3, 4, 5, 6, 7, 8]
+
+  // Handle sample recording for current attempt - RECORDS PITCHES WITHIN RANGE
+  const handleSampleRecorded = useCallback((sample: BasePitchSample) => {
+    if (!currentAttempt || !selectedNote || !detectedNote) return
+
+    // Calculate target note value for comparison
+    const targetNoteName = selectedNote.replace('#', '♯')
+    const targetNoteIndex = NOTE_STRINGS.indexOf(targetNoteName)
+    const targetNoteValue = (selectedOctave + 1) * 12 + targetNoteIndex
+
+    // Calculate semitone deviation from target
+    const semitoneDeviationFromTarget = detectedNote.value - targetNoteValue
+
+    // RANGE FILTER: Only track notes within ±TRACKING_RANGE_SEMITONES of target
+    // Notes outside this range are likely mistakes, background noise, or speech
+    if (Math.abs(semitoneDeviationFromTarget) > TRACKING_RANGE_SEMITONES) {
+      return // Skip this sample - too far from target
+    }
+
+    // Enrich sample with detected note info
+    const enrichedSample: PitchSample = {
+      ...sample,
+      detectedNoteName: detectedNote.name,
+      detectedOctave: detectedNote.octave,
+      detectedNoteValue: detectedNote.value,
+      semitoneDeviationFromTarget,
+      centsFromDetectedNote: detectedNote.cents,
+      // Update isInTune to consider being on the target note AND within cents threshold
+      isInTune: semitoneDeviationFromTarget === 0 && Math.abs(detectedNote.cents) <= IN_TUNE_THRESHOLD,
+    }
+
+    setCurrentAttempt(prev => {
+      if (!prev) return prev
+      return {
+        ...prev,
+        samples: [...prev.samples, enrichedSample]
+      }
+    })
+  }, [currentAttempt, selectedNote, detectedNote, selectedOctave])
+
+  const {
+    isListening,
+    setAubioLoaded,
+    startListening,
+    stopListening,
+  } = usePitchDetection({
+    sensitivity,
+    externalMicStream: sharedMicStream,
+    onNoteDetected: setDetectedNote,
+    onSampleRecorded: handleSampleRecorded,
+  })
+
+  // Start session when first note is played
   const startSession = useCallback(() => {
     if (!session.isActive) {
       setSession({
@@ -450,44 +471,38 @@ export default function ModernPitchTrainer({ variant = 'floating' }: ModernPitch
 
     const key = `${noteName}-${octave}`
     const existingAttempt = session.noteAttempts.get(key)
-    const targetFreq = getNoteFrequency(noteName, octave)
 
     const newAttempt: NoteAttempt = {
       noteName,
       octave,
-      targetFrequency: targetFreq,
+      targetFrequency: getNoteFrequency(noteName, octave),
       startTime: Date.now(),
       samples: [],
-      attemptNumber: existingAttempt ? existingAttempt.attemptNumber + 1 : 1,
-      isComplete: false,
-      targetAccuracy: 0,
-      maeCents: 0,
-      pitchBiasCents: 0,
-      pitchDirection: 'on-target',
-      voiceStability: 0,
-      centsStdDev: 0,
-      inTunePercent: 0,
-      inWindowPercent: 0,
-      pitchOnsetSpeedMs: 0,
-      inTuneSustainMs: 0,
-      timeToFirstSound: 0,
-      mostSungNote: null,
-      mostSungOctave: null,
-      // Legacy
+      // Legacy metrics
       pitchAccuracy: 0,
+      pitchOnsetSpeedMs: 0,
       pitchStability: 0,
+      inTuneSustainMs: 0,
       avgDetectedFrequency: 0,
       avgCentsDeviation: 0,
       maxCentsDeviation: 0,
       minCentsDeviation: 0,
+      attemptNumber: existingAttempt ? existingAttempt.attemptNumber + 1 : 1,
+      isComplete: false,
+      // New singer-focused metrics
+      targetAccuracy: 0,
+      voiceStability: 0,
       avgSemitoneDeviation: 0,
+      mostSungNote: null,
+      mostSungOctave: null,
+      pitchDirection: 'on-target',
+      timeToFirstSound: 0,
     }
 
     setCurrentAttempt(newAttempt)
-    setPitchHistory([])
   }, [session, startSession])
 
-  // Complete current note attempt and retain if better target accuracy
+  // Complete current note attempt and save if better
   const completeNoteAttempt = useCallback(() => {
     if (!currentAttempt || currentAttempt.samples.length === 0) {
       setCurrentAttempt(null)
@@ -500,8 +515,8 @@ export default function ModernPitchTrainer({ variant = 'floating' }: ModernPitch
     setSession(prev => {
       const existingAttempt = prev.noteAttempts.get(key)
 
-      // Only save if this attempt is better based on TRUE Target Accuracy (not flawed legacy cents)
-      if (!existingAttempt || completedAttempt.targetAccuracy > existingAttempt.targetAccuracy) {
+      // Only save if this attempt is better
+      if (!existingAttempt || completedAttempt.pitchAccuracy > existingAttempt.pitchAccuracy) {
         const newAttempts = new Map(prev.noteAttempts)
         newAttempts.set(key, completedAttempt)
         return { ...prev, noteAttempts: newAttempts }
@@ -513,62 +528,9 @@ export default function ModernPitchTrainer({ variant = 'floating' }: ModernPitch
     setCurrentAttempt(null)
   }, [currentAttempt])
 
-  // Handle incoming audio sample from detection engine
-  const handleSampleRecorded = useCallback((note: DetectedNote) => {
-    // GUARD CHECK: Never score when reference audio is playing or during room reverberation guard interval
-    if (trainerStateRef.current === 'listening_ref' || trainerStateRef.current === 'guard') {
-      return
-    }
-
-    if (!currentAttempt || !selectedNote || !note) return
-
-    // Calculate continuous target error in cents
-    const targetErrorCents = getTargetCentsError(note.frequency, currentAttempt.targetFrequency)
-    const isInTune = Math.abs(targetErrorCents) <= IN_TUNE_THRESHOLD
-    const isInWindow = Math.abs(targetErrorCents) <= IN_WINDOW_THRESHOLD
-
-    const sample: PitchSample = {
-      frequency: note.frequency,
-      centsFromNearestNote: note.cents,
-      targetErrorCents,
-      timestamp: Date.now(),
-      isInTune,
-      isInWindow,
-      detectedNoteName: note.name,
-      detectedOctave: note.octave,
-      detectedNoteValue: note.value,
-    }
-
-    setCurrentAttempt(prev => {
-      if (!prev) return prev
-      return {
-        ...prev,
-        samples: [...prev.samples, sample]
-      }
-    })
-
-    // Update real-time scrolling pitch contour
-    setPitchHistory(prev => {
-      const next = [...prev, { timestamp: sample.timestamp, centsError: targetErrorCents, isInTune }]
-      return next.slice(-60) // Keep last 60 frames (~2-3 seconds)
-    })
-  }, [currentAttempt, selectedNote])
-
-  const {
-    isListening,
-    setAubioLoaded,
-    startListening,
-    stopListening,
-  } = usePitchDetection({
-    sensitivity,
-    externalMicStream: sharedMicStream,
-    onNoteDetected: setDetectedNote,
-    onSampleRecorded: handleSampleRecorded,
-  })
-
   // Save session to database
   const saveSession = useCallback(async () => {
-    if (!session.startedAt || session.noteAttempts.size === 0) {
+    if (!session.isActive || session.noteAttempts.size === 0) {
       setSaveMessage('No notes to save')
       setTimeout(() => setSaveMessage(null), 3000)
       return
@@ -579,31 +541,28 @@ export default function ModernPitchTrainer({ variant = 'floating' }: ModernPitch
 
     try {
       const noteMetrics = Array.from(session.noteAttempts.values()).map(attempt => ({
+        // Legacy metrics
         noteName: attempt.noteName,
         octave: attempt.octave,
         targetFrequency: attempt.targetFrequency,
-        targetAccuracy: attempt.targetAccuracy,
-        voiceStability: attempt.voiceStability,
-        maeCents: attempt.maeCents,
-        pitchBiasCents: attempt.pitchBiasCents,
-        pitchDirection: attempt.pitchDirection,
-        inTunePercent: attempt.inTunePercent,
-        inWindowPercent: attempt.inWindowPercent,
-        pitchOnsetSpeedMs: attempt.pitchOnsetSpeedMs,
-        inTuneSustainMs: attempt.inTuneSustainMs,
-        timeToFirstSound: attempt.timeToFirstSound,
-        sampleCount: attempt.samples.length,
-        mostSungNote: attempt.mostSungNote,
-        mostSungOctave: attempt.mostSungOctave,
-        // Legacy
         pitchAccuracy: attempt.pitchAccuracy,
+        pitchOnsetSpeedMs: attempt.pitchOnsetSpeedMs,
         pitchStability: attempt.pitchStability,
+        inTuneSustainMs: attempt.inTuneSustainMs,
         avgDetectedFrequency: attempt.avgDetectedFrequency,
         avgCentsDeviation: attempt.avgCentsDeviation,
         maxCentsDeviation: attempt.maxCentsDeviation,
         minCentsDeviation: attempt.minCentsDeviation,
         attemptNumber: attempt.attemptNumber,
+        // New singer-focused metrics
+        targetAccuracy: attempt.targetAccuracy,
+        voiceStability: attempt.voiceStability,
         avgSemitoneDeviation: attempt.avgSemitoneDeviation,
+        mostSungNote: attempt.mostSungNote,
+        mostSungOctave: attempt.mostSungOctave,
+        pitchDirection: attempt.pitchDirection,
+        timeToFirstSound: attempt.timeToFirstSound,
+        sampleCount: attempt.samples.length,
       }))
 
       const response = await fetch('/api/pitch-training/session', {
@@ -621,7 +580,7 @@ export default function ModernPitchTrainer({ variant = 'floating' }: ModernPitch
       if (result.saved) {
         setSaveMessage(`Session saved! Score: ${result.overallScore.toFixed(1)}%${result.isNewBest ? ' (New best!)' : ''}`)
       } else {
-        setSaveMessage(result.message || 'Session recorded')
+        setSaveMessage(result.message || 'Session not saved')
       }
     } catch (error) {
       console.error('Save error:', error)
@@ -663,67 +622,79 @@ export default function ModernPitchTrainer({ variant = 'floating' }: ModernPitch
         audioRef.current.pause()
         audioRef.current.currentTime = 0
       }
-      if (guardTimerRef.current) {
-        clearTimeout(guardTimerRef.current)
-      }
-      setTrainerState('idle')
+      setIsPlaying(false)
       setSelectedNote(null)
       stopListening()
       completeNoteAttempt()
     }
   }, [isOpen, stopListening, completeNoteAttempt])
 
-  // Complete attempt when note or octave changes
+  // Complete attempt when note changes
   useEffect(() => {
-    if (currentAttempt && (selectedNote !== currentAttempt.noteName || selectedOctave !== currentAttempt.octave)) {
+    if (currentAttempt && selectedNote !== currentAttempt.noteName) {
       completeNoteAttempt()
     }
-  }, [selectedNote, selectedOctave, currentAttempt, completeNoteAttempt])
+  }, [selectedNote, currentAttempt, completeNoteAttempt])
 
   // Get audio file path
   const getAudioPath = (note: string, octave: number) => {
     const actualOctave = octave === 1 ? 2 : octave
-    const noteFile = note.replace('#', 'sharp').replace('♯', 'sharp').toLowerCase()
-    return `/chromatic-tuner/octave${actualOctave}/${noteFile}.mp3`
+    if (actualOctave === 0) {
+      const noteFile = note.replace('#', 'SHARP').replace('♯', 'SHARP').toUpperCase()
+      return `/chromatic-tuner/octave0/${noteFile}0.mp3`
+    } else {
+      const noteFile = note.replace('#', 'sharp').replace('♯', 'sharp').toLowerCase()
+      return `/chromatic-tuner/octave${actualOctave}/${noteFile}.mp3`
+    }
   }
 
-  // Play reference note with Listen -> Guard -> Sing pipeline
+  // Play selected note
   const playNote = (note: string) => {
     if (audioRef.current) {
       audioRef.current.pause()
       audioRef.current.currentTime = 0
     }
-    if (guardTimerRef.current) {
-      clearTimeout(guardTimerRef.current)
-    }
 
     // Complete previous attempt before starting new one
-    if (currentAttempt && (currentAttempt.noteName !== note || currentAttempt.octave !== selectedOctave)) {
+    if (currentAttempt && currentAttempt.noteName !== note) {
       completeNoteAttempt()
     }
 
-    setSelectedNote(note)
+    if (selectedNote === note && isPlaying) {
+      setIsPlaying(false)
+      setSelectedNote(null)
+      completeNoteAttempt()
+      return
+    }
 
-    // Phase 1: Reference audio playback (mic is ignored)
-    setTrainerState('listening_ref')
     const audio = new Audio(getAudioPath(note, selectedOctave))
     audioRef.current = audio
+    audio.play()
+    setSelectedNote(note)
+    setIsPlaying(true)
 
-    audio.play().catch(err => {
-      console.warn('Audio playback error:', err)
-      // Fallback directly to singing phase if playback fails
-      setTrainerState('singing')
-      startNoteAttempt(note, selectedOctave)
-    })
+    // Start tracking this note attempt
+    startNoteAttempt(note, selectedOctave)
 
     audio.onended = () => {
-      // Phase 2: Guard interval (400ms for room echo / speaker decay)
-      setTrainerState('guard')
-      guardTimerRef.current = setTimeout(() => {
-        // Phase 3: Sing phase
-        setTrainerState('singing')
-        startNoteAttempt(note, selectedOctave)
-      }, 400)
+      setIsPlaying(false)
+    }
+  }
+
+  // Toggle play/pause
+  const togglePlay = () => {
+    if (!selectedNote) return
+
+    if (isPlaying && audioRef.current) {
+      audioRef.current.pause()
+      audioRef.current.currentTime = 0
+      setIsPlaying(false)
+    } else if (selectedNote) {
+      const audio = new Audio(getAudioPath(selectedNote, selectedOctave))
+      audioRef.current = audio
+      audio.play()
+      setIsPlaying(true)
+      audio.onended = () => setIsPlaying(false)
     }
   }
 
@@ -731,143 +702,73 @@ export default function ModernPitchTrainer({ variant = 'floating' }: ModernPitch
   const isNoteMatching = () => {
     if (!detectedNote || !selectedNote) return false
     const cleanSelected = selectedNote.replace('#', '♯')
-    return (
-      detectedNote.name === cleanSelected &&
-      detectedNote.octave === selectedOctave &&
-      Math.abs(detectedNote.cents) <= IN_TUNE_THRESHOLD
-    )
+    return detectedNote.name === cleanSelected && detectedNote.octave === selectedOctave
   }
 
-  // Needle meter rotation (-45 deg to +45 deg mapped to -50 to +50 cents)
+  // Calculate meter rotation
   const meterDegree = detectedNote ? getMeterDegree(detectedNote.cents) : 0
 
-  // Aggregate session statistics
+  // Get session stats - now with separate accuracy and stability
   const sessionStats = useMemo(() => {
     const attempts = Array.from(session.noteAttempts.values())
     const completedAttempts = attempts.filter(a => a.isComplete)
 
     return {
       notesAttempted: session.noteAttempts.size,
+      // New: separate target accuracy and voice stability
       avgTargetAccuracy: completedAttempts.length > 0
         ? completedAttempts.reduce((sum, n) => sum + n.targetAccuracy, 0) / completedAttempts.length
         : 0,
       avgVoiceStability: completedAttempts.length > 0
         ? completedAttempts.reduce((sum, n) => sum + n.voiceStability, 0) / completedAttempts.length
         : 0,
+      // Legacy: combined accuracy
+      avgAccuracy: completedAttempts.length > 0
+        ? completedAttempts.reduce((sum, n) => sum + n.pitchAccuracy, 0) / completedAttempts.length
+        : 0,
       totalDuration: session.startedAt
         ? Math.round((Date.now() - session.startedAt.getTime()) / 1000)
         : 0,
+      // Pitch tendency across session
       overallDirection: (() => {
         if (completedAttempts.length === 0) return 'on-target'
-        const avgBias = completedAttempts.reduce((sum, n) => sum + n.pitchBiasCents, 0) / completedAttempts.length
-        if (avgBias > 10) return 'sharp'
-        if (avgBias < -10) return 'flat'
+        const avgSemitones = completedAttempts.reduce((sum, n) => sum + n.avgSemitoneDeviation, 0) / completedAttempts.length
+        if (avgSemitones > 0.3) return 'sharp'
+        if (avgSemitones < -0.3) return 'flat'
         return 'on-target'
       })() as 'sharp' | 'flat' | 'on-target'
     }
   }, [session])
 
-  // Render the analog needle meter
+  // Render the pitch meter
   const renderMeter = () => (
-    <div className="relative w-56 h-28 mx-auto mb-4 bg-slate-900/60 rounded-2xl p-3 border border-slate-700/60 shadow-inner">
-      <div className="absolute inset-0 flex items-end justify-center pb-2">
+    <div className="relative w-48 h-24 mx-auto mb-4">
+      <div className="absolute inset-0 flex items-end justify-center">
         <div className="w-full h-full relative">
-          {/* Target in-tune zone (±15 cents) */}
-          <div
-            className="absolute bottom-2 left-1/2 -translate-x-1/2 w-12 h-16 bg-emerald-500/10 border-x border-emerald-500/30 rounded-t-lg"
-            title="In-Tune Zone (±15 cents)"
-          />
-
-          {/* Tick marks (-50 to +50 cents) */}
           {[...Array(11)].map((_, i) => {
-            const cents = (i - 5) * 10
-            const deg = (cents / 50) * 45
-            const isCenter = i === 5
-            const isMajor = i % 5 === 0
-
+            const deg = i * 9 - 45
+            const isStrong = i % 5 === 0
             return (
               <div
                 key={i}
-                className={`absolute bottom-2 left-1/2 origin-bottom transition-all ${
-                  isCenter
-                    ? 'w-1 h-6 bg-emerald-400'
-                    : isMajor
-                      ? 'w-0.5 h-4 bg-slate-300'
-                      : 'w-px h-2.5 bg-slate-500'
+                className={`absolute bottom-0 left-1/2 origin-bottom ${
+                  isStrong ? 'w-0.5 h-5 bg-slate-400' : 'w-px h-3 bg-slate-600'
                 }`}
                 style={{ transform: `translateX(-50%) rotate(${deg}deg)` }}
               />
             )
           })}
-
-          {/* Needle */}
           <div
-            className={`absolute bottom-2 left-1/2 w-0.5 h-20 origin-bottom transition-transform duration-100 ease-out shadow-lg ${
-              isNoteMatching() ? 'bg-emerald-400' : 'bg-rose-500'
-            }`}
+            className="absolute bottom-0 left-1/2 w-0.5 h-20 bg-red-500 origin-bottom transition-transform duration-150"
             style={{ transform: `translateX(-50%) rotate(${meterDegree}deg)` }}
           />
-          <div className="absolute bottom-2 left-1/2 w-3.5 h-3.5 bg-slate-200 border-2 border-slate-700 rounded-full -translate-x-1/2 translate-y-1/2 shadow" />
+          <div className="absolute bottom-0 left-1/2 w-3 h-3 bg-slate-300 rounded-full -translate-x-1/2 translate-y-1/2" />
         </div>
       </div>
-      <div className="absolute bottom-2 left-4 text-xs font-semibold text-sky-400">♭ Flat</div>
-      <div className="absolute bottom-2 right-4 text-xs font-semibold text-amber-400">Sharp ♯</div>
+      <div className="absolute bottom-0 left-4 text-xs text-slate-500">♭</div>
+      <div className="absolute bottom-0 right-4 text-xs text-slate-500">♯</div>
     </div>
   )
-
-  // Render Real-Time Scrolling Pitch Contour
-  const renderPitchContour = () => {
-    if (pitchHistory.length === 0) return null
-
-    const width = 320
-    const height = 64
-    const midY = height / 2
-
-    // Map -100 cents to 100 cents to Y [height, 0]
-    const getY = (cents: number) => {
-      const clamped = Math.max(-100, Math.min(100, cents))
-      return midY - (clamped / 100) * (height / 2 - 4)
-    }
-
-    const points = pitchHistory.map((p, idx) => {
-      const x = (idx / Math.max(1, pitchHistory.length - 1)) * width
-      const y = getY(p.centsError)
-      return `${x},${y}`
-    }).join(' ')
-
-    return (
-      <div className="w-full max-w-xs mx-auto mb-4 bg-slate-900/80 rounded-xl p-2.5 border border-slate-700/50">
-        <div className="flex items-center justify-between text-[11px] text-slate-400 mb-1 px-1">
-          <span>Pitch Contour</span>
-          <span className="text-emerald-400 font-mono text-[10px]">±15¢ Zone</span>
-        </div>
-        <div className="relative w-full h-16 overflow-hidden rounded bg-slate-950">
-          {/* Target in-tune band */}
-          <div
-            className="absolute left-0 right-0 bg-emerald-500/15 border-y border-emerald-500/30"
-            style={{
-              top: `${midY - (15 / 100) * (height / 2 - 4)}px`,
-              bottom: `${midY - (15 / 100) * (height / 2 - 4)}px`,
-            }}
-          />
-          {/* Center target line */}
-          <div className="absolute left-0 right-0 h-px bg-slate-600 top-1/2 -translate-y-1/2" />
-
-          {/* Vocal pitch curve */}
-          <svg className="w-full h-full overflow-visible" viewBox={`0 0 ${width} ${height}`} preserveAspectRatio="none">
-            <polyline
-              fill="none"
-              stroke="#60a5fa"
-              strokeWidth="2.5"
-              strokeLinecap="round"
-              strokeLinejoin="round"
-              points={points}
-            />
-          </svg>
-        </div>
-      </div>
-    )
-  }
 
   // Render circular wheel mode
   const renderWheel = () => (
@@ -891,11 +792,11 @@ export default function ModernPitchTrainer({ variant = 'floating' }: ModernPitch
             onClick={() => playNote(note)}
             className={`absolute w-10 h-10 -ml-5 -mt-5 rounded-full flex items-center justify-center text-sm font-semibold transition-all duration-200
               ${isSelected
-                ? 'bg-gradient-to-br from-indigo-500 to-violet-600 text-white scale-110 shadow-lg shadow-indigo-500/50 ring-2 ring-white/50'
+                ? 'bg-gradient-to-br from-blue-500 to-blue-600 text-white scale-110 shadow-lg shadow-blue-500/50'
                 : isDetected
-                  ? 'bg-gradient-to-br from-rose-500 to-red-600 text-white scale-105'
+                  ? 'bg-gradient-to-br from-red-500 to-red-600 text-white scale-105'
                   : hasAttempt
-                    ? 'bg-gradient-to-br from-emerald-600 to-green-700 text-white'
+                    ? 'bg-gradient-to-br from-green-600 to-green-700 text-white'
                     : isSharp
                       ? 'bg-slate-700 text-slate-300 hover:bg-slate-600'
                       : 'bg-slate-600 text-white hover:bg-slate-500'
@@ -907,45 +808,28 @@ export default function ModernPitchTrainer({ variant = 'floating' }: ModernPitch
         )
       })}
 
-      {/* Center Action Button & Status */}
-      <div
-        className={`absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 w-24 h-24 rounded-full flex flex-col items-center justify-center p-2 text-center transition-all duration-200 border-2 ${
-          trainerState === 'listening_ref'
-            ? 'bg-indigo-950/80 border-indigo-500 text-indigo-200 animate-pulse'
-            : trainerState === 'guard'
-              ? 'bg-amber-950/80 border-amber-500 text-amber-200'
-              : trainerState === 'singing'
-                ? 'bg-emerald-950/80 border-emerald-500 text-emerald-200 shadow-lg shadow-emerald-500/20'
-                : 'bg-slate-800 border-slate-700 text-slate-300'
-        }`}
+      <button
+        onClick={togglePlay}
+        className={`absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 w-20 h-20 rounded-full flex items-center justify-center transition-all duration-200
+          ${selectedNote
+            ? 'bg-gradient-to-br from-blue-500 to-purple-600 hover:scale-105 cursor-pointer'
+            : 'bg-slate-700 cursor-not-allowed'
+          }`}
       >
-        {trainerState === 'listening_ref' ? (
-          <>
-            <Volume2 className="w-6 h-6 text-indigo-400 animate-bounce" />
-            <span className="text-[10px] font-medium leading-tight mt-1">Listen...</span>
-          </>
-        ) : trainerState === 'guard' ? (
-          <>
-            <Sparkles className="w-6 h-6 text-amber-400 animate-spin" />
-            <span className="text-[10px] font-medium leading-tight mt-1">Get Ready...</span>
-          </>
-        ) : trainerState === 'singing' ? (
-          <>
-            <Mic className="w-6 h-6 text-emerald-400 animate-pulse" />
-            <span className="text-[10px] font-semibold leading-tight mt-1">Sing Now!</span>
-          </>
-        ) : selectedNote ? (
-          <button onClick={() => playNote(selectedNote)} className="flex flex-col items-center">
-            <Volume2 className="w-6 h-6 text-white" />
-            <span className="text-[10px] font-medium mt-1">Replay</span>
-          </button>
+        {isPlaying ? (
+          <svg className="w-8 h-8 text-white" fill="currentColor" viewBox="0 0 24 24">
+            <rect x="6" y="4" width="4" height="16" />
+            <rect x="14" y="4" width="4" height="16" />
+          </svg>
         ) : (
-          <span className="text-[11px] text-slate-400 font-medium">Pick Note</span>
+          <svg className="w-8 h-8 text-white ml-1" fill="currentColor" viewBox="0 0 24 24">
+            <path d="M8 5v14l11-7z" />
+          </svg>
         )}
-      </div>
+      </button>
 
       {isNoteMatching() && (
-        <div className="absolute inset-0 rounded-full border-4 border-emerald-500 animate-pulse pointer-events-none" />
+        <div className="absolute inset-0 rounded-full border-4 border-green-500 animate-pulse pointer-events-none" />
       )}
     </div>
   )
@@ -976,16 +860,16 @@ export default function ModernPitchTrainer({ variant = 'floating' }: ModernPitch
                 onClick={() => playNote(note)}
                 className={`relative w-12 h-full rounded-b-lg border border-slate-600 transition-all duration-100
                   ${isSelected
-                    ? 'bg-gradient-to-b from-indigo-400 to-indigo-600 shadow-inner'
+                    ? 'bg-gradient-to-b from-blue-400 to-blue-500 shadow-inner'
                     : isDetected
-                      ? 'bg-gradient-to-b from-rose-400 to-red-500'
+                      ? 'bg-gradient-to-b from-red-400 to-red-500'
                       : hasAttempt
-                        ? 'bg-gradient-to-b from-emerald-300 to-emerald-400'
+                        ? 'bg-gradient-to-b from-green-300 to-green-400'
                         : 'bg-gradient-to-b from-white to-slate-100 hover:from-slate-100 hover:to-slate-200'
                   }`}
               >
                 <span className={`absolute bottom-2 left-1/2 -translate-x-1/2 text-xs font-medium
-                  ${isSelected || isDetected ? 'text-white' : hasAttempt ? 'text-emerald-900' : 'text-slate-600'}`}>
+                  ${isSelected || isDetected ? 'text-white' : hasAttempt ? 'text-green-800' : 'text-slate-600'}`}>
                   {note}
                 </span>
               </button>
@@ -1005,11 +889,11 @@ export default function ModernPitchTrainer({ variant = 'floating' }: ModernPitch
               onClick={() => playNote(note)}
               className={`absolute top-0 w-8 h-24 rounded-b-lg z-10 transition-all duration-100
                 ${isSelected
-                  ? 'bg-gradient-to-b from-indigo-600 to-violet-700 shadow-lg'
+                  ? 'bg-gradient-to-b from-blue-600 to-blue-700 shadow-lg'
                   : isDetected
-                    ? 'bg-gradient-to-b from-rose-600 to-red-700'
+                    ? 'bg-gradient-to-b from-red-600 to-red-700'
                     : hasAttempt
-                      ? 'bg-gradient-to-b from-emerald-700 to-green-800'
+                      ? 'bg-gradient-to-b from-green-700 to-green-800'
                       : 'bg-gradient-to-b from-slate-800 to-slate-900 hover:from-slate-700 hover:to-slate-800'
                 }`}
               style={{ left: `${offset * 48 + 32}px` }}
@@ -1022,7 +906,7 @@ export default function ModernPitchTrainer({ variant = 'floating' }: ModernPitch
         })}
 
         {isNoteMatching() && (
-          <div className="absolute -inset-2 rounded-xl border-4 border-emerald-500 animate-pulse pointer-events-none" />
+          <div className="absolute -inset-2 rounded-xl border-4 border-green-500 animate-pulse pointer-events-none" />
         )}
       </div>
     )
@@ -1030,96 +914,112 @@ export default function ModernPitchTrainer({ variant = 'floating' }: ModernPitch
 
   // Render session stats panel
   const renderSessionStats = () => (
-    <div className="bg-slate-800/60 rounded-xl p-4 mb-6 border border-slate-700/60 shadow-lg">
+    <div className="bg-slate-800/50 rounded-xl p-4 mb-6 border border-slate-700/50">
       <div className="flex items-center justify-between mb-3">
         <h3 className="text-sm font-semibold text-white flex items-center gap-2">
           <TrendingUp className="w-4 h-4 text-indigo-400" />
-          Acoustic Session Stats
+          Session Stats
         </h3>
         <button
           onClick={saveSession}
           disabled={isSaving || session.noteAttempts.size === 0}
-          className={`flex items-center gap-2 px-3.5 py-1.5 text-xs font-semibold rounded-lg transition-all ${
+          className={`flex items-center gap-2 px-3 py-1.5 text-xs font-medium rounded-lg transition-all ${
             isSaving || session.noteAttempts.size === 0
               ? 'bg-slate-700 text-slate-500 cursor-not-allowed'
-              : 'bg-indigo-600 hover:bg-indigo-500 text-white shadow-md shadow-indigo-500/25'
+              : 'bg-indigo-600 hover:bg-indigo-500 text-white'
           }`}
         >
-          <Save className="w-3.5 h-3.5" />
+          <Save className="w-3 h-3" />
           {isSaving ? 'Saving...' : 'Save Session'}
         </button>
       </div>
 
       <div className="grid grid-cols-4 gap-3">
-        <div className="text-center p-2 rounded-lg bg-slate-900/40">
+        <div className="text-center">
           <p className="text-2xl font-bold text-white">{sessionStats.notesAttempted}</p>
-          <p className="text-xs text-slate-400">Notes Attempted</p>
+          <p className="text-xs text-slate-400">Notes</p>
         </div>
-        <div className="text-center p-2 rounded-lg bg-slate-900/40">
-          <p className={`text-2xl font-bold ${sessionStats.avgTargetAccuracy >= 75 ? 'text-emerald-400' : sessionStats.avgTargetAccuracy >= 50 ? 'text-amber-400' : 'text-rose-400'}`}>
+        <div className="text-center">
+          <p className={`text-2xl font-bold ${sessionStats.avgTargetAccuracy >= 70 ? 'text-green-400' : sessionStats.avgTargetAccuracy >= 40 ? 'text-yellow-400' : 'text-white'}`}>
             {sessionStats.avgTargetAccuracy.toFixed(0)}%
           </p>
-          <p className="text-xs text-slate-400">Target Accuracy</p>
+          <p className="text-xs text-slate-400">Target Acc</p>
         </div>
-        <div className="text-center p-2 rounded-lg bg-slate-900/40">
-          <p className={`text-2xl font-bold ${sessionStats.avgVoiceStability >= 75 ? 'text-emerald-400' : sessionStats.avgVoiceStability >= 50 ? 'text-amber-400' : 'text-slate-300'}`}>
+        <div className="text-center">
+          <p className={`text-2xl font-bold ${sessionStats.avgVoiceStability >= 70 ? 'text-green-400' : sessionStats.avgVoiceStability >= 40 ? 'text-yellow-400' : 'text-white'}`}>
             {sessionStats.avgVoiceStability.toFixed(0)}%
           </p>
-          <p className="text-xs text-slate-400">Voice Stability</p>
+          <p className="text-xs text-slate-400">Stability</p>
         </div>
-        <div className="text-center p-2 rounded-lg bg-slate-900/40">
+        <div className="text-center">
           <p className="text-2xl font-bold text-white">
             {Math.floor(sessionStats.totalDuration / 60)}:{(sessionStats.totalDuration % 60).toString().padStart(2, '0')}
           </p>
-          <p className="text-xs text-slate-400">Practice Time</p>
+          <p className="text-xs text-slate-400">Time</p>
         </div>
       </div>
 
       {/* Pitch Tendency Indicator */}
       {sessionStats.notesAttempted > 0 && sessionStats.overallDirection !== 'on-target' && (
-        <div className={`mt-3 text-center text-xs px-3 py-1.5 rounded-lg font-medium ${
-          sessionStats.overallDirection === 'sharp' ? 'bg-amber-500/20 text-amber-300 border border-amber-500/30' : 'bg-sky-500/20 text-sky-300 border border-sky-500/30'
+        <div className={`mt-3 text-center text-xs px-3 py-1.5 rounded-lg ${
+          sessionStats.overallDirection === 'sharp' ? 'bg-orange-500/20 text-orange-300' : 'bg-blue-500/20 text-blue-300'
         }`}>
-          Vocal Tendency: singing {sessionStats.overallDirection === 'sharp' ? '↑ sharp' : '↓ flat'} on average
+          Tendency: singing {sessionStats.overallDirection === 'sharp' ? '↑ sharp' : '↓ flat'}
         </div>
       )}
 
       {saveMessage && (
-        <div className={`mt-3 text-center text-sm font-medium ${
-          saveMessage.includes('saved') ? 'text-emerald-400' : 'text-amber-400'
+        <div className={`mt-3 text-center text-sm ${
+          saveMessage.includes('saved') ? 'text-green-400' : 'text-yellow-400'
         }`}>
           {saveMessage}
         </div>
       )}
 
-      {/* Active Attempt Live Feedback */}
       {currentAttempt && currentAttempt.samples.length > 0 && (
-        <div className="mt-3 pt-3 border-t border-slate-700/60">
+        <div className="mt-3 pt-3 border-t border-slate-700/50">
           <div className="flex items-center justify-between mb-2">
-            <p className="text-xs text-slate-400">
-              Target: <span className="text-white font-semibold">{currentAttempt.noteName}{currentAttempt.octave}</span> ({currentAttempt.targetFrequency.toFixed(1)} Hz)
-            </p>
+            <p className="text-xs text-slate-400">Target: <span className="text-white font-medium">{currentAttempt.noteName}{currentAttempt.octave}</span></p>
             {(() => {
-              const live = calculateNoteMetrics(currentAttempt)
+              // Calculate live stats from current samples
+              const samples = currentAttempt.samples
+              if (samples.length === 0) return null
+
+              // Find most sung note
+              const noteCount: Record<string, number> = {}
+              samples.forEach(s => {
+                const key = `${s.detectedNoteName}${s.detectedOctave}`
+                noteCount[key] = (noteCount[key] || 0) + 1
+              })
+              const mostSung = Object.entries(noteCount).sort((a, b) => b[1] - a[1])[0]?.[0]
+
+              // Calculate average semitone deviation
+              const avgSemitones = samples.reduce((sum, s) => sum + s.semitoneDeviationFromTarget, 0) / samples.length
+
+              const isOnTarget = Math.abs(avgSemitones) < 0.5
+              const direction = avgSemitones > 0.5 ? 'sharp' : avgSemitones < -0.5 ? 'flat' : 'on-target'
+
               return (
-                <div className="text-xs font-medium">
-                  {live.maeCents <= 15 ? (
-                    <span className="text-emerald-400 flex items-center gap-1">
-                      <CheckCircle2 className="w-3.5 h-3.5" /> In-Tune (MAE: {live.maeCents}¢)
-                    </span>
+                <div className="text-xs">
+                  {isOnTarget ? (
+                    <span className="text-green-400 font-medium">On target!</span>
                   ) : (
-                    <span className={live.pitchDirection === 'sharp' ? 'text-amber-400' : 'text-sky-400'}>
-                      {live.pitchBiasCents > 0 ? `+${live.pitchBiasCents}¢ sharp` : `${live.pitchBiasCents}¢ flat`} (MAE: {live.maeCents}¢)
+                    <span className={direction === 'sharp' ? 'text-orange-400' : 'text-blue-400'}>
+                      Singing {mostSung} ({Math.abs(avgSemitones).toFixed(1)} semitones {direction})
                     </span>
                   )}
                 </div>
               )
             })()}
           </div>
-          <div className="flex justify-between text-xs text-slate-400">
-            <span>Frames: {currentAttempt.samples.length}</span>
-            <span className="text-emerald-400">In-Tune: {currentAttempt.samples.filter(s => s.isInTune).length} ({currentAttempt.samples.length > 0 ? Math.round((currentAttempt.samples.filter(s => s.isInTune).length / currentAttempt.samples.length) * 100) : 0}%)</span>
-            <span>In-Window (±50¢): {currentAttempt.samples.filter(s => s.isInWindow).length}</span>
+          <div className="flex gap-4 text-xs">
+            <span className="text-slate-300">Samples: {currentAttempt.samples.length}</span>
+            <span className="text-green-400">
+              In-tune: {currentAttempt.samples.filter(s => s.isInTune).length}
+            </span>
+            <span className="text-slate-300">
+              In range: {currentAttempt.samples.filter(s => Math.abs(s.semitoneDeviationFromTarget) <= 1).length}
+            </span>
           </div>
         </div>
       )}
@@ -1148,7 +1048,7 @@ export default function ModernPitchTrainer({ variant = 'floating' }: ModernPitch
           </div>
           <div className="text-left flex-1">
             <p className="font-semibold text-lg">Pitch Perfect</p>
-            <p className="text-sm text-white/70">Acoustic ear training & vocal precision</p>
+            <p className="text-sm text-white/70">Modern ear training</p>
           </div>
           <div className="w-8 h-8 rounded-lg bg-white/10 flex items-center justify-center group-hover:bg-white/20 transition-colors">
             <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
@@ -1172,7 +1072,7 @@ export default function ModernPitchTrainer({ variant = 'floating' }: ModernPitch
             className={`relative bg-gradient-to-br from-slate-900 via-slate-900 to-slate-800 shadow-2xl border border-slate-700/50 overflow-hidden transition-all duration-300 ${
               isFullscreen
                 ? 'w-full h-full rounded-none lg:w-[95vw] lg:h-[95vh] lg:rounded-3xl'
-                : 'w-full h-full rounded-none lg:w-[90vw] lg:max-w-3xl lg:h-[85vh] lg:max-h-[780px] lg:rounded-3xl'
+                : 'w-full h-full rounded-none lg:w-[90vw] lg:max-w-3xl lg:h-[85vh] lg:max-h-[750px] lg:rounded-3xl'
             }`}
           >
             {/* Header */}
@@ -1183,7 +1083,7 @@ export default function ModernPitchTrainer({ variant = 'floating' }: ModernPitch
                 </div>
                 <div>
                   <h2 className="text-xl font-bold text-white">Pitch Perfect</h2>
-                  <p className="text-sm text-slate-400">Click a note, listen to the pitch, then match with your voice!</p>
+                  <p className="text-sm text-slate-400">Click a note, play it, and match your voice!</p>
                 </div>
               </div>
               <div className="flex items-center gap-2">
@@ -1230,7 +1130,7 @@ export default function ModernPitchTrainer({ variant = 'floating' }: ModernPitch
                 <div className="inline-flex bg-slate-800/50 rounded-2xl p-1.5 border border-slate-700/50">
                   <button
                     onClick={() => setMode('wheel')}
-                    className={`flex items-center gap-2 px-5 py-2 rounded-xl text-sm font-medium transition-all duration-200 ${
+                    className={`flex items-center gap-2 px-5 py-2.5 rounded-xl text-sm font-medium transition-all duration-200 ${
                       mode === 'wheel'
                         ? 'bg-gradient-to-r from-indigo-500 to-violet-500 text-white shadow-lg'
                         : 'text-slate-400 hover:text-white'
@@ -1241,7 +1141,7 @@ export default function ModernPitchTrainer({ variant = 'floating' }: ModernPitch
                   </button>
                   <button
                     onClick={() => setMode('keyboard')}
-                    className={`flex items-center gap-2 px-5 py-2 rounded-xl text-sm font-medium transition-all duration-200 ${
+                    className={`flex items-center gap-2 px-5 py-2.5 rounded-xl text-sm font-medium transition-all duration-200 ${
                       mode === 'keyboard'
                         ? 'bg-gradient-to-r from-indigo-500 to-violet-500 text-white shadow-lg'
                         : 'text-slate-400 hover:text-white'
@@ -1253,7 +1153,7 @@ export default function ModernPitchTrainer({ variant = 'floating' }: ModernPitch
                 </div>
               </div>
 
-              {/* Mic Sensitivity & Start/Stop */}
+              {/* Mic Sensitivity */}
               <div className="flex items-center justify-center gap-4 mb-6 flex-wrap">
                 <span className="text-sm text-slate-400">Mic Sensitivity:</span>
                 <input
@@ -1262,15 +1162,15 @@ export default function ModernPitchTrainer({ variant = 'floating' }: ModernPitch
                   max="100"
                   value={sensitivity}
                   onChange={(e) => setSensitivity(parseInt(e.target.value))}
-                  className="w-44 h-2 bg-slate-700 rounded-full appearance-none cursor-pointer accent-indigo-500"
+                  className="w-48 h-2 bg-slate-700 rounded-full appearance-none cursor-pointer accent-indigo-500"
                 />
                 <span className="text-sm text-slate-300 w-8">{sensitivity}</span>
                 <button
                   onClick={isListening ? stopListening : startListening}
                   className={`flex items-center gap-2 px-4 py-2 text-sm font-medium rounded-xl transition-all ${
                     isListening
-                      ? 'bg-emerald-600 hover:bg-emerald-500 text-white shadow-md shadow-emerald-600/20'
-                      : 'bg-indigo-600 hover:bg-indigo-500 text-white shadow-md shadow-indigo-600/20'
+                      ? 'bg-green-600 hover:bg-green-500 text-white'
+                      : 'bg-indigo-600 hover:bg-indigo-500 text-white'
                   }`}
                 >
                   {isListening ? (
@@ -1293,20 +1193,17 @@ export default function ModernPitchTrainer({ variant = 'floating' }: ModernPitch
                 )}
               </div>
 
-              {/* Needle Meter */}
+              {/* Pitch Meter */}
               {isListening && renderMeter()}
-
-              {/* Scrolling Pitch Contour Graph */}
-              {isListening && renderPitchContour()}
 
               {/* Detected Note Display */}
               <div className="text-center mb-6">
-                <div className="inline-flex items-baseline gap-2 min-h-[50px]">
+                <div className="inline-flex items-baseline gap-2 min-h-[60px]">
                   {detectedNote ? (
                     <>
                       {NOTE_STRINGS.map((note, index) => {
                         const isActive = detectedNote.name === note
-                        const detectedIndex = NOTE_STRINGS.indexOf(detectedNote.name as (typeof NOTE_STRINGS)[number])
+                        const detectedIndex = NOTE_STRINGS.indexOf(detectedNote.name)
                         const isAdjacent = (
                           index === (detectedIndex + 1) % 12 ||
                           index === (detectedIndex - 1 + 12) % 12
@@ -1319,9 +1216,7 @@ export default function ModernPitchTrainer({ variant = 'floating' }: ModernPitch
                             key={note}
                             className={`transition-all duration-200 ${
                               isActive
-                                ? isNoteMatching()
-                                  ? 'text-5xl font-bold text-emerald-400 scale-105'
-                                  : 'text-5xl font-bold text-rose-400'
+                                ? 'text-5xl font-bold text-red-500'
                                 : 'text-2xl text-slate-600'
                             }`}
                           >
@@ -1342,32 +1237,30 @@ export default function ModernPitchTrainer({ variant = 'floating' }: ModernPitch
                       {detectedNote.frequency.toFixed(1)} <span className="text-xs">Hz</span>
                     </span>
                     <span className={
-                      Math.abs(detectedNote.cents) <= IN_TUNE_THRESHOLD
-                        ? 'text-emerald-400 font-semibold'
-                        : detectedNote.cents > 0
-                          ? 'text-amber-400'
-                          : 'text-sky-400'
+                      detectedNote.cents > 0
+                        ? 'text-orange-400'
+                        : detectedNote.cents < 0
+                          ? 'text-blue-400'
+                          : 'text-green-400'
                     }>
                       {detectedNote.cents > 0 ? '+' : ''}{detectedNote.cents} cents
                     </span>
                     {isNoteMatching() && (
-                      <span className="text-emerald-400 font-semibold px-2 py-0.5 rounded bg-emerald-500/10 border border-emerald-500/30">
-                        In Tune!
-                      </span>
+                      <span className="text-green-400 font-medium">Match!</span>
                     )}
                   </div>
                 )}
               </div>
 
               {/* Note Selector */}
-              <div className="mb-6">
+              <div className="mb-8">
                 {mode === 'wheel' ? renderWheel() : renderKeyboard()}
               </div>
 
-              {/* Octave Selector (2-6: covering full vocal range) */}
+              {/* Octave Selector */}
               <div className="flex justify-center">
-                <div className="inline-flex bg-slate-800/50 rounded-2xl p-2 border border-slate-700/50 gap-1.5">
-                  {AVAILABLE_OCTAVES.map((octave) => (
+                <div className="inline-flex bg-slate-800/50 rounded-2xl p-2 border border-slate-700/50 gap-1">
+                  {availableOctaves.map((octave) => (
                     <button
                       key={octave}
                       onClick={() => setSelectedOctave(octave)}
@@ -1385,9 +1278,9 @@ export default function ModernPitchTrainer({ variant = 'floating' }: ModernPitch
 
               {/* Selected Note Info */}
               {selectedNote && (
-                <div className="mt-4 text-center">
-                  <p className="text-slate-400 text-sm">
-                    Target: <span className="text-white font-semibold">{selectedNote}{selectedOctave}</span> ({getNoteFrequency(selectedNote, selectedOctave).toFixed(1)} Hz)
+                <div className="mt-6 text-center">
+                  <p className="text-slate-400">
+                    Playing: <span className="text-white font-semibold">{selectedNote}{selectedOctave}</span>
                   </p>
                 </div>
               )}
@@ -1397,15 +1290,9 @@ export default function ModernPitchTrainer({ variant = 'floating' }: ModernPitch
       )}
 
       <Script
-        src="/vendor/aubio.min.js"
+        src="https://cdn.jsdelivr.net/npm/aubiojs@0.1.1/build/aubio.min.js"
         strategy="lazyOnload"
         onLoad={() => setAubioLoaded(true)}
-        onError={() => {
-          const fallback = document.createElement('script')
-          fallback.src = 'https://cdn.jsdelivr.net/npm/aubiojs@0.1.1/build/aubio.min.js'
-          fallback.onload = () => setAubioLoaded(true)
-          document.head.appendChild(fallback)
-        }}
       />
     </>
   )

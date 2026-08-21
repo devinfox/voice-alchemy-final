@@ -28,39 +28,45 @@ export async function GET(request: NextRequest) {
     // 1. Status 'pending' and older than 5 minutes (fire-and-forget likely failed)
     // 2. Status 'processing' and older than 15 minutes (stuck)
     // 3. Status 'failed' and older than 1 hour (retry failed ones periodically)
-    const now = new Date().toISOString()
     const fiveMinutesAgo = new Date(Date.now() - 5 * 60 * 1000).toISOString()
     const fifteenMinutesAgo = new Date(Date.now() - 15 * 60 * 1000).toISOString()
+    const oneHourAgo = new Date(Date.now() - 60 * 60 * 1000).toISOString()
 
-    // 1. Pending recordings older than 5 minutes
     const { data: pendingRecordings } = await admin
       .from('lesson_recordings')
       .select('id')
       .eq('ai_processing_status', 'pending')
       .lt('created_at', fiveMinutesAgo)
-      .limit(5)
+      .limit(5) // Process up to 5 at a time to avoid timeout
 
-    // 2. Stuck processing recordings with expired 15-minute lease
     const { data: stuckRecordings } = await admin
       .from('lesson_recordings')
       .select('id')
       .eq('ai_processing_status', 'processing')
-      .lt('ai_locked_at', fifteenMinutesAgo)
+      .lt('created_at', fifteenMinutesAgo)
       .limit(3)
 
-    // 3. Failed recordings whose scheduled retry backoff has elapsed (ai_next_retry_at <= now)
-    const { data: retryableRecordings } = await admin
+    // Only retry failures that are worth retrying. A transcript-too-short or
+    // over-size failure will fail identically every run, so retrying it just
+    // burns Whisper spend on every cron tick.
+    const { data: failedRecordings } = await admin
       .from('lesson_recordings')
-      .select('id, ai_attempt_count')
+      .select('id, ai_processing_error')
       .eq('ai_processing_status', 'failed')
-      .lte('ai_next_retry_at', now)
-      .lt('ai_attempt_count', 5)
+      .lt('created_at', oneHourAgo)
       .limit(5)
+
+    const retryableFailed = (failedRecordings || []).filter(r => {
+      const err = r.ai_processing_error || ''
+      return !err.includes('too short to summarise') && !err.includes('above Whisper')
+    })
+
+    const permanentlyFailed = (failedRecordings || []).length - retryableFailed.length
 
     const toProcess = [
       ...(pendingRecordings || []),
       ...(stuckRecordings || []),
-      ...(retryableRecordings || []),
+      ...retryableFailed,
     ].slice(0, 8)
 
     if (toProcess.length === 0) {
@@ -69,7 +75,8 @@ export async function GET(request: NextRequest) {
         checked: {
           pending: pendingRecordings?.length || 0,
           stuck: stuckRecordings?.length || 0,
-          retryable: retryableRecordings?.length || 0,
+          failedRetryable: retryableFailed.length,
+          failedPermanent: permanentlyFailed,
         },
       })
     }
@@ -78,11 +85,14 @@ export async function GET(request: NextRequest) {
 
     const results = []
     for (const recording of toProcess) {
-      results.push(await processRecording(admin, recording.id, { force: false }))
+      // 'processing' rows here are stuck, not in flight, so force past the
+      // claim check rather than skipping them forever.
+      results.push(await processRecording(admin, recording.id, { force: true }))
     }
 
     return NextResponse.json({
       message: `Processed ${results.length} recordings`,
+      skippedPermanentFailures: permanentlyFailed,
       results,
     })
   } catch (err) {

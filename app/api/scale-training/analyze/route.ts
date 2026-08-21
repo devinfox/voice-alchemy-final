@@ -60,21 +60,11 @@ export async function POST(request: NextRequest) {
       .gte('session_date', thirtyDaysAgo.toISOString().split('T')[0])
       .order('session_date', { ascending: false })
 
-    if (!sessions || sessions.length === 0) {
-      return NextResponse.json({
-        error: 'Not enough data for analysis. Complete at least 1 scale training session first.',
-        sessionsNeeded: 1,
-        currentSessions: 0
-      }, { status: 400 })
-    }
-
-    const sessionIds = sessions.map(s => s.id)
-
-    // Fetch note metrics strictly corresponding to the 30-day session window
+    // Fetch note metrics for detailed analysis
     const { data: noteMetrics } = await supabase
       .from('scale_training_note_metrics')
       .select('*')
-      .in('session_id', sessionIds)
+      .eq('user_id', user.id)
       .order('created_at', { ascending: false })
       .limit(500)
 
@@ -85,6 +75,14 @@ export async function POST(request: NextRequest) {
       .eq('user_id', user.id)
       .order('week_start_date', { ascending: false })
       .limit(4)
+
+    if (!sessions || sessions.length === 0) {
+      return NextResponse.json({
+        error: 'Not enough data for analysis. Complete more scale training sessions first.',
+        sessionsNeeded: 5,
+        currentSessions: 0
+      }, { status: 400 })
+    }
 
     // Aggregate data by scale type
     const scaleAggregates: Record<string, ScaleSessionAggregate> = {}

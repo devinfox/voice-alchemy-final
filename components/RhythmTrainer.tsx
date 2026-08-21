@@ -1,98 +1,58 @@
 'use client'
 
-import { useState, useEffect, useRef, useCallback, useMemo } from 'react'
-import { X, Maximize2, Minimize2, Play, Pause, Mic, MicOff, Save, TrendingUp, Settings2, Volume2, Headphones, Sliders, ShieldAlert, Sparkles } from 'lucide-react'
+import { useState, useEffect, useRef, useCallback } from 'react'
+import { X, Maximize2, Minimize2, Play, Pause, Mic, MicOff, Save, TrendingUp, Settings2, Volume2 } from 'lucide-react'
 
 // ============================================================================
-// TYPES & DATA STRUCTURES
+// TYPES
 // ============================================================================
 
-export type MetronomeSound = 'click' | 'woodblock' | 'hihat' | 'cowbell' | 'beep'
-export type TimeSignature = '4/4' | '3/4' | '6/8' | '2/4' | '5/4' | '7/8'
-export type Subdivision = '1x' | '2x' | '3x' | '4x' | 'offbeat'
-export type RhythmPracticeMode = 'normal' | 'backbeat' | 'missing_bar'
-export type TimingResult = 'on-beat' | 'early' | 'late' | 'missed'
+type MetronomeSound = 'click' | 'woodblock' | 'hihat' | 'cowbell' | 'beep'
+type TimeSignature = '4/4' | '3/4' | '6/8' | '2/4'
+type TimingResult = 'on-beat' | 'early' | 'late' | 'missed'
 
-export interface BeatTiming {
+interface BeatTiming {
   beatNumber: number
-  subdivisionIndex?: number
-  expectedTimeMs: number
-  actualTimeMs: number | null
+  expectedTime: number
+  actualTime: number | null
   offsetMs: number | null
-  offsetFractionOfBeat: number | null
   result: TimingResult
-  inputType: 'tap' | 'mic'
 }
 
-export interface SessionMetrics {
+interface SessionMetrics {
   startedAt: Date | null
   endedAt: Date | null
   bpm: number
   timeSignature: TimeSignature
-  subdivision: Subdivision
-  practiceMode: RhythmPracticeMode
   beatTimings: BeatTiming[]
   isActive: boolean
 }
 
-export interface SessionStats {
+interface SessionStats {
   totalBeats: number
-  completedHits: number
-  hitRatePercent: number
   onBeatCount: number
   earlyCount: number
   lateCount: number
   missedCount: number
   avgOffsetMs: number
-  medianSignedOffsetMs: number
-  maeMs: number
   consistency: number
   onBeatPercent: number
-  onGridPercent: number
   bestStreak: number
   currentStreak: number
-  rhythmTendency: 'early' | 'late' | 'on-time'
-  avgEarlyMs: number
-  avgLateMs: number
-  overallScore: number
-}
-
-interface MeterConfig {
-  value: TimeSignature
-  label: string
-  beats: number
-  accentPattern: number[] // Indices of beats that get accents (0-indexed)
-  description: string
+  // New singer-focused metrics
+  rhythmTendency: 'early' | 'late' | 'on-time' // Overall tendency
+  avgEarlyMs: number // Average early offset (negative values)
+  avgLateMs: number // Average late offset (positive values)
 }
 
 // ============================================================================
-// CONSTANTS & METER DEFINITIONS
+// CONSTANTS
 // ============================================================================
 
-const METER_CONFIGS: MeterConfig[] = [
-  { value: '4/4', label: '4/4', beats: 4, accentPattern: [0], description: 'Common time: 4 quarter notes per bar' },
-  { value: '3/4', label: '3/4', beats: 3, accentPattern: [0], description: 'Waltz time: 3 quarter notes per bar' },
-  { value: '6/8', label: '6/8', beats: 6, accentPattern: [0, 3], description: 'Compound duple: two groups of 3 eighth notes' },
-  { value: '2/4', label: '2/4', beats: 2, accentPattern: [0], description: 'March time: 2 quarter notes per bar' },
-  { value: '5/4', label: '5/4', beats: 5, accentPattern: [0, 3], description: 'Complex meter: 3+2 grouping' },
-  { value: '7/8', label: '7/8', beats: 7, accentPattern: [0, 3, 5], description: 'Complex meter: 3+2+2 grouping' },
-]
-
-const SUBDIVISION_CONFIGS: { value: Subdivision; label: string; count: number; name: string }[] = [
-  { value: '1x', label: '1/4', count: 1, name: 'Quarter Notes (Main Beat)' },
-  { value: '2x', label: '1/8', count: 2, name: 'Eighth Notes (1 & 2 &)' },
-  { value: '3x', label: '1/8T', count: 3, name: 'Triplets (1 trip let)' },
-  { value: '4x', label: '1/16', count: 4, name: 'Sixteenth Notes (1 e & a)' },
-  { value: 'offbeat', label: '&', count: 1, name: 'Offbeats Only (Syncopation)' },
-]
-
-const SOUND_OPTIONS: { value: MetronomeSound; label: string }[] = [
-  { value: 'click', label: 'Studio Click' },
-  { value: 'woodblock', label: 'Woodblock' },
-  { value: 'hihat', label: 'Hi-Hat' },
-  { value: 'cowbell', label: '808 Cowbell' },
-  { value: 'beep', label: 'Digital Beep' },
-]
+const TIMING_THRESHOLDS = {
+  onBeat: 30,    // Within ±30ms = on beat
+  window: 200,   // Detection window around beat (±200ms)
+}
 
 const SCHEDULE_AHEAD_SECONDS = 0.3
 const TAP_TEMPO_RESET_FACTOR = 1.5
@@ -110,21 +70,34 @@ function createBrowserAudioContext(): AudioContext {
   return new AudioContextCtor()
 }
 
+const SOUND_OPTIONS: { value: MetronomeSound; label: string }[] = [
+  { value: 'click', label: 'Click' },
+  { value: 'woodblock', label: 'Wood Block' },
+  { value: 'hihat', label: 'Hi-Hat' },
+  { value: 'cowbell', label: 'Cowbell' },
+  { value: 'beep', label: 'Beep' },
+]
+
+const TIME_SIGNATURES: { value: TimeSignature; label: string; beats: number }[] = [
+  { value: '4/4', label: '4/4', beats: 4 },
+  { value: '3/4', label: '3/4', beats: 3 },
+  { value: '6/8', label: '6/8', beats: 6 },
+  { value: '2/4', label: '2/4', beats: 2 },
+]
+
 // ============================================================================
-// METRONOME AUDIO SYNTHESIZER
+// METRONOME SOUND GENERATOR
 // ============================================================================
 
-function synthesizeMetronomePulse(
+function createMetronomeSound(
   audioContext: AudioContext,
-  destination: AudioNode,
   soundType: MetronomeSound,
-  isPrimaryAccent: boolean = false,
-  isSecondaryAccent: boolean = false,
-  volumePercent: number = 70,
-  when: number = audioContext.currentTime
+  isAccent: boolean = false,
+  volumePercent: number = 70
 ): void {
-  const time = Math.max(when, audioContext.currentTime)
-  const baseVolume = isPrimaryAccent ? 0.9 : isSecondaryAccent ? 0.65 : 0.45
+  const now = audioContext.currentTime
+  // Apply user volume (0-100) to base volume (accent: 0.8, normal: 0.5)
+  const baseVolume = isAccent ? 0.8 : 0.5
   const volume = baseVolume * (volumePercent / 100)
 
   switch (soundType) {
@@ -132,35 +105,35 @@ function synthesizeMetronomePulse(
       const osc = audioContext.createOscillator()
       const gain = audioContext.createGain()
       osc.connect(gain)
-      gain.connect(destination)
-      osc.frequency.value = isPrimaryAccent ? 1400 : isSecondaryAccent ? 1000 : 800
+      gain.connect(audioContext.destination)
+      osc.frequency.value = isAccent ? 1200 : 800
       osc.type = 'square'
-      gain.gain.setValueAtTime(volume, time)
-      gain.gain.exponentialRampToValueAtTime(0.0001, time + 0.035)
-      osc.start(time)
-      osc.stop(time + 0.035)
+      gain.gain.setValueAtTime(volume, now)
+      gain.gain.exponentialRampToValueAtTime(0.001, now + 0.03)
+      osc.start(now)
+      osc.stop(now + 0.03)
       break
     }
     case 'woodblock': {
       const osc = audioContext.createOscillator()
-      const filter = audioContext.createBiquadFilter()
       const gain = audioContext.createGain()
+      const filter = audioContext.createBiquadFilter()
       osc.connect(filter)
       filter.connect(gain)
-      gain.connect(destination)
-      osc.frequency.value = isPrimaryAccent ? 950 : isSecondaryAccent ? 750 : 600
+      gain.connect(audioContext.destination)
+      osc.frequency.value = isAccent ? 800 : 600
       osc.type = 'triangle'
       filter.type = 'bandpass'
-      filter.frequency.value = isPrimaryAccent ? 2200 : 1600
-      filter.Q.value = 6
-      gain.gain.setValueAtTime(volume, time)
-      gain.gain.exponentialRampToValueAtTime(0.0001, time + 0.08)
-      osc.start(time)
-      osc.stop(time + 0.08)
+      filter.frequency.value = isAccent ? 2000 : 1500
+      filter.Q.value = 5
+      gain.gain.setValueAtTime(volume, now)
+      gain.gain.exponentialRampToValueAtTime(0.001, now + 0.08)
+      osc.start(now)
+      osc.stop(now + 0.08)
       break
     }
     case 'hihat': {
-      const bufferSize = Math.floor(audioContext.sampleRate * 0.04)
+      const bufferSize = audioContext.sampleRate * 0.05
       const buffer = audioContext.createBuffer(1, bufferSize, audioContext.sampleRate)
       const data = buffer.getChannelData(0)
       for (let i = 0; i < bufferSize; i++) {
@@ -171,114 +144,203 @@ function synthesizeMetronomePulse(
       const gain = audioContext.createGain()
       source.buffer = buffer
       filter.type = 'highpass'
-      filter.frequency.value = isPrimaryAccent ? 7000 : 8500
+      filter.frequency.value = isAccent ? 7000 : 8000
       source.connect(filter)
       filter.connect(gain)
-      gain.connect(destination)
-      gain.gain.setValueAtTime(volume * 0.7, time)
-      source.start(time)
+      gain.connect(audioContext.destination)
+      gain.gain.value = volume * 0.6
+      source.start(now)
       break
     }
     case 'cowbell': {
       const osc1 = audioContext.createOscillator()
       const osc2 = audioContext.createOscillator()
-      const filter = audioContext.createBiquadFilter()
       const gain = audioContext.createGain()
-      filter.type = 'bandpass'
-      filter.frequency.value = isPrimaryAccent ? 900 : 800
-      filter.Q.value = 3
-      osc1.connect(filter)
-      osc2.connect(filter)
-      filter.connect(gain)
-      gain.connect(destination)
-      osc1.frequency.value = isPrimaryAccent ? 587 : 540
-      osc2.frequency.value = isPrimaryAccent ? 845 : 800
+      osc1.connect(gain)
+      osc2.connect(gain)
+      gain.connect(audioContext.destination)
+      osc1.frequency.value = isAccent ? 560 : 540
+      osc2.frequency.value = isAccent ? 845 : 815
       osc1.type = 'square'
       osc2.type = 'square'
-      gain.gain.setValueAtTime(volume * 0.4, time)
-      gain.gain.exponentialRampToValueAtTime(0.0001, time + 0.14)
-      osc1.start(time)
-      osc2.start(time)
-      osc1.stop(time + 0.14)
-      osc2.stop(time + 0.14)
+      gain.gain.setValueAtTime(volume * 0.3, now)
+      gain.gain.exponentialRampToValueAtTime(0.001, now + 0.15)
+      osc1.start(now)
+      osc2.start(now)
+      osc1.stop(now + 0.15)
+      osc2.stop(now + 0.15)
       break
     }
     case 'beep': {
       const osc = audioContext.createOscillator()
       const gain = audioContext.createGain()
       osc.connect(gain)
-      gain.connect(destination)
-      osc.frequency.value = isPrimaryAccent ? 880 : isSecondaryAccent ? 660 : 520
+      gain.connect(audioContext.destination)
+      osc.frequency.value = isAccent ? 880 : 660
       osc.type = 'sine'
-      gain.gain.setValueAtTime(volume * 0.5, time)
-      gain.gain.exponentialRampToValueAtTime(0.0001, time + 0.09)
-      osc.start(time)
-      osc.stop(time + 0.09)
+      gain.gain.setValueAtTime(volume * 0.5, now)
+      gain.gain.exponentialRampToValueAtTime(0.001, now + 0.1)
+      osc.start(now)
+      osc.stop(now + 0.1)
       break
     }
   }
 }
 
 // ============================================================================
-// STATISTICAL EVALUATION ENGINE
+// ONSET DETECTION HOOK
 // ============================================================================
 
-export function calculateStats(timings: BeatTiming[]): SessionStats {
-  const completedTimings = timings.filter(t => t.result !== 'missed' && t.offsetMs !== null)
-  const totalBeats = timings.length
-  const completedHits = completedTimings.length
+interface UseOnsetDetectionOptions {
+  threshold: number
+  onOnset?: (time: number) => void
+}
 
-  if (totalBeats === 0 || completedHits === 0) {
-    return {
-      totalBeats,
-      completedHits: 0,
-      hitRatePercent: 0,
-      onBeatCount: 0,
-      earlyCount: 0,
-      lateCount: 0,
-      missedCount: totalBeats,
-      avgOffsetMs: 0,
-      medianSignedOffsetMs: 0,
-      maeMs: 0,
-      consistency: 0,
-      onBeatPercent: 0,
-      onGridPercent: 0,
-      bestStreak: 0,
-      currentStreak: 0,
-      rhythmTendency: 'on-time',
-      avgEarlyMs: 0,
-      avgLateMs: 0,
-      overallScore: 0,
+function useOnsetDetection({ threshold, onOnset }: UseOnsetDetectionOptions) {
+  const [isListening, setIsListening] = useState(false)
+  const audioContextRef = useRef<AudioContext | null>(null)
+  const analyserRef = useRef<AnalyserNode | null>(null)
+  const streamRef = useRef<MediaStream | null>(null)
+  const previousRmsRef = useRef(0)
+  const onOnsetRef = useRef(onOnset)
+  const thresholdRef = useRef(threshold)
+  const lastOnsetTimeRef = useRef(0)
+  const animationFrameRef = useRef<number | null>(null)
+  const processAudioRef = useRef<(() => void) | null>(null)
+
+  useEffect(() => {
+    onOnsetRef.current = onOnset
+  }, [onOnset])
+
+  useEffect(() => {
+    thresholdRef.current = threshold
+  }, [threshold])
+
+  const processAudio = useCallback(() => {
+    if (!analyserRef.current) return
+
+    const bufferLength = analyserRef.current.frequencyBinCount
+    const dataArray = new Float32Array(bufferLength)
+    analyserRef.current.getFloatTimeDomainData(dataArray)
+
+    // Calculate RMS
+    let sum = 0
+    for (let i = 0; i < bufferLength; i++) {
+      sum += dataArray[i] * dataArray[i]
     }
-  }
+    const rms = Math.sqrt(sum / bufferLength)
 
+    // Detect onset (sudden increase in amplitude)
+    const now = Date.now()
+    const onsetThreshold = 0.01 + (1 - thresholdRef.current / 100) * 0.1
+    const minTimeBetweenOnsets = 100 // Minimum 100ms between onsets
+
+    if (
+      rms > onsetThreshold &&
+      rms > previousRmsRef.current * 1.5 &&
+      now - lastOnsetTimeRef.current > minTimeBetweenOnsets
+    ) {
+      lastOnsetTimeRef.current = now
+      if (onOnsetRef.current) {
+        onOnsetRef.current(now)
+      }
+    }
+
+    previousRmsRef.current = rms
+    if (processAudioRef.current) {
+      animationFrameRef.current = requestAnimationFrame(processAudioRef.current)
+    }
+  }, [])
+
+  // Keep processAudioRef in sync with processAudio
+  useEffect(() => {
+    processAudioRef.current = processAudio
+  }, [processAudio])
+
+  const startListening = useCallback(async () => {
+    try {
+      audioContextRef.current = createBrowserAudioContext()
+      analyserRef.current = audioContextRef.current.createAnalyser()
+      analyserRef.current.fftSize = 2048
+
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true })
+      streamRef.current = stream
+
+      const source = audioContextRef.current.createMediaStreamSource(stream)
+      source.connect(analyserRef.current)
+
+      setIsListening(true)
+      animationFrameRef.current = requestAnimationFrame(processAudio)
+    } catch (error) {
+      console.error('Microphone error:', error)
+      alert('Could not access microphone. Please check permissions.')
+    }
+  }, [processAudio])
+
+  const stopListening = useCallback(() => {
+    if (animationFrameRef.current) {
+      cancelAnimationFrame(animationFrameRef.current)
+      animationFrameRef.current = null
+    }
+    if (streamRef.current) {
+      streamRef.current.getTracks().forEach(track => track.stop())
+      streamRef.current = null
+    }
+    if (audioContextRef.current) {
+      audioContextRef.current.close()
+      audioContextRef.current = null
+    }
+    analyserRef.current = null
+    setIsListening(false)
+  }, [])
+
+  useEffect(() => {
+    return () => {
+      if (animationFrameRef.current) {
+        cancelAnimationFrame(animationFrameRef.current)
+      }
+      if (streamRef.current) {
+        streamRef.current.getTracks().forEach(track => track.stop())
+      }
+      if (audioContextRef.current) {
+        audioContextRef.current.close()
+      }
+    }
+  }, [])
+
+  return { isListening, startListening, stopListening }
+}
+
+// ============================================================================
+// STATS CALCULATION
+// ============================================================================
+
+function calculateStats(timings: BeatTiming[]): SessionStats {
+  const completedTimings = timings.filter(t => t.result !== 'missed' && t.offsetMs !== null)
   const onBeatCount = timings.filter(t => t.result === 'on-beat').length
   const earlyCount = timings.filter(t => t.result === 'early').length
   const lateCount = timings.filter(t => t.result === 'late').length
   const missedCount = timings.filter(t => t.result === 'missed').length
 
-  const offsets = completedTimings.map(t => t.offsetMs || 0)
-  const absOffsets = offsets.map(Math.abs)
+  const avgOffsetMs = completedTimings.length > 0
+    ? completedTimings.reduce((sum, t) => sum + (t.offsetMs || 0), 0) / completedTimings.length
+    : 0
 
-  // 1. Mean and Median statistics
-  const avgOffsetMs = offsets.reduce((a, b) => a + b, 0) / offsets.length
-  const maeMs = absOffsets.reduce((a, b) => a + b, 0) / absOffsets.length
-
-  const sortedOffsets = [...offsets].sort((a, b) => a - b)
-  const mid = Math.floor(sortedOffsets.length / 2)
-  const medianSignedOffsetMs = sortedOffsets.length % 2 !== 0
-    ? sortedOffsets[mid]
-    : (sortedOffsets[mid - 1] + sortedOffsets[mid]) / 2
-
-  // 2. Timing Consistency (Robust std dev, 0ms = 100%, 150ms = 0%)
+  // Calculate consistency (inverse of standard deviation)
+  // For singers: scale appropriately - 0ms stdDev = 100%, 150ms stdDev = 0%
+  // This is more forgiving than the original 100ms scale
   let consistency = 100
-  if (offsets.length > 1) {
-    const variance = offsets.reduce((sum, x) => sum + Math.pow(x - avgOffsetMs, 2), 0) / offsets.length
+  if (completedTimings.length > 1) {
+    const offsets = completedTimings.map(t => t.offsetMs || 0)
+    const mean = offsets.reduce((a, b) => a + b, 0) / offsets.length
+    const variance = offsets.reduce((sum, x) => sum + Math.pow(x - mean, 2), 0) / offsets.length
     const stdDev = Math.sqrt(variance)
-    consistency = Math.max(0, Math.min(100, Math.round(100 - (stdDev / 1.5))))
+    // 0ms stdDev = 100% consistency, 150ms stdDev = 0% consistency
+    // This gives more credit for "pretty good" timing common in singers
+    consistency = Math.max(0, 100 - (stdDev / 1.5))
   }
 
-  // 3. Streaks
+  // Calculate streaks
   let bestStreak = 0
   let currentStreak = 0
   for (const t of timings) {
@@ -290,57 +352,50 @@ export function calculateStats(timings: BeatTiming[]): SessionStats {
     }
   }
 
-  // 4. Percentage scores
-  const hitRatePercent = (completedHits / totalBeats) * 100
-  const onBeatPercent = (onBeatCount / totalBeats) * 100
-  const onGridPercent = (onBeatCount / completedHits) * 100
+  const totalBeats = timings.length
+  const onBeatPercent = totalBeats > 0 ? (onBeatCount / totalBeats) * 100 : 0
 
-  // 5. Early / Late statistics
+  // Calculate rhythm tendency (early/late bias) - important for singers
   const earlyTimings = completedTimings.filter(t => t.result === 'early')
   const lateTimings = completedTimings.filter(t => t.result === 'late')
+
   const avgEarlyMs = earlyTimings.length > 0
     ? earlyTimings.reduce((sum, t) => sum + (t.offsetMs || 0), 0) / earlyTimings.length
     : 0
+
   const avgLateMs = lateTimings.length > 0
     ? lateTimings.reduce((sum, t) => sum + (t.offsetMs || 0), 0) / lateTimings.length
     : 0
 
-  // 6. Calibrated Rhythm Tendency
+  // Determine overall tendency based on count and average offset
   let rhythmTendency: 'early' | 'late' | 'on-time' = 'on-time'
-  if (Math.abs(medianSignedOffsetMs) >= 10) {
-    if (medianSignedOffsetMs < -10 && (earlyCount / completedHits) >= 0.30) {
-      rhythmTendency = 'early'
-    } else if (medianSignedOffsetMs > 10 && (lateCount / completedHits) >= 0.30) {
-      rhythmTendency = 'late'
+  if (completedTimings.length > 0) {
+    // If more than 40% of non-on-beat hits are one direction, that's the tendency
+    const nonOnBeat = earlyCount + lateCount
+    if (nonOnBeat > 0) {
+      const earlyRatio = earlyCount / nonOnBeat
+      if (earlyRatio > 0.6) {
+        rhythmTendency = 'early'
+      } else if (earlyRatio < 0.4) {
+        rhythmTendency = 'late'
+      }
     }
   }
 
-  // 7. Rigorous Multiplicative Overall Score
-  // Accuracy Score: based on MAE (0ms = 100%, 50ms = 50%, 100ms+ = 0%)
-  const accuracyScore = Math.max(0, Math.min(100, 100 - (maeMs * 1.2)))
-  const timingQuality = (onGridPercent * 0.40) + (accuracyScore * 0.35) + (consistency * 0.25)
-  const overallScore = Math.max(0, Math.min(100, (hitRatePercent / 100) * timingQuality))
-
   return {
     totalBeats,
-    completedHits,
-    hitRatePercent: Math.round(hitRatePercent),
     onBeatCount,
     earlyCount,
     lateCount,
     missedCount,
-    avgOffsetMs: Math.round(avgOffsetMs * 10) / 10,
-    medianSignedOffsetMs: Math.round(medianSignedOffsetMs * 10) / 10,
-    maeMs: Math.round(maeMs * 10) / 10,
+    avgOffsetMs,
     consistency,
-    onBeatPercent: Math.round(onBeatPercent * 10) / 10,
-    onGridPercent: Math.round(onGridPercent * 10) / 10,
+    onBeatPercent,
     bestStreak,
     currentStreak,
     rhythmTendency,
-    avgEarlyMs: Math.round(avgEarlyMs * 10) / 10,
-    avgLateMs: Math.round(avgLateMs * 10) / 10,
-    overallScore: Math.round(overallScore * 10) / 10,
+    avgEarlyMs,
+    avgLateMs,
   }
 }
 
@@ -356,293 +411,227 @@ export default function RhythmTrainer({ variant = 'floating' }: RhythmTrainerPro
   const [isOpen, setIsOpen] = useState(false)
   const [isFullscreen, setIsFullscreen] = useState(false)
   const [showSettings, setShowSettings] = useState(false)
-  const [showCalibration, setShowCalibration] = useState(false)
 
-  // Metronome state
+  // Metronome settings
   const [bpm, setBpm] = useState(90)
   const [timeSignature, setTimeSignature] = useState<TimeSignature>('4/4')
-  const [subdivision, setSubdivision] = useState<Subdivision>('1x')
-  const [practiceMode, setPracticeMode] = useState<RhythmPracticeMode>('normal')
   const [metronomeSound, setMetronomeSound] = useState<MetronomeSound>('click')
   const [volume, setVolume] = useState(70)
   const [isPlaying, setIsPlaying] = useState(false)
 
-  // Calibration & Latency
-  const [userCalibrationMs, setUserCalibrationMs] = useState(0)
-  const [estimatedHardwareLatencyMs, setEstimatedHardwareLatencyMs] = useState(0)
-
-  // Live Beat Tracking
-  const [currentBeatIndex, setCurrentBeatIndex] = useState(0)
+  // Beat tracking
+  const [currentBeat, setCurrentBeat] = useState(0)
   const [recentTimings, setRecentTimings] = useState<BeatTiming[]>([])
 
-  // Microphone Input State
-  const [isListening, setIsListening] = useState(false)
+  // Onset detection
   const [sensitivity, setSensitivity] = useState(60)
 
-  // Session state
+  // Session tracking
   const [session, setSession] = useState<SessionMetrics>({
     startedAt: null,
     endedAt: null,
     bpm: 90,
     timeSignature: '4/4',
-    subdivision: '1x',
-    practiceMode: 'normal',
     beatTimings: [],
     isActive: false,
   })
 
+  // Saving
   const [isSaving, setIsSaving] = useState(false)
   const [saveMessage, setSaveMessage] = useState<string | null>(null)
 
-  // Audio & Clock Refs
+  // Refs
   const audioContextRef = useRef<AudioContext | null>(null)
-  const masterGainRef = useRef<GainNode | null>(null)
+  const nextBeatTimeRef = useRef(0)
   const schedulerIntervalRef = useRef<NodeJS.Timeout | null>(null)
-  const generationIdRef = useRef(0) // Generation counter to invalidate orphaned scheduled events
+  const beatCounterRef = useRef(0)
+  const sessionRef = useRef(session)
+  const expectedBeatTimesRef = useRef<number[]>([])
+  const lastProcessedBeatRef = useRef(-1)
+  // Time synchronization refs - store reference points for both time bases
+  const audioContextStartTimeRef = useRef(0) // audioContext.currentTime at start
+  const dateNowStartTimeRef = useRef(0) // Date.now() at start
+  const volumeRef = useRef(volume) // Volume ref for use in callbacks
 
-  const nextPulseTimeRef = useRef(0)
-  const pulseCounterRef = useRef(0)
-  const scheduledPulsesRef = useRef<Array<{
-    pulseId: number
-    beatNumber: number
-    subdivisionIndex: number
-    expectedPerfMs: number
-    processed: boolean
-    isMutedByPracticeMode: boolean
-  }>>([])
+  // Keep volume ref in sync
+  useEffect(() => {
+    volumeRef.current = volume
+  }, [volume])
 
-  // Clock sync refs
-  const audioContextStartTimeRef = useRef(0)
-  const performanceStartTimeRef = useRef(0)
-  const volumeRef = useRef(volume)
-  volumeRef.current = volume
+  // Keep session ref in sync
+  useEffect(() => {
+    sessionRef.current = session
+  }, [session])
 
-  // Mic Audio Nodes
-  const micStreamRef = useRef<MediaStream | null>(null)
-  const micAnalyserRef = useRef<AnalyserNode | null>(null)
-  const micAnimFrameRef = useRef<number | null>(null)
-  const previousRmsRef = useRef(0)
-  const lastMicOnsetTimeRef = useRef(0)
+  const beatsPerMeasure = TIME_SIGNATURES.find(t => t.value === timeSignature)?.beats || 4
 
-  // Tap Feedback
-  const [tapFeedback, setTapFeedback] = useState<{ result: TimingResult | 'no-match'; id: number; offsetMs?: number } | null>(null)
-  const tapFeedbackTimerRef = useRef<NodeJS.Timeout | null>(null)
-  const tapIdRef = useRef(0)
+  // Handle onset detection
+  /**
+   * Register a hit against the nearest expected beat.
+   *
+   * Shared by both input methods: microphone onsets and the tap pad. Returns
+   * the timing result so the tap pad can flash feedback, or null when the hit
+   * landed outside the matching window (or the metronome is not running).
+   */
+  const handleOnset = useCallback((onsetTime: number): TimingResult | null => {
+    if (!isPlaying || expectedBeatTimesRef.current.length === 0) return null
 
-  // Tap Tempo state
-  const tapTempoTimesRef = useRef<number[]>([])
-  const [tapTempoCount, setTapTempoCount] = useState(0)
-
-  const currentMeterConfig = useMemo(() => {
-    return METER_CONFIGS.find(m => m.value === timeSignature) || METER_CONFIGS[0]
-  }, [timeSignature])
-
-  // ==========================================================================
-  // CORE HIT REGISTER & SEQUENTIAL ALIGNMENT
-  // ==========================================================================
-
-  const registerHit = useCallback((hitPerfTimestamp: number, inputType: 'tap' | 'mic') => {
-    if (!isPlaying || scheduledPulsesRef.current.length === 0) return null
-
-    // Latency compensated timestamp
-    const correctedHitTime = hitPerfTimestamp - userCalibrationMs
-    const beatDurationMs = 60000 / bpm
-    const halfWindowMs = Math.min(220, beatDurationMs * 0.48)
-    const allowedOnBeatMs = Math.max(15, Math.min(45, beatDurationMs * 0.08))
-
-    // Search for closest matching unprocessed pulse
-    let closestPulse: typeof scheduledPulsesRef.current[0] | null = null
+    // Find the closest expected beat
+    let closestBeatIndex = -1
     let closestOffset = Infinity
 
-    for (const pulse of scheduledPulsesRef.current) {
-      if (pulse.processed) continue
+    expectedBeatTimesRef.current.forEach((expectedTime, index) => {
+      if (index <= lastProcessedBeatRef.current) return
 
-      const offset = correctedHitTime - pulse.expectedPerfMs
-      if (Math.abs(offset) <= halfWindowMs && Math.abs(offset) < Math.abs(closestOffset)) {
+      const offset = onsetTime - expectedTime
+      if (Math.abs(offset) < TIMING_THRESHOLDS.window && Math.abs(offset) < Math.abs(closestOffset)) {
         closestOffset = offset
-        closestPulse = pulse
+        closestBeatIndex = index
       }
-    }
+    })
 
-    if (!closestPulse) return null
+    if (closestBeatIndex === -1) return null
 
-    closestPulse.processed = true
+    lastProcessedBeatRef.current = closestBeatIndex
 
-    const result: TimingResult = Math.abs(closestOffset) <= allowedOnBeatMs
+    const result: TimingResult = Math.abs(closestOffset) <= TIMING_THRESHOLDS.onBeat
       ? 'on-beat'
       : closestOffset < 0
         ? 'early'
         : 'late'
 
     const newTiming: BeatTiming = {
-      beatNumber: closestPulse.beatNumber,
-      subdivisionIndex: closestPulse.subdivisionIndex,
-      expectedTimeMs: closestPulse.expectedPerfMs,
-      actualTimeMs: correctedHitTime,
+      beatNumber: closestBeatIndex + 1,
+      expectedTime: expectedBeatTimesRef.current[closestBeatIndex],
+      actualTime: onsetTime,
       offsetMs: closestOffset,
-      offsetFractionOfBeat: closestOffset / beatDurationMs,
       result,
-      inputType,
     }
 
-    setRecentTimings(prev => [...prev.slice(-23), newTiming])
+    setRecentTimings(prev => [...prev.slice(-19), newTiming])
     setSession(prev => ({
       ...prev,
       beatTimings: [...prev.beatTimings, newTiming],
     }))
 
-    return { result, offsetMs: closestOffset }
-  }, [isPlaying, bpm, userCalibrationMs])
+    return result
+  }, [isPlaying])
 
-  // Tap handler (onPointerDown)
-  const handleTap = useCallback((e?: React.PointerEvent | MouseEvent | KeyboardEvent) => {
-    // High-resolution event timestamp or performance.now()
-    const hitTime = (e && typeof e.timeStamp === 'number' && e.timeStamp > 0)
-      ? e.timeStamp
-      : performance.now()
+  const { isListening, startListening, stopListening } = useOnsetDetection({
+    threshold: sensitivity,
+    onOnset: handleOnset,
+  })
 
-    const outcome = registerHit(hitTime, 'tap')
+  // ==========================================================================
+  // TAP INPUT
+  // ==========================================================================
+  // Until now the only way to register a beat was the microphone, so the tool
+  // was unusable without mic permission, in a quiet room, or anywhere the
+  // metronome bleeding into the mic would false-trigger onsets. Tapping is the
+  // standard input for a rhythm trainer and works everywhere.
+
+  /** Flash feedback on the pad: the result of the most recent tap. */
+  const [tapFeedback, setTapFeedback] = useState<{ result: TimingResult | 'no-match'; id: number } | null>(null)
+  const tapFeedbackTimerRef = useRef<NodeJS.Timeout | null>(null)
+  const tapIdRef = useRef(0)
+
+  const registerTap = useCallback(() => {
+    // Timestamp as early as possible. Expected beat times are stored on the
+    // Date.now() axis (synchronised to audioContext at start), so this is
+    // directly comparable without conversion.
+    const tapTime = Date.now()
+
+    const result = handleOnset(tapTime)
 
     tapIdRef.current += 1
-    setTapFeedback({
-      result: outcome?.result ?? 'no-match',
-      offsetMs: outcome?.offsetMs,
-      id: tapIdRef.current
-    })
+    setTapFeedback({ result: result ?? 'no-match', id: tapIdRef.current })
 
     if (tapFeedbackTimerRef.current) clearTimeout(tapFeedbackTimerRef.current)
-    tapFeedbackTimerRef.current = setTimeout(() => setTapFeedback(null), 300)
-  }, [registerHit])
+    tapFeedbackTimerRef.current = setTimeout(() => setTapFeedback(null), 350)
+  }, [handleOnset])
 
-  // Spacebar trigger
+  // Spacebar as an alias for the pad. Ignored while typing so it cannot hijack
+  // the BPM field or any future text input.
   useEffect(() => {
     const onKeyDown = (e: KeyboardEvent) => {
       if (e.code !== 'Space' && e.key !== ' ') return
-      const tag = (e.target as HTMLElement | null)?.tagName
-      if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT') return
 
-      e.preventDefault()
-      if (e.repeat) return
-      handleTap(e)
+      const target = e.target as HTMLElement | null
+      const tag = target?.tagName
+      if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT' || target?.isContentEditable) return
+
+      e.preventDefault() // stop the page scrolling on every tap
+      if (e.repeat) return // holding the key is not a stream of beats
+      registerTap()
     }
 
     window.addEventListener('keydown', onKeyDown)
     return () => window.removeEventListener('keydown', onKeyDown)
-  }, [handleTap])
+  }, [registerTap])
 
-  // ==========================================================================
-  // MICROPHONE ONSET DETECTOR
-  // ==========================================================================
-
-  const startMic = useCallback(async () => {
-    try {
-      if (!audioContextRef.current) {
-        audioContextRef.current = createBrowserAudioContext()
-      }
-      if (audioContextRef.current.state === 'suspended') {
-        await audioContextRef.current.resume()
-      }
-
-      const stream = await navigator.mediaDevices.getUserMedia({
-        audio: {
-          echoCancellation: true,
-          noiseSuppression: false,
-          autoGainControl: false
-        }
-      })
-      micStreamRef.current = stream
-
-      const source = audioContextRef.current.createMediaStreamSource(stream)
-      const analyser = audioContextRef.current.createAnalyser()
-      analyser.fftSize = 1024
-      source.connect(analyser)
-      micAnalyserRef.current = analyser
-
-      setIsListening(true)
-
-      const bufferLength = analyser.frequencyBinCount
-      const timeData = new Float32Array(bufferLength)
-
-      const checkMicAudio = () => {
-        if (!micAnalyserRef.current) return
-        micAnalyserRef.current.getFloatTimeDomainData(timeData)
-
-        let sum = 0
-        for (let i = 0; i < bufferLength; i++) {
-          sum += timeData[i] * timeData[i]
-        }
-        const rms = Math.sqrt(sum / bufferLength)
-
-        const nowPerf = performance.now()
-        const dynamicThreshold = 0.012 + (1 - sensitivity / 100) * 0.09
-        const minRefractoryMs = 120
-
-        if (
-          rms > dynamicThreshold &&
-          rms > previousRmsRef.current * 1.45 &&
-          nowPerf - lastMicOnsetTimeRef.current > minRefractoryMs
-        ) {
-          lastMicOnsetTimeRef.current = nowPerf
-          registerHit(nowPerf, 'mic')
-        }
-
-        previousRmsRef.current = rms
-        micAnimFrameRef.current = requestAnimationFrame(checkMicAudio)
-      }
-
-      micAnimFrameRef.current = requestAnimationFrame(checkMicAudio)
-    } catch (err) {
-      console.error('Microphone error:', err)
-      alert('Could not access microphone.')
+  useEffect(() => {
+    return () => {
+      if (tapFeedbackTimerRef.current) clearTimeout(tapFeedbackTimerRef.current)
     }
-  }, [sensitivity, registerHit])
-
-  const stopMic = useCallback(() => {
-    if (micAnimFrameRef.current) {
-      cancelAnimationFrame(micAnimFrameRef.current)
-      micAnimFrameRef.current = null
-    }
-    if (micStreamRef.current) {
-      micStreamRef.current.getTracks().forEach(t => t.stop())
-      micStreamRef.current = null
-    }
-    micAnalyserRef.current = null
-    setIsListening(false)
   }, [])
 
   // ==========================================================================
-  // TAP TEMPO CALCULATOR
+  // TAP TEMPO
   // ==========================================================================
+  // Set the BPM by tapping a few times, rather than hunting on the slider.
+
+  const tapTempoTimesRef = useRef<number[]>([])
+  const [tapTempoCount, setTapTempoCount] = useState(0)
 
   const registerTempoTap = useCallback(() => {
-    const now = performance.now()
+    const now = Date.now()
     const taps = tapTempoTimesRef.current
 
+    // A long gap means this is the start of a new attempt, not a continuation.
+    // This mirrors common tap-tempo counters: reset when the pause is much
+    // longer than the tempo established so far, with a 2s fallback for the
+    // first interval.
     if (taps.length > 0) {
-      const lastInterval = now - taps[taps.length - 1]
-      if (lastInterval > 2200) {
+      const intervals: number[] = []
+      for (let i = 1; i < taps.length; i++) intervals.push(taps[i] - taps[i - 1])
+      const averageInterval = intervals.length > 0
+        ? intervals.reduce((sum, interval) => sum + interval, 0) / intervals.length
+        : 0
+      const resetThreshold = averageInterval > 0
+        ? averageInterval * TAP_TEMPO_RESET_FACTOR
+        : 2000
+      if (now - taps[taps.length - 1] > resetThreshold) {
         taps.length = 0
       }
     }
 
+    if (taps.length > 0 && now <= taps[taps.length - 1]) {
+      taps.length = 0
+    }
+
     taps.push(now)
-    if (taps.length > 8) taps.shift()
+    if (taps.length > 8) taps.shift() // rolling window, recent taps win
+
     setTapTempoCount(taps.length)
 
+    // Two taps give one interval, which is far too noisy to trust.
     if (taps.length < 3) return
 
     const intervals: number[] = []
-    for (let i = 1; i < taps.length; i++) {
-      intervals.push(taps[i] - taps[i - 1])
-    }
+    for (let i = 1; i < taps.length; i++) intervals.push(taps[i] - taps[i - 1])
 
+    // Median rather than mean: one hesitant tap should not drag the tempo.
     const sorted = [...intervals].sort((a, b) => a - b)
-    const medianInterval = sorted[Math.floor(sorted.length / 2)]
+    const mid = Math.floor(sorted.length / 2)
+    const medianInterval = sorted.length % 2 === 0
+      ? (sorted[mid - 1] + sorted[mid]) / 2
+      : sorted[mid]
 
-    if (medianInterval > 0) {
-      const derivedBpm = Math.round(60000 / medianInterval)
-      setBpm(Math.max(40, Math.min(240, derivedBpm)))
-    }
+    if (medianInterval <= 0) return
+
+    const derived = Math.round(60000 / medianInterval)
+    // Clamp to the slider's range so the two controls cannot disagree.
+    setBpm(Math.max(40, Math.min(220, derived)))
   }, [])
 
   const resetTapTempo = useCallback(() => {
@@ -650,155 +639,68 @@ export default function RhythmTrainer({ variant = 'floating' }: RhythmTrainerPro
     setTapTempoCount(0)
   }, [])
 
-  // ==========================================================================
-  // SCHEDULER & MISSED BEAT SWEEPER
-  // ==========================================================================
+  // Schedule metronome beats
+  const scheduleBeats = useCallback(() => {
+    if (!audioContextRef.current) return
 
-  const sweepMissedPulses = useCallback(() => {
-    const nowPerf = performance.now() - userCalibrationMs
-    const beatDurationMs = 60000 / bpm
-    const halfWindowMs = Math.min(220, beatDurationMs * 0.48)
-    const missedList: BeatTiming[] = []
+    const currentTime = audioContextRef.current.currentTime
+    const secondsPerBeat = 60.0 / bpm
+    // Must be larger than TIMING_THRESHOLDS.window so early taps can match a
+    // beat that is about to happen.
+    const scheduleAhead = SCHEDULE_AHEAD_SECONDS
 
-    scheduledPulsesRef.current.forEach((pulse) => {
-      if (!pulse.processed && nowPerf > pulse.expectedPerfMs + halfWindowMs) {
-        pulse.processed = true
-        missedList.push({
-          beatNumber: pulse.beatNumber,
-          subdivisionIndex: pulse.subdivisionIndex,
-          expectedTimeMs: pulse.expectedPerfMs,
-          actualTimeMs: null,
-          offsetMs: null,
-          offsetFractionOfBeat: null,
-          result: 'missed',
-          inputType: 'tap',
-        })
-      }
-    })
+    while (nextBeatTimeRef.current < currentTime + scheduleAhead) {
+      const beatInMeasure = beatCounterRef.current % beatsPerMeasure
+      const isAccent = beatInMeasure === 0
 
-    if (missedList.length > 0) {
-      setRecentTimings(prev => [...prev.slice(-(24 - missedList.length)), ...missedList])
-      setSession(prev => ({
-        ...prev,
-        beatTimings: [...prev.beatTimings, ...missedList],
-      }))
-    }
-
-    scheduledPulsesRef.current = scheduledPulsesRef.current.filter(p => nowPerf - p.expectedPerfMs < 8000)
-  }, [bpm, userCalibrationMs])
-
-  const scheduleMetronome = useCallback(() => {
-    if (!audioContextRef.current || !masterGainRef.current) return
-
-    const currentCtxTime = audioContextRef.current.currentTime
-    const beatsPerMeasure = currentMeterConfig.beats
-    const subFactor = subdivision === '2x' ? 2 : subdivision === '3x' ? 3 : subdivision === '4x' ? 4 : 1
-    const secondsPerSubdivision = (60.0 / bpm) / subFactor
-    const thisGenId = generationIdRef.current
-
-    // Latency estimate from Web Audio context
-    const baseLat = audioContextRef.current.baseLatency || 0
-    const outLat = (audioContextRef.current as any).outputLatency || 0
-    const totalOutLatMs = (baseLat + outLat) * 1000
-
-    while (nextPulseTimeRef.current < currentCtxTime + SCHEDULE_AHEAD_SECONDS) {
-      const pulseIndex = pulseCounterRef.current
-      const pulseInMeasure = pulseIndex % (beatsPerMeasure * subFactor)
-      const beatInMeasure = Math.floor(pulseInMeasure / subFactor)
-      const subInBeat = pulseInMeasure % subFactor
-      const pulseTime = nextPulseTimeRef.current
-
-      // Accent logic based on meter configuration
-      const isPrimaryAccent = currentMeterConfig.accentPattern.includes(beatInMeasure) && subInBeat === 0
-      const isSecondaryAccent = timeSignature === '6/8' && beatInMeasure === 3 && subInBeat === 0
-
-      // Practice mode mutes (e.g. Backbeat only plays beats 2 & 4; missing bar mutes 4th measure)
-      let shouldPlayAudio = true
-      const measureIndex = Math.floor(pulseIndex / (beatsPerMeasure * subFactor))
-
-      if (practiceMode === 'backbeat') {
-        shouldPlayAudio = (beatInMeasure === 1 || beatInMeasure === 3) && subInBeat === 0
-      } else if (practiceMode === 'missing_bar') {
-        if (measureIndex % 4 === 3) shouldPlayAudio = false // 4th bar drops out
-      } else if (subdivision === 'offbeat') {
-        shouldPlayAudio = subInBeat !== 0
-      }
-
-      if (shouldPlayAudio) {
-        synthesizeMetronomePulse(
-          audioContextRef.current,
-          masterGainRef.current,
-          metronomeSound,
-          isPrimaryAccent,
-          isSecondaryAccent,
-          volumeRef.current,
-          pulseTime
-        )
-      }
-
-      // Compute precise expected performance timestamp
-      const expectedPerfMs = performanceStartTimeRef.current +
-        (pulseTime - audioContextStartTimeRef.current) * 1000 +
-        totalOutLatMs
-
-      const isScorablePulse = subdivision === '1x' || subInBeat === 0
-
-      if (isScorablePulse) {
-        scheduledPulsesRef.current.push({
-          pulseId: pulseIndex,
-          beatNumber: beatInMeasure + 1,
-          subdivisionIndex: subInBeat,
-          expectedPerfMs,
-          processed: false,
-          isMutedByPracticeMode: !shouldPlayAudio,
-        })
-      }
-
-      // Visual ball animation trigger
-      const visualDelayMs = Math.max(0, (pulseTime - audioContextRef.current.currentTime) * 1000)
+      // Schedule the sound
+      const beatTime = nextBeatTimeRef.current
+      const currentVolume = volumeRef.current
       setTimeout(() => {
-        if (generationIdRef.current === thisGenId) {
-          setCurrentBeatIndex(beatInMeasure)
+        if (audioContextRef.current) {
+          createMetronomeSound(audioContextRef.current, metronomeSound, isAccent, currentVolume)
         }
-      }, visualDelayMs)
+      }, (beatTime - audioContextRef.current.currentTime) * 1000)
 
-      pulseCounterRef.current++
-      nextPulseTimeRef.current += secondsPerSubdivision
+      // Track expected beat time for onset detection
+      // Use synchronized time bases to avoid drift between audioContext.currentTime and Date.now()
+      // Calculate: dateNow at beat = dateNowStart + (beatTime - audioContextStart) * 1000
+      const expectedTimeMs = dateNowStartTimeRef.current +
+        (beatTime - audioContextStartTimeRef.current) * 1000
+      expectedBeatTimesRef.current.push(expectedTimeMs)
+      // Keep only last 32 beats
+      if (expectedBeatTimesRef.current.length > 32) {
+        expectedBeatTimesRef.current.shift()
+        if (lastProcessedBeatRef.current > 0) {
+          lastProcessedBeatRef.current--
+        }
+      }
+
+      // Update visual beat indicator
+      setTimeout(() => {
+        setCurrentBeat(beatInMeasure + 1)
+      }, (beatTime - audioContextRef.current.currentTime) * 1000)
+
+      beatCounterRef.current++
+      nextBeatTimeRef.current += secondsPerBeat
     }
+  }, [bpm, beatsPerMeasure, metronomeSound])
 
-    sweepMissedPulses()
-  }, [bpm, currentMeterConfig, subdivision, practiceMode, metronomeSound, timeSignature, sweepMissedPulses])
-
-  // ==========================================================================
-  // METRONOME TRANSPORT CONTROLS
-  // ==========================================================================
-
+  // Start metronome
   const startMetronome = useCallback(async () => {
     if (!audioContextRef.current) {
       audioContextRef.current = createBrowserAudioContext()
     }
-    if (audioContextRef.current.state === 'suspended') {
-      await audioContextRef.current.resume()
-    }
 
-    // Set up master output gain node
-    if (!masterGainRef.current) {
-      masterGainRef.current = audioContextRef.current.createGain()
-      masterGainRef.current.connect(audioContextRef.current.destination)
-    }
-    masterGainRef.current.gain.setValueAtTime(1, audioContextRef.current.currentTime)
-
-    generationIdRef.current += 1
-    const baseLat = audioContextRef.current.baseLatency || 0
-    const outLat = (audioContextRef.current as any).outputLatency || 0
-    setEstimatedHardwareLatencyMs(Math.round((baseLat + outLat) * 1000))
-
+    // Initialize synchronized time references
+    // This ensures Date.now() and audioContext.currentTime stay in sync throughout the session
     audioContextStartTimeRef.current = audioContextRef.current.currentTime
-    performanceStartTimeRef.current = performance.now()
+    dateNowStartTimeRef.current = Date.now()
 
-    pulseCounterRef.current = 0
-    nextPulseTimeRef.current = audioContextRef.current.currentTime
-    scheduledPulsesRef.current = []
+    beatCounterRef.current = 0
+    nextBeatTimeRef.current = audioContextRef.current.currentTime
+    expectedBeatTimesRef.current = []
+    lastProcessedBeatRef.current = -1
 
     setIsPlaying(true)
     setSession({
@@ -806,43 +708,32 @@ export default function RhythmTrainer({ variant = 'floating' }: RhythmTrainerPro
       endedAt: null,
       bpm,
       timeSignature,
-      subdivision,
-      practiceMode,
       beatTimings: [],
       isActive: true,
     })
     setRecentTimings([])
 
-    schedulerIntervalRef.current = setInterval(() => {
-      scheduleMetronome()
-    }, 25)
-    scheduleMetronome()
-  }, [bpm, timeSignature, subdivision, practiceMode, scheduleMetronome])
+    schedulerIntervalRef.current = setInterval(scheduleBeats, 25)
+    scheduleBeats()
+  }, [bpm, timeSignature, scheduleBeats])
 
+  // Stop metronome
   const stopMetronome = useCallback(() => {
-    generationIdRef.current += 1
-
     if (schedulerIntervalRef.current) {
       clearInterval(schedulerIntervalRef.current)
       schedulerIntervalRef.current = null
     }
 
-    // Instantly mute future scheduled Web Audio events
-    if (masterGainRef.current && audioContextRef.current) {
-      masterGainRef.current.gain.setValueAtTime(0, audioContextRef.current.currentTime)
-    }
-
-    sweepMissedPulses()
-
     setIsPlaying(false)
-    setCurrentBeatIndex(0)
+    setCurrentBeat(0)
     setSession(prev => ({
       ...prev,
       endedAt: new Date(),
       isActive: false,
     }))
-  }, [sweepMissedPulses])
+  }, [])
 
+  // Toggle play/pause
   const togglePlay = useCallback(() => {
     if (isPlaying) {
       stopMetronome()
@@ -868,11 +759,12 @@ export default function RhythmTrainer({ variant = 'floating' }: RhythmTrainerPro
         ? Math.round((session.endedAt.getTime() - session.startedAt.getTime()) / 1000)
         : Math.round((Date.now() - session.startedAt.getTime()) / 1000)
 
+      // Prepare beat metrics for saving
       const beatMetrics = session.beatTimings.map((bt) => ({
         beatNumber: bt.beatNumber,
-        expectedTimeMs: Math.round(bt.expectedTimeMs),
-        actualTimeMs: bt.actualTimeMs ? Math.round(bt.actualTimeMs) : null,
-        timingOffsetMs: bt.offsetMs ? Math.round(bt.offsetMs * 10) / 10 : null,
+        expectedTimeMs: bt.expectedTime,
+        actualTimeMs: bt.actualTime,
+        timingOffsetMs: bt.offsetMs,
         timingResult: bt.result,
       }))
 
@@ -894,16 +786,19 @@ export default function RhythmTrainer({ variant = 'floating' }: RhythmTrainerPro
           timingConsistency: stats.consistency,
           onBeatPercent: stats.onBeatPercent,
           bestStreak: stats.bestStreak,
+          // New singer-focused metrics
           rhythmTendency: stats.rhythmTendency,
           avgEarlyMs: stats.avgEarlyMs,
           avgLateMs: stats.avgLateMs,
+          // Include detailed beat metrics
           beatMetrics,
         }),
       })
 
       const result = await response.json()
+
       if (result.saved) {
-        setSaveMessage(`Session saved! Score: ${result.overallScore?.toFixed(1) || stats.overallScore.toFixed(1)}%`)
+        setSaveMessage(`Session saved! Score: ${result.overallScore?.toFixed(1) || stats.onBeatPercent.toFixed(1)}%`)
       } else {
         setSaveMessage(result.message || 'Session not saved')
       }
@@ -916,14 +811,15 @@ export default function RhythmTrainer({ variant = 'floating' }: RhythmTrainerPro
     }
   }, [session])
 
-  // Cleanup on unmount or close
+  // Cleanup on close
   useEffect(() => {
     if (!isOpen) {
       stopMetronome()
-      stopMic()
+      stopListening()
     }
-  }, [isOpen, stopMetronome, stopMic])
+  }, [isOpen, stopMetronome, stopListening])
 
+  // Handle escape key
   useEffect(() => {
     const handleEscape = (e: KeyboardEvent) => {
       if (e.key === 'Escape' && isOpen) {
@@ -935,6 +831,7 @@ export default function RhythmTrainer({ variant = 'floating' }: RhythmTrainerPro
     return () => window.removeEventListener('keydown', handleEscape)
   }, [isOpen])
 
+  // Prevent body scroll when modal is open
   useEffect(() => {
     if (isOpen) {
       document.body.style.overflow = 'hidden'
@@ -948,59 +845,285 @@ export default function RhythmTrainer({ variant = 'floating' }: RhythmTrainerPro
 
   const stats = calculateStats(session.beatTimings)
 
-  // ==========================================================================
-  // RENDER HELPERS
-  // ==========================================================================
-
+  // Render beat indicators
   const renderBeatIndicators = () => (
     <div className="flex justify-center gap-3 mb-6">
-      {Array.from({ length: currentMeterConfig.beats }).map((_, i) => {
-        const isActive = isPlaying && currentBeatIndex === i
-        const isAccent = currentMeterConfig.accentPattern.includes(i)
+      {Array.from({ length: beatsPerMeasure }).map((_, i) => {
+        const beatNum = i + 1
+        const isActive = currentBeat === beatNum && isPlaying
+        const isAccent = i === 0
 
         return (
           <div
             key={i}
-            className={`rounded-full transition-all duration-75 flex items-center justify-center font-bold text-xs ${
+            className={`rounded-full transition-all duration-75 ${
               isActive
                 ? isAccent
-                  ? 'bg-gradient-to-br from-amber-400 to-orange-500 text-slate-950 shadow-lg shadow-amber-500/60 scale-115'
-                  : 'bg-gradient-to-br from-amber-500 to-orange-600 text-white shadow-md shadow-orange-500/40 scale-105'
-                : isAccent
-                  ? 'bg-slate-700/80 border-2 border-amber-500/40 text-amber-300'
-                  : 'bg-slate-800/80 border border-slate-700 text-slate-500'
+                  ? 'bg-gradient-to-br from-amber-400 to-orange-500 shadow-lg shadow-amber-500/50 scale-110'
+                  : 'bg-gradient-to-br from-amber-500 to-orange-600 shadow-lg shadow-orange-500/40'
+                : 'bg-slate-700/50 border border-slate-600/50'
             }`}
             style={{
-              width: isAccent ? '48px' : '40px',
-              height: isAccent ? '48px' : '40px',
+              width: isAccent ? '52px' : '44px',
+              height: isAccent ? '52px' : '44px',
             }}
           >
-            {i + 1}
+            {isActive && (
+              <div className="w-full h-full rounded-full animate-ping bg-amber-400/30" />
+            )}
           </div>
         )
       })}
     </div>
   )
 
+  // Render timing history dots
   const renderTimingHistory = () => (
     <div className="flex flex-wrap justify-center gap-1.5 mb-4 min-h-[32px]">
-      {recentTimings.slice(-24).map((timing, i) => (
+      {recentTimings.slice(-20).map((timing, i) => (
         <div
           key={i}
-          className={`w-3.5 h-3.5 rounded-full transition-all flex items-center justify-center text-[9px] font-bold text-white shadow-sm ${
+          className={`w-3 h-3 rounded-full transition-all ${
             timing.result === 'on-beat'
-              ? 'bg-emerald-500 ring-2 ring-emerald-500/30'
+              ? 'bg-green-500'
               : timing.result === 'early'
-                ? 'bg-sky-500 ring-2 ring-sky-500/30'
+                ? 'bg-blue-500'
                 : timing.result === 'late'
-                  ? 'bg-amber-500 ring-2 ring-amber-500/30'
-                  : 'bg-slate-700'
+                  ? 'bg-orange-500'
+                  : 'bg-slate-600'
           }`}
-          title={`Beat ${timing.beatNumber}: ${timing.result} (${timing.offsetMs ? `${timing.offsetMs > 0 ? '+' : ''}${timing.offsetMs.toFixed(0)}ms` : 'missed'})`}
-        >
-          {timing.result === 'missed' ? '×' : ''}
-        </div>
+          title={`${timing.result}: ${timing.offsetMs?.toFixed(0)}ms`}
+        />
       ))}
+    </div>
+  )
+
+  // Render BPM slider + tap tempo
+  const renderBpmControl = () => (
+    <div className="bg-slate-800/50 rounded-xl p-4 border border-slate-700/50 mb-4">
+      <div className="flex items-center justify-between mb-2">
+        <span className="text-sm text-slate-400">BPM</span>
+        <span className="text-2xl font-bold text-white">{bpm}</span>
+      </div>
+      <input
+        type="range"
+        min="40"
+        max="220"
+        value={bpm}
+        onChange={(e) => setBpm(parseInt(e.target.value))}
+        disabled={isPlaying}
+        className="w-full h-2 bg-slate-700 rounded-full appearance-none cursor-pointer accent-amber-500 disabled:opacity-50"
+      />
+      <div className="flex justify-between text-xs text-slate-500 mt-1">
+        <span>40</span>
+        <span>220</span>
+      </div>
+
+      {/* Tap tempo: derive BPM from tapping instead of hunting on the slider.
+          Disabled while playing, matching the slider - changing tempo mid-run
+          would invalidate the beat schedule the session is measured against. */}
+      <div className="flex items-center gap-2 mt-3">
+        <button
+          onPointerDown={(e) => {
+            e.preventDefault()
+            registerTempoTap()
+          }}
+          disabled={isPlaying}
+          className={`flex-1 py-2 rounded-lg text-sm font-semibold transition-all select-none touch-none ${
+            isPlaying
+              ? 'bg-slate-700/50 text-slate-500 cursor-not-allowed'
+              : 'bg-slate-700 hover:bg-slate-600 active:scale-[0.98] text-white'
+          }`}
+        >
+          {tapTempoCount === 0
+            ? 'Tap Tempo'
+            : tapTempoCount < 3
+              ? `Keep tapping (${tapTempoCount}/3)`
+              : `Tapping · ${bpm} BPM`}
+        </button>
+        {tapTempoCount > 0 && !isPlaying && (
+          <button
+            onClick={resetTapTempo}
+            className="px-3 py-2 rounded-lg text-xs text-slate-400 hover:text-white hover:bg-slate-700 transition-colors"
+            title="Clear tap tempo"
+          >
+            Reset
+          </button>
+        )}
+      </div>
+    </div>
+  )
+
+  // Render session stats
+  const renderSessionStats = () => (
+    <div className="bg-slate-800/50 rounded-xl p-4 border border-slate-700/50 mb-4">
+      <div className="flex items-center justify-between mb-3">
+        <h3 className="text-sm font-semibold text-white flex items-center gap-2">
+          <TrendingUp className="w-4 h-4 text-amber-400" />
+          Session Stats
+        </h3>
+        <button
+          onClick={saveSession}
+          disabled={isSaving || session.beatTimings.length === 0}
+          className={`flex items-center gap-2 px-3 py-1.5 text-xs font-medium rounded-lg transition-all ${
+            isSaving || session.beatTimings.length === 0
+              ? 'bg-slate-700 text-slate-500 cursor-not-allowed'
+              : 'bg-amber-600 hover:bg-amber-500 text-white'
+          }`}
+        >
+          <Save className="w-3 h-3" />
+          {isSaving ? 'Saving...' : 'Save Session'}
+        </button>
+      </div>
+
+      <div className="grid grid-cols-4 gap-3 text-center">
+        <div>
+          <p className="text-2xl font-bold text-green-400">{stats.onBeatCount}</p>
+          <p className="text-xs text-slate-400">On Beat</p>
+        </div>
+        <div>
+          <p className="text-2xl font-bold text-blue-400">{stats.earlyCount}</p>
+          <p className="text-xs text-slate-400">Early</p>
+        </div>
+        <div>
+          <p className="text-2xl font-bold text-orange-400">{stats.lateCount}</p>
+          <p className="text-xs text-slate-400">Late</p>
+        </div>
+        <div>
+          <p className="text-2xl font-bold text-white">{stats.onBeatPercent.toFixed(0)}%</p>
+          <p className="text-xs text-slate-400">Accuracy</p>
+        </div>
+      </div>
+
+      <div className="grid grid-cols-4 gap-3 mt-3 pt-3 border-t border-slate-700/50 text-center">
+        <div>
+          <p className="text-lg font-semibold text-white">{stats.avgOffsetMs.toFixed(0)}ms</p>
+          <p className="text-xs text-slate-400">Avg Offset</p>
+        </div>
+        <div>
+          <p className="text-lg font-semibold text-white">{stats.consistency.toFixed(0)}%</p>
+          <p className="text-xs text-slate-400">Consistency</p>
+        </div>
+        <div>
+          <p className="text-lg font-semibold text-white">{stats.bestStreak}</p>
+          <p className="text-xs text-slate-400">Best Streak</p>
+        </div>
+        <div>
+          <p className={`text-lg font-semibold ${
+            stats.rhythmTendency === 'early' ? 'text-blue-400' :
+            stats.rhythmTendency === 'late' ? 'text-orange-400' :
+            'text-green-400'
+          }`}>
+            {stats.rhythmTendency === 'early' ? '⏪ Early' :
+             stats.rhythmTendency === 'late' ? '⏩ Late' :
+             '✓ On Time'}
+          </p>
+          <p className="text-xs text-slate-400">Tendency</p>
+        </div>
+      </div>
+
+      {saveMessage && (
+        <div className={`mt-3 text-center text-sm ${
+          saveMessage.includes('saved') ? 'text-green-400' : 'text-yellow-400'
+        }`}>
+          {saveMessage}
+        </div>
+      )}
+    </div>
+  )
+
+  // Render settings panel
+  const renderSettings = () => (
+    <div className="bg-slate-800/50 rounded-xl p-4 border border-slate-700/50 mb-4 space-y-4">
+      <div className="flex items-center justify-between">
+        <h3 className="text-sm font-semibold text-white flex items-center gap-2">
+          <Settings2 className="w-4 h-4 text-slate-400" />
+          Settings
+        </h3>
+        <button
+          onClick={() => setShowSettings(false)}
+          className="p-1 hover:bg-slate-700 rounded transition-colors"
+        >
+          <X className="w-4 h-4 text-slate-400" />
+        </button>
+      </div>
+
+      {/* Time Signature */}
+      <div>
+        <label className="text-xs text-slate-400 mb-2 block">Time Signature</label>
+        <div className="flex gap-2">
+          {TIME_SIGNATURES.map(ts => (
+            <button
+              key={ts.value}
+              onClick={() => setTimeSignature(ts.value)}
+              disabled={isPlaying}
+              className={`px-4 py-2 rounded-lg text-sm font-medium transition-all ${
+                timeSignature === ts.value
+                  ? 'bg-amber-600 text-white'
+                  : 'bg-slate-700/50 text-slate-400 hover:bg-slate-700 disabled:opacity-50'
+              }`}
+            >
+              {ts.label}
+            </button>
+          ))}
+        </div>
+      </div>
+
+      {/* Sound Selection */}
+      <div>
+        <label className="text-xs text-slate-400 mb-2 block">Metronome Sound</label>
+        <div className="flex flex-wrap gap-2">
+          {SOUND_OPTIONS.map(opt => (
+            <button
+              key={opt.value}
+              onClick={() => setMetronomeSound(opt.value)}
+              className={`px-3 py-1.5 rounded-lg text-xs font-medium transition-all ${
+                metronomeSound === opt.value
+                  ? 'bg-amber-600 text-white'
+                  : 'bg-slate-700/50 text-slate-400 hover:bg-slate-700'
+              }`}
+            >
+              {opt.label}
+            </button>
+          ))}
+        </div>
+      </div>
+
+      {/* Volume */}
+      <div>
+        <div className="flex items-center justify-between mb-2">
+          <label className="text-xs text-slate-400 flex items-center gap-2">
+            <Volume2 className="w-3 h-3" /> Volume
+          </label>
+          <span className="text-xs text-slate-300">{volume}%</span>
+        </div>
+        <input
+          type="range"
+          min="0"
+          max="100"
+          value={volume}
+          onChange={(e) => setVolume(parseInt(e.target.value))}
+          className="w-full h-2 bg-slate-700 rounded-full appearance-none cursor-pointer accent-amber-500"
+        />
+      </div>
+
+      {/* Mic Sensitivity */}
+      <div>
+        <div className="flex items-center justify-between mb-2">
+          <label className="text-xs text-slate-400 flex items-center gap-2">
+            <Mic className="w-3 h-3" /> Mic Sensitivity
+          </label>
+          <span className="text-xs text-slate-300">{sensitivity}%</span>
+        </div>
+        <input
+          type="range"
+          min="10"
+          max="100"
+          value={sensitivity}
+          onChange={(e) => setSensitivity(parseInt(e.target.value))}
+          className="w-full h-2 bg-slate-700 rounded-full appearance-none cursor-pointer accent-amber-500"
+        />
+      </div>
     </div>
   )
 
@@ -1030,7 +1153,7 @@ export default function RhythmTrainer({ variant = 'floating' }: RhythmTrainerPro
           </div>
           <div className="text-left flex-1">
             <p className="font-semibold text-lg">Rhythm Trainer</p>
-            <p className="text-sm text-white/70">Groove, subdivisions & pocket timing</p>
+            <p className="text-sm text-white/70">BPM & timing practice</p>
           </div>
           <div className="w-8 h-8 rounded-lg bg-white/10 flex items-center justify-center group-hover:bg-white/20 transition-colors">
             <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
@@ -1054,38 +1177,29 @@ export default function RhythmTrainer({ variant = 'floating' }: RhythmTrainerPro
             className={`relative bg-gradient-to-br from-slate-900 via-slate-900 to-slate-800 shadow-2xl border border-slate-700/50 overflow-hidden transition-all duration-300 ${
               isFullscreen
                 ? 'w-full h-full rounded-none lg:w-[95vw] lg:h-[95vh] lg:rounded-3xl'
-                : 'w-full h-full rounded-none lg:w-[90vw] lg:max-w-3xl lg:h-[85vh] lg:max-h-[760px] lg:rounded-3xl'
+                : 'w-full h-full rounded-none lg:w-[90vw] lg:max-w-2xl lg:h-[85vh] lg:max-h-[700px] lg:rounded-3xl'
             }`}
           >
             {/* Header */}
             <div className="flex items-center justify-between px-5 py-4 bg-gradient-to-r from-amber-600/20 via-orange-600/20 to-red-600/20 border-b border-slate-700/50">
-              <div className="flex items-center gap-3">
+              <div className="flex items-center gap-4">
                 <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-amber-500 to-orange-500 flex items-center justify-center shadow-lg">
                   <svg className="w-5 h-5 text-white" viewBox="0 0 24 24" fill="currentColor">
                     <path d="M12 3v10.55c-.59-.34-1.27-.55-2-.55-2.21 0-4 1.79-4 4s1.79 4 4 4 4-1.79 4-4V7h4V3h-6z"/>
                   </svg>
                 </div>
                 <div>
-                  <h2 className="text-xl font-bold text-white">Rhythm & Groove Trainer</h2>
-                  <p className="text-xs text-slate-400">Lock into the pocket with sample-accurate timing</p>
+                  <h2 className="text-xl font-bold text-white">Rhythm Trainer</h2>
+                  <p className="text-sm text-slate-400">Tap, clap, or sing along with the beat!</p>
                 </div>
               </div>
               <div className="flex items-center gap-2">
                 <button
-                  onClick={() => setShowCalibration(!showCalibration)}
-                  className={`p-2.5 rounded-xl transition-colors ${
-                    showCalibration ? 'bg-amber-600/40 text-amber-300' : 'hover:bg-white/10 text-slate-400'
-                  }`}
-                  title="Latency Calibration"
-                >
-                  <Sliders className="w-5 h-5" />
-                </button>
-                <button
                   onClick={() => setShowSettings(!showSettings)}
                   className={`p-2.5 rounded-xl transition-colors ${
-                    showSettings ? 'bg-amber-600/40 text-amber-300' : 'hover:bg-white/10 text-slate-400'
+                    showSettings ? 'bg-amber-600/30 text-amber-400' : 'hover:bg-white/10 text-slate-400'
                   }`}
-                  title="Settings & Subdivisions"
+                  title="Settings"
                 >
                   <Settings2 className="w-5 h-5" />
                 </button>
@@ -1113,258 +1227,48 @@ export default function RhythmTrainer({ variant = 'floating' }: RhythmTrainerPro
               </div>
             </div>
 
-            {/* Main Scrollable Content */}
+            {/* Main Content */}
             <div className="p-6 h-[calc(100%-72px)] overflow-y-auto">
-              {/* Latency Calibration Panel */}
-              {showCalibration && (
-                <div className="bg-slate-800/80 rounded-2xl p-4 border border-amber-500/30 mb-6 shadow-xl">
-                  <div className="flex items-center justify-between mb-3">
-                    <h3 className="text-sm font-semibold text-white flex items-center gap-2">
-                      <Sliders className="w-4 h-4 text-amber-400" />
-                      Hardware Latency Compensation
-                    </h3>
-                    <button onClick={() => setShowCalibration(false)} className="p-1 hover:bg-slate-700 rounded">
-                      <X className="w-4 h-4 text-slate-400" />
-                    </button>
-                  </div>
-                  <p className="text-xs text-slate-400 mb-3 leading-relaxed">
-                    Audio hardware and Bluetooth introduce delay. Adjust calibration to ensure your physical tap lands on zero.
-                  </p>
-                  <div className="flex items-center justify-between text-xs text-slate-300 mb-2">
-                    <span>Hardware Output Latency Estimate: <span className="font-mono text-amber-400">{estimatedHardwareLatencyMs} ms</span></span>
-                    <span>Manual User Offset: <span className="font-mono text-amber-400">{userCalibrationMs > 0 ? `+${userCalibrationMs}` : userCalibrationMs} ms</span></span>
-                  </div>
-                  <input
-                    type="range"
-                    min="-100"
-                    max="100"
-                    value={userCalibrationMs}
-                    onChange={(e) => setUserCalibrationMs(parseInt(e.target.value))}
-                    className="w-full h-2 bg-slate-700 rounded-full appearance-none cursor-pointer accent-amber-500 mb-2"
-                  />
-                  <div className="flex justify-between text-[10px] text-slate-500">
-                    <span>-100ms (Compensate Early)</span>
-                    <button onClick={() => setUserCalibrationMs(0)} className="text-slate-400 hover:text-white underline">Reset to 0ms</button>
-                    <span>+100ms (Compensate Late)</span>
-                  </div>
-                </div>
-              )}
-
               {/* Settings Panel */}
-              {showSettings && (
-                <div className="bg-slate-800/80 rounded-2xl p-4 border border-slate-700 mb-6 space-y-4 shadow-xl">
-                  <div className="flex items-center justify-between">
-                    <h3 className="text-sm font-semibold text-white flex items-center gap-2">
-                      <Settings2 className="w-4 h-4 text-amber-400" />
-                      Groove & Subdivision Settings
-                    </h3>
-                    <button onClick={() => setShowSettings(false)} className="p-1 hover:bg-slate-700 rounded">
-                      <X className="w-4 h-4 text-slate-400" />
-                    </button>
-                  </div>
+              {showSettings && renderSettings()}
 
-                  {/* Meter / Time Signature */}
-                  <div>
-                    <label className="text-xs text-slate-400 mb-2 block font-medium">Meter & Compound Grouping</label>
-                    <div className="grid grid-cols-3 sm:grid-cols-6 gap-2">
-                      {METER_CONFIGS.map(ts => (
-                        <button
-                          key={ts.value}
-                          onClick={() => setTimeSignature(ts.value)}
-                          disabled={isPlaying}
-                          className={`py-2 px-3 rounded-xl text-xs font-semibold transition-all ${
-                            timeSignature === ts.value
-                              ? 'bg-gradient-to-r from-amber-500 to-orange-500 text-slate-950 shadow-md'
-                              : 'bg-slate-700/50 text-slate-300 hover:bg-slate-700 disabled:opacity-50'
-                          }`}
-                        >
-                          {ts.label}
-                        </button>
-                      ))}
-                    </div>
-                  </div>
-
-                  {/* Subdivision */}
-                  <div>
-                    <label className="text-xs text-slate-400 mb-2 block font-medium">Subdivision Grid</label>
-                    <div className="grid grid-cols-2 sm:grid-cols-5 gap-2">
-                      {SUBDIVISION_CONFIGS.map(sub => (
-                        <button
-                          key={sub.value}
-                          onClick={() => setSubdivision(sub.value)}
-                          disabled={isPlaying}
-                          className={`py-2 px-2.5 rounded-xl text-xs font-medium transition-all ${
-                            subdivision === sub.value
-                              ? 'bg-amber-600 text-white shadow-md'
-                              : 'bg-slate-700/50 text-slate-300 hover:bg-slate-700 disabled:opacity-50'
-                          }`}
-                        >
-                          {sub.label} <span className="text-[10px] opacity-75">({sub.name.split(' ')[0]})</span>
-                        </button>
-                      ))}
-                    </div>
-                  </div>
-
-                  {/* Practice Mode */}
-                  <div>
-                    <label className="text-xs text-slate-400 mb-2 block font-medium">Pocket Training Mode</label>
-                    <div className="grid grid-cols-3 gap-2">
-                      <button
-                        onClick={() => setPracticeMode('normal')}
-                        disabled={isPlaying}
-                        className={`py-2 px-3 rounded-xl text-xs font-medium transition-all ${
-                          practiceMode === 'normal'
-                            ? 'bg-amber-600 text-white'
-                            : 'bg-slate-700/50 text-slate-300 hover:bg-slate-700 disabled:opacity-50'
-                        }`}
-                      >
-                        All Clicks
-                      </button>
-                      <button
-                        onClick={() => setPracticeMode('backbeat')}
-                        disabled={isPlaying}
-                        className={`py-2 px-3 rounded-xl text-xs font-medium transition-all ${
-                          practiceMode === 'backbeat'
-                            ? 'bg-amber-600 text-white'
-                            : 'bg-slate-700/50 text-slate-300 hover:bg-slate-700 disabled:opacity-50'
-                        }`}
-                      >
-                        Backbeat (2 & 4)
-                      </button>
-                      <button
-                        onClick={() => setPracticeMode('missing_bar')}
-                        disabled={isPlaying}
-                        className={`py-2 px-3 rounded-xl text-xs font-medium transition-all ${
-                          practiceMode === 'missing_bar'
-                            ? 'bg-amber-600 text-white'
-                            : 'bg-slate-700/50 text-slate-300 hover:bg-slate-700 disabled:opacity-50'
-                        }`}
-                      >
-                        Missing Bar (Dropout)
-                      </button>
-                    </div>
-                  </div>
-
-                  {/* Sound Choice & Volume */}
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 pt-2 border-t border-slate-700/60">
-                    <div>
-                      <label className="text-xs text-slate-400 mb-2 block font-medium">Metronome Sound</label>
-                      <div className="flex flex-wrap gap-1.5">
-                        {SOUND_OPTIONS.map(opt => (
-                          <button
-                            key={opt.value}
-                            onClick={() => setMetronomeSound(opt.value)}
-                            className={`px-2.5 py-1.5 rounded-lg text-xs font-medium transition-all ${
-                              metronomeSound === opt.value
-                                ? 'bg-amber-500 text-slate-950 font-bold'
-                                : 'bg-slate-700/50 text-slate-300 hover:bg-slate-700'
-                            }`}
-                          >
-                            {opt.label}
-                          </button>
-                        ))}
-                      </div>
-                    </div>
-                    <div>
-                      <div className="flex items-center justify-between mb-2">
-                        <label className="text-xs text-slate-400 flex items-center gap-1.5 font-medium">
-                          <Volume2 className="w-3.5 h-3.5" /> Volume ({volume}%)
-                        </label>
-                      </div>
-                      <input
-                        type="range"
-                        min="0"
-                        max="100"
-                        value={volume}
-                        onChange={(e) => setVolume(parseInt(e.target.value))}
-                        className="w-full h-2 bg-slate-700 rounded-full appearance-none cursor-pointer accent-amber-500"
-                      />
-                    </div>
-                  </div>
-                </div>
-              )}
-
-              {/* Headphone Advisory when Mic is on */}
-              {isListening && (
-                <div className="bg-amber-500/15 border border-amber-500/30 rounded-xl p-3 mb-4 flex items-center gap-3 text-xs text-amber-200">
-                  <Headphones className="w-5 h-5 text-amber-400 shrink-0" />
-                  <p>
-                    <span className="font-semibold">Headphones recommended:</span> Wearing headphones prevents the metronome click from feeding back into your microphone.
-                  </p>
-                </div>
-              )}
-
-              {/* BPM & Tempo Controls */}
-              <div className="bg-slate-800/60 rounded-2xl p-4 border border-slate-700/60 mb-6">
-                <div className="flex items-center justify-between mb-2">
-                  <div className="flex items-center gap-2">
-                    <span className="text-xs font-semibold text-slate-400 uppercase tracking-wider">Tempo</span>
-                    <span className="text-xs px-2 py-0.5 rounded bg-slate-700 text-slate-300 font-mono">
-                      {currentMeterConfig.label} · {subdivision}
-                    </span>
-                  </div>
-                  <div className="flex items-baseline gap-1">
-                    <span className="text-3xl font-extrabold text-white font-mono">{bpm}</span>
-                    <span className="text-xs text-slate-400">BPM</span>
-                  </div>
-                </div>
-
-                <input
-                  type="range"
-                  min="40"
-                  max="240"
-                  value={bpm}
-                  onChange={(e) => setBpm(parseInt(e.target.value))}
-                  disabled={isPlaying}
-                  className="w-full h-2 bg-slate-700 rounded-full appearance-none cursor-pointer accent-amber-500 disabled:opacity-50"
-                />
-
-                <div className="flex items-center gap-2 mt-3">
-                  <button
-                    onPointerDown={(e) => {
-                      e.preventDefault()
-                      registerTempoTap()
-                    }}
-                    disabled={isPlaying}
-                    className={`flex-1 py-2 rounded-xl text-xs font-bold transition-all select-none touch-none ${
-                      isPlaying
-                        ? 'bg-slate-700/40 text-slate-500 cursor-not-allowed'
-                        : 'bg-slate-700 hover:bg-slate-600 active:scale-[0.98] text-amber-300 border border-slate-600'
-                    }`}
-                  >
-                    {tapTempoCount === 0
-                      ? 'Tap Tempo'
-                      : tapTempoCount < 3
-                        ? `Tap again (${tapTempoCount}/3)`
-                        : `Tapping · ${bpm} BPM`}
-                  </button>
-                  {tapTempoCount > 0 && !isPlaying && (
-                    <button
-                      onClick={resetTapTempo}
-                      className="px-3 py-2 rounded-xl text-xs text-slate-400 hover:text-white hover:bg-slate-700 transition-colors"
-                    >
-                      Reset
-                    </button>
-                  )}
-                </div>
-              </div>
+              {/* BPM Control */}
+              {renderBpmControl()}
 
               {/* Beat Indicators */}
+              <div className="text-center mb-2">
+                <span className="text-sm text-slate-400">{timeSignature}</span>
+              </div>
               {renderBeatIndicators()}
 
-              {/* Recent Timing Dots */}
+              {/* Timing History */}
               {renderTimingHistory()}
 
-              {/* Transport Controls (Play & Mic) */}
-              <div className="flex justify-center items-center gap-4 mb-6">
+              {/* Legend */}
+              <div className="flex justify-center gap-4 mb-6 text-xs">
+                <span className="flex items-center gap-1.5">
+                  <span className="w-2.5 h-2.5 rounded-full bg-green-500" />
+                  <span className="text-slate-400">On Beat</span>
+                </span>
+                <span className="flex items-center gap-1.5">
+                  <span className="w-2.5 h-2.5 rounded-full bg-blue-500" />
+                  <span className="text-slate-400">Early</span>
+                </span>
+                <span className="flex items-center gap-1.5">
+                  <span className="w-2.5 h-2.5 rounded-full bg-orange-500" />
+                  <span className="text-slate-400">Late</span>
+                </span>
+              </div>
+
+              {/* Play/Pause & Mic Controls */}
+              <div className="flex justify-center gap-4 mb-6">
                 <button
                   onClick={togglePlay}
-                  className={`w-16 h-16 rounded-full flex items-center justify-center transition-all duration-200 shadow-xl ${
+                  className={`w-16 h-16 rounded-full flex items-center justify-center transition-all duration-200 shadow-lg ${
                     isPlaying
-                      ? 'bg-gradient-to-br from-rose-500 to-red-600 hover:from-rose-400 hover:to-red-500 shadow-red-500/25 scale-105'
-                      : 'bg-gradient-to-br from-amber-500 to-orange-600 hover:from-amber-400 hover:to-orange-500 shadow-amber-500/25'
+                      ? 'bg-gradient-to-br from-red-500 to-red-600 hover:from-red-400 hover:to-red-500'
+                      : 'bg-gradient-to-br from-amber-500 to-orange-600 hover:from-amber-400 hover:to-orange-500'
                   }`}
-                  title={isPlaying ? 'Stop' : 'Start Metronome'}
                 >
                   {isPlaying ? (
                     <Pause className="w-8 h-8 text-white" />
@@ -1374,144 +1278,84 @@ export default function RhythmTrainer({ variant = 'floating' }: RhythmTrainerPro
                 </button>
 
                 <button
-                  onClick={isListening ? stopMic : startMic}
-                  className={`w-14 h-14 rounded-full flex items-center justify-center transition-all duration-200 shadow-lg ${
+                  onClick={isListening ? stopListening : startListening}
+                  className={`w-16 h-16 rounded-full flex items-center justify-center transition-all duration-200 shadow-lg ${
                     isListening
-                      ? 'bg-gradient-to-br from-emerald-500 to-green-600 text-white ring-4 ring-emerald-500/20'
-                      : 'bg-slate-700 hover:bg-slate-600 text-slate-300'
+                      ? 'bg-gradient-to-br from-green-500 to-emerald-600 hover:from-green-400 hover:to-emerald-500'
+                      : 'bg-gradient-to-br from-slate-600 to-slate-700 hover:from-slate-500 hover:to-slate-600'
                   }`}
-                  title={isListening ? 'Stop microphone' : 'Start microphone detection'}
+                  title={isListening ? 'Stop listening' : 'Start listening'}
                 >
                   {isListening ? (
                     <div className="relative">
-                      <Mic className="w-6 h-6 text-white" />
-                      <span className="absolute -top-1 -right-1 w-2.5 h-2.5 bg-white rounded-full animate-ping" />
+                      <Mic className="w-7 h-7 text-white" />
+                      <span className="absolute -top-1 -right-1 w-3 h-3 bg-white rounded-full animate-pulse" />
                     </div>
                   ) : (
-                    <MicOff className="w-6 h-6" />
+                    <MicOff className="w-7 h-7 text-white" />
                   )}
                 </button>
               </div>
 
-              {/* Large Responsive Tap Pad */}
+              {/* Tap pad - primary input, works with or without the microphone */}
               <div className="mb-6">
                 <button
                   onPointerDown={(e) => {
+                    // pointerdown, not click: fires on contact rather than
+                    // release, which is what makes a tap pad feel accurate.
                     e.preventDefault()
-                    handleTap(e)
+                    registerTap()
                   }}
                   disabled={!isPlaying}
                   aria-label="Tap on the beat"
-                  className={`w-full h-32 rounded-2xl border-2 select-none touch-none transition-all duration-100 flex flex-col items-center justify-center gap-1 shadow-inner ${
+                  className={`w-full h-32 rounded-2xl border-2 select-none touch-none transition-all duration-100 flex flex-col items-center justify-center gap-1 ${
                     !isPlaying
-                      ? 'border-slate-700/40 bg-slate-800/20 cursor-not-allowed opacity-60'
+                      ? 'border-slate-700/50 bg-slate-800/30 cursor-not-allowed'
                       : tapFeedback?.result === 'on-beat'
-                        ? 'border-emerald-400 bg-emerald-500/30 scale-[0.98]'
+                        ? 'border-green-400 bg-green-500/30 scale-[0.98]'
                         : tapFeedback?.result === 'early'
-                          ? 'border-sky-400 bg-sky-500/30 scale-[0.98]'
+                          ? 'border-yellow-400 bg-yellow-500/25 scale-[0.98]'
                           : tapFeedback?.result === 'late'
-                            ? 'border-amber-400 bg-amber-500/30 scale-[0.98]'
+                            ? 'border-orange-400 bg-orange-500/25 scale-[0.98]'
                             : tapFeedback?.result === 'no-match'
-                              ? 'border-slate-600 bg-slate-700/30 scale-[0.98]'
-                              : 'border-amber-500/40 bg-gradient-to-br from-amber-500/10 to-orange-600/10 hover:from-amber-500/20 hover:to-orange-600/15 active:scale-[0.98] cursor-pointer'
+                              ? 'border-slate-500 bg-slate-600/30 scale-[0.98]'
+                              : 'border-amber-500/50 bg-gradient-to-br from-amber-500/15 to-orange-600/10 hover:from-amber-500/25 hover:to-orange-600/20 active:scale-[0.98] cursor-pointer'
                   }`}
                 >
-                  <span className={`text-xl font-extrabold ${!isPlaying ? 'text-slate-500' : 'text-white'}`}>
+                  <span className={`text-lg font-bold ${!isPlaying ? 'text-slate-500' : 'text-white'}`}>
                     {!isPlaying
-                      ? 'Press Play to Begin'
+                      ? 'Press play to begin'
                       : tapFeedback?.result === 'on-beat'
-                        ? `Locked in Pocket! (${tapFeedback.offsetMs && tapFeedback.offsetMs > 0 ? `+${tapFeedback.offsetMs.toFixed(0)}` : tapFeedback.offsetMs?.toFixed(0)}ms)`
+                        ? 'On beat!'
                         : tapFeedback?.result === 'early'
-                          ? `Rushing (${tapFeedback.offsetMs?.toFixed(0)}ms early)`
+                          ? 'A little early'
                           : tapFeedback?.result === 'late'
-                            ? `Dragging (+${tapFeedback.offsetMs?.toFixed(0)}ms late)`
+                            ? 'A little late'
                             : tapFeedback?.result === 'no-match'
-                              ? 'Off Grid'
-                              : 'TAP HERE OR PRESS SPACEBAR'}
+                              ? 'Off the beat'
+                              : 'TAP'}
                   </span>
-                  <span className="text-xs text-slate-400 font-medium">
-                    {isPlaying ? 'Contact triggers instant measurement' : ''}
+                  <span className="text-xs text-slate-400">
+                    {isPlaying ? 'tap here or press spacebar' : ''}
                   </span>
                 </button>
               </div>
 
-              {/* Session Statistics Panel */}
-              {session.beatTimings.length > 0 && (
-                <div className="bg-slate-800/60 rounded-2xl p-4 border border-slate-700/60 shadow-xl mb-4">
-                  <div className="flex items-center justify-between mb-3">
-                    <h3 className="text-sm font-bold text-white flex items-center gap-2">
-                      <TrendingUp className="w-4 h-4 text-amber-400" />
-                      Session Analytics
-                    </h3>
-                    <button
-                      onClick={saveSession}
-                      disabled={isSaving || session.beatTimings.length === 0}
-                      className={`flex items-center gap-2 px-3.5 py-1.5 text-xs font-bold rounded-xl transition-all ${
-                        isSaving || session.beatTimings.length === 0
-                          ? 'bg-slate-700 text-slate-500 cursor-not-allowed'
-                          : 'bg-gradient-to-r from-amber-500 to-orange-500 text-slate-950 shadow-md shadow-amber-500/20 hover:brightness-110'
-                      }`}
-                    >
-                      <Save className="w-3.5 h-3.5" />
-                      {isSaving ? 'Saving...' : 'Save Session'}
-                    </button>
-                  </div>
+              {/* Instructions */}
+              <div className="text-center text-sm text-slate-400 mb-6">
+                {!isPlaying && (
+                  <p>Press play to start the metronome, then tap the pad or spacebar on each beat.</p>
+                )}
+                {isPlaying && !isListening && (
+                  <p>Tap the pad or press spacebar on the beat. Turn on the mic to clap or sing instead.</p>
+                )}
+                {isPlaying && isListening && (
+                  <p>Tap, clap, or sing on the beat - both tapping and the mic are being tracked.</p>
+                )}
+              </div>
 
-                  <div className="grid grid-cols-4 gap-3 text-center mb-3">
-                    <div className="bg-slate-900/40 p-2.5 rounded-xl">
-                      <p className="text-2xl font-extrabold text-white font-mono">{stats.overallScore.toFixed(0)}%</p>
-                      <p className="text-[11px] text-slate-400 font-medium">Overall Score</p>
-                    </div>
-                    <div className="bg-slate-900/40 p-2.5 rounded-xl">
-                      <p className="text-2xl font-extrabold text-emerald-400 font-mono">{stats.onGridPercent.toFixed(0)}%</p>
-                      <p className="text-[11px] text-slate-400 font-medium">In-Pocket</p>
-                    </div>
-                    <div className="bg-slate-900/40 p-2.5 rounded-xl">
-                      <p className="text-2xl font-extrabold text-amber-400 font-mono">{stats.consistency.toFixed(0)}%</p>
-                      <p className="text-[11px] text-slate-400 font-medium">Consistency</p>
-                    </div>
-                    <div className="bg-slate-900/40 p-2.5 rounded-xl">
-                      <p className="text-2xl font-extrabold text-white font-mono">{stats.maeMs.toFixed(0)}ms</p>
-                      <p className="text-[11px] text-slate-400 font-medium">Avg Error (MAE)</p>
-                    </div>
-                  </div>
-
-                  <div className="grid grid-cols-4 gap-3 text-center pt-3 border-t border-slate-700/60 text-xs">
-                    <div>
-                      <p className="font-semibold text-white">{stats.completedHits}/{stats.totalBeats}</p>
-                      <p className="text-slate-400 text-[10px]">Beats Hit</p>
-                    </div>
-                    <div>
-                      <p className="font-semibold text-white">{stats.bestStreak}</p>
-                      <p className="text-slate-400 text-[10px]">Best Streak</p>
-                    </div>
-                    <div>
-                      <p className="font-semibold text-white">{stats.medianSignedOffsetMs > 0 ? `+${stats.medianSignedOffsetMs}` : stats.medianSignedOffsetMs}ms</p>
-                      <p className="text-slate-400 text-[10px]">Median Bias</p>
-                    </div>
-                    <div>
-                      <p className={`font-semibold ${
-                        stats.rhythmTendency === 'early' ? 'text-sky-400' :
-                        stats.rhythmTendency === 'late' ? 'text-amber-400' :
-                        'text-emerald-400'
-                      }`}>
-                        {stats.rhythmTendency === 'early' ? '⏪ Rushing' :
-                         stats.rhythmTendency === 'late' ? '⏩ Dragging' :
-                         '✓ In Pocket'}
-                      </p>
-                      <p className="text-slate-400 text-[10px]">Groove Bias</p>
-                    </div>
-                  </div>
-
-                  {saveMessage && (
-                    <div className={`mt-3 text-center text-xs font-semibold py-1.5 rounded-lg ${
-                      saveMessage.includes('saved') ? 'bg-emerald-500/20 text-emerald-300' : 'bg-amber-500/20 text-amber-300'
-                    }`}>
-                      {saveMessage}
-                    </div>
-                  )}
-                </div>
-              )}
+              {/* Session Stats */}
+              {session.beatTimings.length > 0 && renderSessionStats()}
             </div>
           </div>
         </div>

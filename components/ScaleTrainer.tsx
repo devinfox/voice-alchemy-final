@@ -1,139 +1,52 @@
 'use client'
 
-import { useState, useEffect, useRef, useCallback, useMemo } from 'react'
+import { useState, useEffect, useRef, useCallback } from 'react'
 import Script from 'next/script'
-import { Music, Play, Square, Save, RotateCcw, ChevronUp, ChevronDown, Mic, Check, X, ArrowUp, ArrowDown, ArrowUpDown, Maximize2, Minimize2, Volume2, VolumeX, Sparkles, HelpCircle, Activity, Headphones } from 'lucide-react'
-import { analyzeBuffer, getNoteFrequency, getTargetCentsError, calculateTargetAccuracy, stdDev } from '@/lib/pitch-detection'
+import { Music, Play, Square, Save, RotateCcw, ChevronUp, ChevronDown, Mic, MicOff, Check, X, ArrowUp, ArrowDown, ArrowUpDown, Maximize2, Minimize2, Volume2, VolumeX } from 'lucide-react'
+import { analyzeBuffer } from '@/lib/pitch-detection'
 
-// ============================================================================
-// MUSIC THEORY & SCALE DEFINITIONS
-// ============================================================================
+// Audio playback constants
+const MIDDLE_A = 440
+const SEMITONE = 69
 
-export interface ScaleDefinition {
-  name: string
-  intervalsAscending: number[]
-  intervalsDescending: number[]
-  description: string
+// Scale definitions (intervals from root in semitones)
+const SCALE_DEFINITIONS: Record<string, { name: string; intervals: number[]; description: string }> = {
+  major: { name: 'Major', intervals: [0, 2, 4, 5, 7, 9, 11, 12], description: 'Happy, bright sound' },
+  natural_minor: { name: 'Natural Minor', intervals: [0, 2, 3, 5, 7, 8, 10, 12], description: 'Sad, melancholic' },
+  harmonic_minor: { name: 'Harmonic Minor', intervals: [0, 2, 3, 5, 7, 8, 11, 12], description: 'Exotic, Middle Eastern' },
+  melodic_minor: { name: 'Melodic Minor', intervals: [0, 2, 3, 5, 7, 9, 11, 12], description: 'Jazz, ascending pattern' },
+  pentatonic_major: { name: 'Pentatonic Major', intervals: [0, 2, 4, 7, 9, 12], description: 'Folk, rock solos' },
+  pentatonic_minor: { name: 'Pentatonic Minor', intervals: [0, 3, 5, 7, 10, 12], description: 'Blues, rock' },
+  blues: { name: 'Blues', intervals: [0, 3, 5, 6, 7, 10, 12], description: 'Blues with blue note' },
+  chromatic: { name: 'Chromatic', intervals: [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12], description: 'All 12 notes' },
 }
 
-export const SCALE_DEFINITIONS: Record<string, ScaleDefinition> = {
-  major: {
-    name: 'Major (Ionian)',
-    intervalsAscending: [0, 2, 4, 5, 7, 9, 11, 12],
-    intervalsDescending: [12, 11, 9, 7, 5, 4, 2, 0],
-    description: 'Bright, diatonic foundation for vocal training'
-  },
-  natural_minor: {
-    name: 'Natural Minor (Aeolian)',
-    intervalsAscending: [0, 2, 3, 5, 7, 8, 10, 12],
-    intervalsDescending: [12, 10, 8, 7, 5, 3, 2, 0],
-    description: 'Melancholic, flat 3rd, 6th, and 7th'
-  },
-  harmonic_minor: {
-    name: 'Harmonic Minor',
-    intervalsAscending: [0, 2, 3, 5, 7, 8, 11, 12],
-    intervalsDescending: [12, 11, 8, 7, 5, 3, 2, 0],
-    description: 'Augmented 2nd interval between 6th & raised 7th'
-  },
-  classical_melodic_minor: {
-    name: 'Classical Melodic Minor',
-    intervalsAscending: [0, 2, 3, 5, 7, 9, 11, 12],
-    intervalsDescending: [12, 10, 8, 7, 5, 3, 2, 0], // Reverts to natural minor descending
-    description: 'Raised 6th & 7th ascending; natural minor descending'
-  },
-  jazz_melodic_minor: {
-    name: 'Jazz Melodic Minor',
-    intervalsAscending: [0, 2, 3, 5, 7, 9, 11, 12],
-    intervalsDescending: [12, 11, 9, 7, 5, 3, 2, 0],
-    description: 'Raised 6th & 7th in both directions'
-  },
-  pentatonic_major: {
-    name: 'Pentatonic Major',
-    intervalsAscending: [0, 2, 4, 7, 9, 12],
-    intervalsDescending: [12, 9, 7, 4, 2, 0],
-    description: '5-note pop/gospel melodic spine (no 4th or 7th)'
-  },
-  pentatonic_minor: {
-    name: 'Pentatonic Minor',
-    intervalsAscending: [0, 3, 5, 7, 10, 12],
-    intervalsDescending: [12, 10, 7, 5, 3, 0],
-    description: '5-note blues/rock vocal staple'
-  },
-  blues: {
-    name: 'Blues Scale',
-    intervalsAscending: [0, 3, 5, 6, 7, 10, 12],
-    intervalsDescending: [12, 10, 7, 6, 5, 3, 0],
-    description: 'Pentatonic minor with added diminished 5th (blue note)'
-  },
-  chromatic: {
-    name: 'Chromatic Scale',
-    intervalsAscending: [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12],
-    intervalsDescending: [12, 11, 10, 9, 8, 7, 6, 5, 4, 3, 2, 1, 0],
-    description: 'All 12 consecutive semitones for vocal agility'
-  },
+const NOTE_NAMES = ['C', 'C#', 'D', 'D#', 'E', 'F', 'F#', 'G', 'G#', 'A', 'A#', 'B']
+const NOTE_FREQUENCIES: Record<string, number> = {
+  'C': 261.63, 'C#': 277.18, 'D': 293.66, 'D#': 311.13,
+  'E': 329.63, 'F': 349.23, 'F#': 369.99, 'G': 392.00,
+  'G#': 415.30, 'A': 440.00, 'A#': 466.16, 'B': 493.88,
 }
 
-// Key-aware note spelling (Sharps vs Flats)
-const CHROMATIC_SHARPS = ['C', 'C#', 'D', 'D#', 'E', 'F', 'F#', 'G', 'G#', 'A', 'A#', 'B']
-const CHROMATIC_FLATS = ['C', 'Db', 'D', 'Eb', 'E', 'F', 'Gb', 'G', 'Ab', 'A', 'Bb', 'B']
-
-const FLAT_ROOTS = ['F', 'Bb', 'Eb', 'Ab', 'Db', 'Gb', 'd', 'g', 'c', 'f', 'bb', 'eb']
-
-export function getSpelledNoteName(root: string, semitoneOffset: number): string {
-  const rootIndex = CHROMATIC_SHARPS.indexOf(root) >= 0
-    ? CHROMATIC_SHARPS.indexOf(root)
-    : CHROMATIC_FLATS.indexOf(root)
-
-  const isFlatKey = FLAT_ROOTS.includes(root)
-  const targetIndex = ((rootIndex >= 0 ? rootIndex : 0) + semitoneOffset) % 12
-  return isFlatKey ? CHROMATIC_FLATS[targetIndex] : CHROMATIC_SHARPS[targetIndex]
-}
-
-export const AVAILABLE_ROOT_NOTES = ['C', 'C#', 'Db', 'D', 'Eb', 'E', 'F', 'F#', 'G', 'Ab', 'A', 'Bb', 'B']
-
-// ============================================================================
-// TYPES & DATA STRUCTURES
-// ============================================================================
-
-type AubioPitchDetector = { do: (buffer: Float32Array) => number }
-type AubioModule = { Pitch: new (method: string, bufferSize: number, hopSize: number, sampleRate: number) => AubioPitchDetector }
-type AudioContextConstructor = typeof AudioContext
-
-declare global {
-  interface Window {
-    aubio: () => Promise<AubioModule>
-    webkitAudioContext?: AudioContextConstructor
-  }
-}
-
-export interface ScaleNote {
+interface ScaleNote {
   noteName: string
   octave: number
   frequency: number
   position: number
-  semitoneOffset: number
-  expectedDurationMs: number
 }
 
-export interface SungNoteObservation {
+interface SungNote {
   noteName: string
   octave: number
-  targetFrequency: number
-  avgDetectedFrequency: number
-  maeCents: number
-  medianSignedCents: number
+  frequency: number
+  detectedFrequency: number
   centsDeviation: number
   pitchAccuracy: number
-  targetAccuracy: number
-  voiceStability: number
-  timeToSingMs: number | null
-  settleTimeMs: number
-  wasInOrder: boolean
-  sampleCount: number
   timestamp: number
+  samples: number
 }
 
-export interface NoteMetric {
+interface NoteMetric {
   noteName: string
   octave: number
   expectedPosition: number
@@ -149,558 +62,443 @@ export interface NoteMetric {
   avgDetectedFrequency: number
 }
 
-export type Direction = 'ascending' | 'descending' | 'both'
-
-export interface ScaleStats {
-  notesAttempted: number
-  notesCompleted: number
-  completionRatePercent: number
-  sequenceAccuracy: number
-  pitchAccuracy: number
-  voiceStability: number
-  timingConsistency: number
-  overallScore: number
-}
+type Direction = 'ascending' | 'descending' | 'both'
 
 interface ScaleTrainerProps {
   variant?: 'floating' | 'card'
 }
 
-// ============================================================================
-// MAIN COMPONENT
-// ============================================================================
-
 export default function ScaleTrainer({ variant = 'floating' }: ScaleTrainerProps) {
   const [isOpen, setIsOpen] = useState(false)
   const [isFullscreen, setIsFullscreen] = useState(false)
-  const [showTutorial, setShowTutorial] = useState(true)
 
   // Settings
   const [scaleType, setScaleType] = useState<string>('major')
   const [rootNote, setRootNote] = useState<string>('C')
-  const [octave, setOctave] = useState<number>(3) // 2 to 5 for vocal comfort
+  const [octave, setOctave] = useState<number>(4)
   const [direction, setDirection] = useState<Direction>('ascending')
-  const [sensitivity, setSensitivity] = useState<number>(60)
-  const [tempo, setTempo] = useState<number>(80) // 40 - 200 BPM
+  const [sensitivity, setSensitivity] = useState<number>(50)
+  const [tempo, setTempo] = useState<number>(80) // BPM - beats per minute
 
-  // Session State
+  // Session state
+  const [isActive, setIsActive] = useState(false)
   const [isPracticing, setIsPracticing] = useState(false)
   const [startedAt, setStartedAt] = useState<Date | null>(null)
   const [scaleNotes, setScaleNotes] = useState<ScaleNote[]>([])
   const [currentNoteIndex, setCurrentNoteIndex] = useState<number>(0)
-  const [sungNotes, setSungNotes] = useState<SungNoteObservation[]>([])
+  const [sungNotes, setSungNotes] = useState<SungNote[]>([])
   const [noteMetrics, setNoteMetrics] = useState<Map<string, NoteMetric>>(new Map())
 
-  // Audio Detection State
+  // Audio state
+  const [hasPermission, setHasPermission] = useState<boolean | null>(null)
   const [detectedNote, setDetectedNote] = useState<string | null>(null)
   const [detectedOctave, setDetectedOctave] = useState<number | null>(null)
-  const [, setDetectedFrequency] = useState<number | null>(null)
+  const [detectedFrequency, setDetectedFrequency] = useState<number | null>(null)
   const [centsDeviation, setCentsDeviation] = useState<number>(0)
   const [isListening, setIsListening] = useState(false)
 
-  // Web Audio Context & Playback Refs
+  // Refs for audio processing (pitch detection)
   const audioContextRef = useRef<AudioContext | null>(null)
-  const masterGainRef = useRef<GainNode | null>(null)
   const analyserRef = useRef<AnalyserNode | null>(null)
   const scriptProcessorRef = useRef<ScriptProcessorNode | null>(null)
   const mediaStreamRef = useRef<MediaStream | null>(null)
-  const pitchDetectorRef = useRef<AubioPitchDetector | null>(null)
+  const pitchDetectorRef = useRef<any>(null)
+
+  // Constants for pitch detection (matching ModernPitchTrainer).
+  // MIDDLE_A_FREQ / SEMITONE_OFFSET moved to lib/pitch-detection.
   const BUFFER_SIZE = 4096
 
-  // Playback scheduler refs
-  const [playingNoteIndex, setPlayingNoteIndex] = useState<number | null>(null)
-  const [isPlayingScale, setIsPlayingScale] = useState(false)
-  const [volume, setVolume] = useState(0.6)
-  const scalePlaybackGenIdRef = useRef(0)
-  const scalePlaybackTimerRef = useRef<NodeJS.Timeout | null>(null)
-
-  // Real-time Segmentation Refs
-  const noteStartTimeRef = useRef<number>(0)
-  const lastNoteEndTimeRef = useRef<number>(0)
-  const currentNoteSamplesRef = useRef<{ freq: number; cents: number; time: number }[]>([])
-  const sustainedWrongNoteSamplesRef = useRef<{ key: string; start: number }>({ key: '', start: 0 })
-  const wrongAttemptsCountRef = useRef(0)
-  const hadErrorOnStepRef = useRef(false)
+  // Refs for audio playback
+  const playbackContextRef = useRef<AudioContext | null>(null)
+  const oscillatorRef = useRef<OscillatorNode | null>(null)
+  const gainNodeRef = useRef<GainNode | null>(null)
+  const audioElementRef = useRef<HTMLAudioElement | null>(null)
+  const scalePlaybackRef = useRef<{ isPlaying: boolean; timeoutId: NodeJS.Timeout | null }>({ isPlaying: false, timeoutId: null })
 
   // Stats
-  const [sessionStats, setSessionStats] = useState<ScaleStats>({
+  const [sessionStats, setSessionStats] = useState({
     notesAttempted: 0,
-    notesCompleted: 0,
-    completionRatePercent: 0,
+    notesCorrect: 0,
     sequenceAccuracy: 0,
     pitchAccuracy: 0,
-    voiceStability: 0,
-    timingConsistency: 0,
     overallScore: 0,
   })
 
+  // Saving state
   const [isSaving, setIsSaving] = useState(false)
   const [saveMessage, setSaveMessage] = useState<string | null>(null)
-  const [, setAubioLoaded] = useState(false)
 
-  // ==========================================================================
-  // SCALE GENERATION WITH KEY-AWARE SPELLING
-  // ==========================================================================
+  // Aubio loading state
+  const [aubioLoaded, setAubioLoaded] = useState(false)
 
+  // Audio playback state
+  const [isPlayingNote, setIsPlayingNote] = useState(false)
+  const [playingNoteIndex, setPlayingNoteIndex] = useState<number | null>(null)
+  const [isPlayingScale, setIsPlayingScale] = useState(false)
+  const [volume, setVolume] = useState(0.5)
+
+  // Generate scale notes based on settings
   useEffect(() => {
-    const scaleDef = SCALE_DEFINITIONS[scaleType] || SCALE_DEFINITIONS.major
-    const cleanRoot = rootNote.replace('b', 'b')
-    const rootIndex = CHROMATIC_SHARPS.indexOf(cleanRoot) >= 0
-      ? CHROMATIC_SHARPS.indexOf(cleanRoot)
-      : CHROMATIC_FLATS.indexOf(cleanRoot)
+    const scale = SCALE_DEFINITIONS[scaleType]
+    if (!scale) return
 
-    const baseIndex = rootIndex >= 0 ? rootIndex : 0
-    const noteDurationMs = Math.round(60000 / tempo)
+    const rootIndex = NOTE_NAMES.indexOf(rootNote)
+    let notes: ScaleNote[] = []
 
-    let intervals: number[] = []
+    scale.intervals.forEach((interval, idx) => {
+      const noteIndex = (rootIndex + interval) % 12
+      const noteOctave = octave + Math.floor((rootIndex + interval) / 12)
+      const noteName = NOTE_NAMES[noteIndex]
+      const baseFreq = NOTE_FREQUENCIES[noteName]
+      const frequency = baseFreq * Math.pow(2, noteOctave - 4)
 
-    if (direction === 'ascending') {
-      intervals = scaleDef.intervalsAscending
-    } else if (direction === 'descending') {
-      intervals = scaleDef.intervalsDescending
-    } else {
-      // Both: Ascending then Descending turnaround without repeating top note
-      const asc = scaleDef.intervalsAscending
-      const desc = scaleDef.intervalsDescending.slice(1) // omit top octave repetition
-      intervals = [...asc, ...desc]
-    }
-
-    const generated: ScaleNote[] = intervals.map((interval, idx) => {
-      const spelledName = getSpelledNoteName(cleanRoot, interval)
-      const noteOctave = octave + Math.floor((baseIndex + interval) / 12)
-      const frequency = getNoteFrequency(spelledName, noteOctave)
-
-      return {
-        noteName: spelledName,
+      notes.push({
+        noteName,
         octave: noteOctave,
         frequency,
         position: idx + 1,
-        semitoneOffset: interval,
-        expectedDurationMs: noteDurationMs,
-      }
+      })
     })
 
-    setScaleNotes(generated)
+    if (direction === 'descending') {
+      notes = notes.reverse().map((n, i) => ({ ...n, position: i + 1 }))
+    } else if (direction === 'both') {
+      const ascending = [...notes]
+      const descending = notes.slice(0, -1).reverse()
+      notes = [...ascending, ...descending.map((n, i) => ({ ...n, position: ascending.length + i + 1 }))]
+    }
+
+    setScaleNotes(notes)
     resetSession()
-  }, [scaleType, rootNote, octave, direction, tempo])
+  }, [scaleType, rootNote, octave, direction])
 
-  // ==========================================================================
-  // WEB AUDIO SAMPLE-ACCURATE REFERENCE SYNTHESIZER
-  // ==========================================================================
-
-  const initAudioContext = useCallback(() => {
-    if (!audioContextRef.current) {
-      const AudioContextCtor = window.AudioContext || window.webkitAudioContext
-      if (!AudioContextCtor) throw new Error('Web Audio is not supported')
-      audioContextRef.current = new AudioContextCtor()
-      masterGainRef.current = audioContextRef.current.createGain()
-      masterGainRef.current.connect(audioContextRef.current.destination)
+  // Initialize playback audio context
+  const initPlaybackContext = useCallback(() => {
+    if (!playbackContextRef.current) {
+      playbackContextRef.current = new (window.AudioContext || (window as any).webkitAudioContext)()
     }
-    if (audioContextRef.current.state === 'suspended') {
-      audioContextRef.current.resume()
-    }
-    return audioContextRef.current
+    return playbackContextRef.current
   }, [])
 
-  const playSingleTone = useCallback((frequency: number, durationMs: number = 700) => {
-    const ctx = initAudioContext()
-    if (!masterGainRef.current) return
+  // Play a single note using sine wave oscillator
+  const playNoteFrequency = useCallback((frequency: number, duration: number = 1000) => {
+    const ctx = initPlaybackContext()
 
-    const osc = ctx.createOscillator()
-    const noteGain = ctx.createGain()
+    // Stop any existing oscillator
+    if (oscillatorRef.current) {
+      try {
+        oscillatorRef.current.stop()
+        oscillatorRef.current.disconnect()
+      } catch (e) {
+        // Already stopped
+      }
+    }
 
-    osc.type = 'sine'
-    osc.frequency.setValueAtTime(frequency, ctx.currentTime)
+    // Create oscillator and gain node
+    const oscillator = ctx.createOscillator()
+    const gainNode = ctx.createGain()
 
-    const now = ctx.currentTime
-    const durSec = durationMs / 1000
-    const targetVol = volume * 0.4
+    oscillator.type = 'sine'
+    oscillator.frequency.setValueAtTime(frequency, ctx.currentTime)
 
-    // Smooth ADSR envelope
-    noteGain.gain.setValueAtTime(0.0001, now)
-    noteGain.gain.linearRampToValueAtTime(targetVol, now + 0.04)
-    noteGain.gain.setValueAtTime(targetVol, now + durSec - 0.06)
-    noteGain.gain.exponentialRampToValueAtTime(0.0001, now + durSec)
+    // Envelope for smooth sound
+    gainNode.gain.setValueAtTime(0, ctx.currentTime)
+    gainNode.gain.linearRampToValueAtTime(volume * 0.3, ctx.currentTime + 0.05) // Attack
+    gainNode.gain.setValueAtTime(volume * 0.3, ctx.currentTime + duration / 1000 - 0.1) // Sustain
+    gainNode.gain.linearRampToValueAtTime(0, ctx.currentTime + duration / 1000) // Release
 
-    osc.connect(noteGain)
-    noteGain.connect(masterGainRef.current)
+    oscillator.connect(gainNode)
+    gainNode.connect(ctx.destination)
 
-    osc.start(now)
-    osc.stop(now + durSec)
-  }, [initAudioContext, volume])
+    oscillatorRef.current = oscillator
+    gainNodeRef.current = gainNode
 
+    oscillator.start(ctx.currentTime)
+    oscillator.stop(ctx.currentTime + duration / 1000)
+
+    setIsPlayingNote(true)
+
+    oscillator.onended = () => {
+      setIsPlayingNote(false)
+      setPlayingNoteIndex(null)
+    }
+  }, [initPlaybackContext, volume])
+
+  // Play a specific note from the scale
   const playScaleNote = useCallback((index: number) => {
     if (index < 0 || index >= scaleNotes.length) return
+
     const note = scaleNotes[index]
     setPlayingNoteIndex(index)
-    playSingleTone(note.frequency, 800)
-    setTimeout(() => setPlayingNoteIndex(null), 800)
-  }, [scaleNotes, playSingleTone])
+    playNoteFrequency(note.frequency, 800)
+  }, [scaleNotes, playNoteFrequency])
 
-  // Automated Lookahead Full-Scale Playback
+  // Play the entire scale
   const playEntireScale = useCallback(() => {
     if (isPlayingScale || scaleNotes.length === 0) return
 
-    const ctx = initAudioContext()
     setIsPlayingScale(true)
-    scalePlaybackGenIdRef.current += 1
-    const currentGen = scalePlaybackGenIdRef.current
+    scalePlaybackRef.current.isPlaying = true
 
-    const noteDurationSec = 60.0 / tempo
-    const startTime = ctx.currentTime + 0.05
+    let currentIndex = 0
+    // Convert BPM to milliseconds per note: 60000ms / BPM = ms per beat
+    const noteDuration = Math.round(60000 / tempo)
 
-    scaleNotes.forEach((note, idx) => {
-      const noteTime = startTime + (idx * noteDurationSec)
-      const osc = ctx.createOscillator()
-      const noteGain = ctx.createGain()
-
-      osc.type = 'sine'
-      osc.frequency.setValueAtTime(note.frequency, noteTime)
-
-      const targetVol = volume * 0.4
-      noteGain.gain.setValueAtTime(0.0001, noteTime)
-      noteGain.gain.linearRampToValueAtTime(targetVol, noteTime + 0.03)
-      noteGain.gain.setValueAtTime(targetVol, noteTime + noteDurationSec - 0.04)
-      noteGain.gain.exponentialRampToValueAtTime(0.0001, noteTime + noteDurationSec)
-
-      osc.connect(noteGain)
-      if (masterGainRef.current) {
-        noteGain.connect(masterGainRef.current)
-      }
-
-      osc.start(noteTime)
-      osc.stop(noteTime + noteDurationSec)
-
-      // UI highlight synchronization
-      const delayMs = Math.max(0, (noteTime - ctx.currentTime) * 1000)
-      setTimeout(() => {
-        if (scalePlaybackGenIdRef.current === currentGen) {
-          setPlayingNoteIndex(idx)
-        }
-      }, delayMs)
-    })
-
-    const totalDurationMs = (scaleNotes.length * noteDurationSec + 0.1) * 1000
-    scalePlaybackTimerRef.current = setTimeout(() => {
-      if (scalePlaybackGenIdRef.current === currentGen) {
+    const playNext = () => {
+      if (!scalePlaybackRef.current.isPlaying || currentIndex >= scaleNotes.length) {
         setIsPlayingScale(false)
         setPlayingNoteIndex(null)
-      }
-    }, totalDurationMs)
-  }, [isPlayingScale, scaleNotes, tempo, initAudioContext, volume])
-
-  const stopScalePlayback = useCallback(() => {
-    scalePlaybackGenIdRef.current += 1
-    if (scalePlaybackTimerRef.current) {
-      clearTimeout(scalePlaybackTimerRef.current)
-      scalePlaybackTimerRef.current = null
-    }
-    if (masterGainRef.current && audioContextRef.current) {
-      masterGainRef.current.gain.setValueAtTime(0, audioContextRef.current.currentTime)
-      masterGainRef.current.gain.setValueAtTime(1, audioContextRef.current.currentTime + 0.05)
-    }
-    setIsPlayingScale(false)
-    setPlayingNoteIndex(null)
-  }, [])
-
-  // ==========================================================================
-  // RIGOROUS STATS CALCULATION
-  // ==========================================================================
-
-  const calculateStats = useCallback((
-    totalExpected: number,
-    completedObservations: SungNoteObservation[],
-    wrongAttempts: number
-  ): ScaleStats => {
-    const totalCompleted = completedObservations.length
-
-    if (totalExpected === 0 || totalCompleted === 0) {
-      return {
-        notesAttempted: totalExpected,
-        notesCompleted: 0,
-        completionRatePercent: 0,
-        sequenceAccuracy: 0,
-        pitchAccuracy: 0,
-        voiceStability: 0,
-        timingConsistency: 0,
-        overallScore: 0,
-      }
-    }
-
-    const completionRate = totalCompleted / totalExpected
-    const sequenceFidelity = Math.max(0, (totalExpected - wrongAttempts) / totalExpected)
-    const sequenceAccuracy = Math.round(completionRate * sequenceFidelity * 100)
-
-    const avgPitchAcc = completedObservations.reduce((s, o) => s + o.pitchAccuracy, 0) / totalCompleted
-    const avgVoiceStab = completedObservations.reduce((s, o) => s + o.voiceStability, 0) / totalCompleted
-
-    // Timing consistency across note transitions
-    const timings = completedObservations
-      .map(o => o.timeToSingMs)
-      .filter((t): t is number => t !== null && t > 0)
-
-    let timingConsistency = 100
-    if (timings.length > 1) {
-      const avgTiming = timings.reduce((a, b) => a + b, 0) / timings.length
-      const timingStdDev = stdDev(timings)
-      timingConsistency = Math.max(0, Math.min(100, Math.round(100 - (timingStdDev / avgTiming) * 50)))
-    }
-
-    // Multiplicative score gated by completion rate
-    const qualityScore = (sequenceAccuracy * 0.40) + (avgPitchAcc * 0.40) + (avgVoiceStab * 0.20)
-    const overallScore = Math.round(completionRate * qualityScore)
-
-    return {
-      notesAttempted: totalExpected,
-      notesCompleted: totalCompleted,
-      completionRatePercent: Math.round(completionRate * 100),
-      sequenceAccuracy,
-      pitchAccuracy: Math.round(avgPitchAcc),
-      voiceStability: Math.round(avgVoiceStab),
-      timingConsistency,
-      overallScore: Math.max(0, Math.min(100, overallScore)),
-    }
-  }, [])
-
-  // ==========================================================================
-  // REAL-TIME SEGMENTATION & PITCH DETECTION
-  // ==========================================================================
-
-  const processPitchFrame = useCallback((
-    noteName: string,
-    detectedOct: number,
-    freq: number,
-    cents: number
-  ) => {
-    if (!isPracticing || currentNoteIndex >= scaleNotes.length) return
-
-    const expectedNote = scaleNotes[currentNoteIndex]
-    const noteKey = `${noteName}-${detectedOct}`
-    const expectedKey = `${expectedNote.noteName}-${expectedNote.octave}`
-    const now = performance.now()
-
-    // Measure continuous cents error from the exact target frequency
-    const targetErrorCents = getTargetCentsError(freq, expectedNote.frequency)
-    const isInsideTargetWindow = Math.abs(targetErrorCents) <= 45
-
-    if (isInsideTargetWindow) {
-      // Singer is in the target note window
-      sustainedWrongNoteSamplesRef.current = { key: '', start: 0 }
-      currentNoteSamplesRef.current.push({ freq, cents: targetErrorCents, time: now })
-
-      // Adaptive duration requirement: ~90ms (or ~30% of beat at high tempo)
-      const minRequiredDurationMs = Math.min(110, Math.max(70, expectedNote.expectedDurationMs * 0.30))
-      const sampleDurationMs = currentNoteSamplesRef.current.length > 1
-        ? now - currentNoteSamplesRef.current[0].time
-        : 0
-
-      if (sampleDurationMs >= minRequiredDurationMs && currentNoteSamplesRef.current.length >= 3) {
-        // Lock in confirmed scale degree
-        const samples = currentNoteSamplesRef.current
-        const avgFreq = samples.reduce((s, x) => s + x.freq, 0) / samples.length
-        const centsList = samples.map(x => x.cents)
-        const absCentsList = centsList.map(Math.abs)
-
-        const maeCents = absCentsList.reduce((s, x) => s + x, 0) / absCentsList.length
-        const sortedCents = [...centsList].sort((a, b) => a - b)
-        const medianSignedCents = sortedCents[Math.floor(sortedCents.length / 2)]
-
-        // Logarithmic stability
-        const stabilityStdDev = stdDev(centsList)
-        const voiceStability = Math.max(0, Math.min(100, Math.round(100 - (stabilityStdDev * 2))))
-
-        // Continuous intonation accuracy with steep pedagogical curve
-        const pitchAccuracy = calculateTargetAccuracy(maeCents)
-        const targetAccuracy = pitchAccuracy
-
-        const timeFromLast = lastNoteEndTimeRef.current > 0
-          ? Math.round(now - lastNoteEndTimeRef.current)
-          : null
-        const settleTimeMs = Math.round(now - noteStartTimeRef.current)
-        const wasInOrder = !hadErrorOnStepRef.current
-
-        const newObservation: SungNoteObservation = {
-          noteName: expectedNote.noteName,
-          octave: expectedNote.octave,
-          targetFrequency: expectedNote.frequency,
-          avgDetectedFrequency: avgFreq,
-          maeCents,
-          medianSignedCents,
-          centsDeviation: medianSignedCents,
-          pitchAccuracy,
-          targetAccuracy,
-          voiceStability,
-          timeToSingMs: timeFromLast,
-          settleTimeMs,
-          wasInOrder,
-          sampleCount: samples.length,
-          timestamp: Date.now(),
-        }
-
-        const newSungList = [...sungNotes, newObservation]
-        setSungNotes(newSungList)
-
-        const metric: NoteMetric = {
-          noteName: expectedNote.noteName,
-          octave: expectedNote.octave,
-          expectedPosition: expectedNote.position,
-          actualPosition: newSungList.length,
-          targetFrequency: expectedNote.frequency,
-          pitchAccuracy,
-          centsDeviation: medianSignedCents,
-          targetAccuracy,
-          voiceStability,
-          timeToSingMs: timeFromLast,
-          wasInOrder,
-          sampleCount: samples.length,
-          avgDetectedFrequency: avgFreq,
-        }
-
-        const updatedMetrics = new Map(noteMetrics).set(`${expectedNote.position}`, metric)
-        setNoteMetrics(updatedMetrics)
-
-        const newStats = calculateStats(scaleNotes.length, newSungList, wrongAttemptsCountRef.current)
-        setSessionStats(newStats)
-
-        // Advance to next scale degree
-        setCurrentNoteIndex(prev => prev + 1)
-        lastNoteEndTimeRef.current = now
-        noteStartTimeRef.current = now
-        currentNoteSamplesRef.current = []
-        hadErrorOnStepRef.current = false
-      }
-    } else {
-      // Transition region or wrong note
-      currentNoteSamplesRef.current = []
-
-      // Portamento immunity: ignore rapid passing slides; only penalize if sustained wrong note for >220ms
-      if (sustainedWrongNoteSamplesRef.current.key === noteKey) {
-        if (now - sustainedWrongNoteSamplesRef.current.start > 220) {
-          if (!hadErrorOnStepRef.current) {
-            hadErrorOnStepRef.current = true
-            wrongAttemptsCountRef.current += 1
-          }
-        }
-      } else {
-        sustainedWrongNoteSamplesRef.current = { key: noteKey, start: now }
-      }
-    }
-  }, [isPracticing, currentNoteIndex, scaleNotes, sungNotes, noteMetrics, calculateStats])
-
-  const processPitchFrameRef = useRef(processPitchFrame)
-  useEffect(() => {
-    processPitchFrameRef.current = processPitchFrame
-  }, [processPitchFrame])
-
-  // ==========================================================================
-  // AUDIO INPUT INITIALIZATION
-  // ==========================================================================
-
-  const initAudio = useCallback(async () => {
-    try {
-      if (!window.aubio) {
-        alert('Audio engine is loading. Please wait a moment.')
+        scalePlaybackRef.current.isPlaying = false
         return
       }
 
-      const stream = await navigator.mediaDevices.getUserMedia({
-        audio: {
-          echoCancellation: true,
-          noiseSuppression: false,
-          autoGainControl: false,
-        }
-      })
-      mediaStreamRef.current = stream
+      const note = scaleNotes[currentIndex]
+      setPlayingNoteIndex(currentIndex)
+      playNoteFrequency(note.frequency, noteDuration - 50)
 
-      const ctx = initAudioContext()
-      analyserRef.current = ctx.createAnalyser()
-      scriptProcessorRef.current = ctx.createScriptProcessor(BUFFER_SIZE, 1, 1)
+      currentIndex++
+      scalePlaybackRef.current.timeoutId = setTimeout(playNext, noteDuration)
+    }
+
+    playNext()
+  }, [isPlayingScale, scaleNotes, playNoteFrequency, tempo])
+
+  // Stop scale playback
+  const stopScalePlayback = useCallback(() => {
+    scalePlaybackRef.current.isPlaying = false
+    if (scalePlaybackRef.current.timeoutId) {
+      clearTimeout(scalePlaybackRef.current.timeoutId)
+      scalePlaybackRef.current.timeoutId = null
+    }
+    if (oscillatorRef.current) {
+      try {
+        oscillatorRef.current.stop()
+        oscillatorRef.current.disconnect()
+      } catch (e) {
+        // Already stopped
+      }
+    }
+    setIsPlayingScale(false)
+    setIsPlayingNote(false)
+    setPlayingNoteIndex(null)
+  }, [])
+
+  // Note-number, cents and standard-frequency math now come from
+  // lib/pitch-detection, shared with ModernPitchTrainer and SongPitchTrainer.
+
+  // Refs to keep callbacks updated without recreating audio processing
+  const sensitivityRef = useRef(sensitivity)
+  const isPracticingRef = useRef(isPracticing)
+  const processDetectedNoteRef = useRef<((noteName: string, noteOctave: number, frequency: number, cents: number) => void) | null>(null)
+
+  useEffect(() => {
+    sensitivityRef.current = sensitivity
+  }, [sensitivity])
+
+  useEffect(() => {
+    isPracticingRef.current = isPracticing
+  }, [isPracticing])
+
+  // Initialize Aubio pitch detector with ScriptProcessorNode (like ModernPitchTrainer)
+  const initAudio = useCallback(async () => {
+    try {
+      // Check if aubio is loaded
+      if (!window.aubio) {
+        alert('Audio library is still loading. Please wait a moment and try again.')
+        return
+      }
+
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true })
+      mediaStreamRef.current = stream
+      setHasPermission(true)
+
+      audioContextRef.current = new (window.AudioContext || (window as any).webkitAudioContext)()
+      analyserRef.current = audioContextRef.current.createAnalyser()
+      scriptProcessorRef.current = audioContextRef.current.createScriptProcessor(BUFFER_SIZE, 1, 1)
 
       const aubioModule = await window.aubio()
       pitchDetectorRef.current = new aubioModule.Pitch(
         'default',
         BUFFER_SIZE,
         1,
-        ctx.sampleRate
+        audioContextRef.current.sampleRate
       )
 
-      const source = ctx.createMediaStreamSource(stream)
+      const source = audioContextRef.current.createMediaStreamSource(stream)
       source.connect(analyserRef.current)
       analyserRef.current.connect(scriptProcessorRef.current)
-      scriptProcessorRef.current.connect(ctx.destination)
+      scriptProcessorRef.current.connect(audioContextRef.current.destination)
 
+      // Real-time audio processing via ScriptProcessorNode.
+      // Detection logic is shared with ModernPitchTrainer and SongPitchTrainer
+      // via lib/pitch-detection; behaviour here is unchanged.
       scriptProcessorRef.current.addEventListener('audioprocess', (event: AudioProcessingEvent) => {
         const input = event.inputBuffer.getChannelData(0)
-        if (!pitchDetectorRef.current) return
 
-        const detected = analyzeBuffer(input, pitchDetectorRef.current, sensitivity)
+        const detected = analyzeBuffer(input, pitchDetectorRef.current, sensitivityRef.current)
         if (!detected) return
 
-        setDetectedNote(detected.nameAscii)
+        // ScaleTrainer matches against ASCII note names ('F#', not 'F♯')
+        const noteName = detected.nameAscii
+
+        // Update UI state
+        setDetectedNote(noteName)
         setDetectedOctave(detected.octave)
         setDetectedFrequency(detected.frequency)
         setCentsDeviation(detected.cents)
 
-        processPitchFrameRef.current(detected.nameAscii, detected.octave, detected.frequency, detected.cents)
+        // Process for scale training if practicing
+        if (isPracticingRef.current && processDetectedNoteRef.current) {
+          processDetectedNoteRef.current(noteName, detected.octave, detected.frequency, detected.cents)
+        }
       })
 
       setIsListening(true)
     } catch (err) {
-      console.error('Audio initialization error:', err)
-      alert('Could not access microphone.')
+      console.error('Error initializing audio:', err)
+      setHasPermission(false)
     }
-  }, [initAudioContext, sensitivity])
+    // No deps: note math now comes from lib/pitch-detection as pure module
+    // functions rather than component-scoped callbacks.
+  }, [])
 
-  // ==========================================================================
-  // PRACTICE CONTROLS
-  // ==========================================================================
+  // Process detected note
+  const lastNoteTimeRef = useRef<number>(0)
+  const currentSamplesRef = useRef<{ freq: number; cents: number }[]>([])
+  const matchedNoteRef = useRef<string | null>(null)
 
-  const resetSession = useCallback(() => {
+  const processDetectedNote = useCallback((noteName: string, noteOctave: number, frequency: number, cents: number) => {
+    if (currentNoteIndex >= scaleNotes.length) return
+
+    const expectedNote = scaleNotes[currentNoteIndex]
+    const noteKey = `${noteName}-${noteOctave}`
+    const expectedKey = `${expectedNote.noteName}-${expectedNote.octave}`
+
+    currentSamplesRef.current.push({ freq: frequency, cents })
+
+    if (noteKey === expectedKey) {
+      if (currentSamplesRef.current.length >= 5) {
+        const now = Date.now()
+        const timeFromLast = lastNoteTimeRef.current ? now - lastNoteTimeRef.current : null
+
+        const samples = currentSamplesRef.current
+        const avgFreq = samples.reduce((s, x) => s + x.freq, 0) / samples.length
+        const avgCents = samples.reduce((s, x) => s + x.cents, 0) / samples.length
+
+        const freqVariance = samples.reduce((s, x) => s + Math.pow(x.freq - avgFreq, 2), 0) / samples.length
+        const freqStdDev = Math.sqrt(freqVariance)
+        const voiceStability = Math.max(0, Math.min(100, 100 - freqStdDev * 2))
+
+        const pitchAccuracy = Math.max(0, Math.min(100, 100 - Math.abs(avgCents) * 2))
+
+        const centsPenalty = Math.min(25, Math.abs(avgCents) * 0.5)
+        const targetAccuracy = Math.max(0, 100 - centsPenalty)
+
+        const sungNote: SungNote = {
+          noteName,
+          octave: noteOctave,
+          frequency: expectedNote.frequency,
+          detectedFrequency: avgFreq,
+          centsDeviation: avgCents,
+          pitchAccuracy,
+          timestamp: now,
+          samples: samples.length,
+        }
+        setSungNotes(prev => [...prev, sungNote])
+
+        const metric: NoteMetric = {
+          noteName,
+          octave: noteOctave,
+          expectedPosition: expectedNote.position,
+          actualPosition: sungNotes.length + 1,
+          targetFrequency: expectedNote.frequency,
+          pitchAccuracy,
+          centsDeviation: avgCents,
+          targetAccuracy,
+          voiceStability,
+          timeToSingMs: timeFromLast,
+          wasInOrder: true,
+          sampleCount: samples.length,
+          avgDetectedFrequency: avgFreq,
+        }
+        setNoteMetrics(prev => new Map(prev).set(`${expectedNote.position}`, metric))
+
+        setCurrentNoteIndex(prev => prev + 1)
+        lastNoteTimeRef.current = now
+        currentSamplesRef.current = []
+        matchedNoteRef.current = null
+
+        updateStats()
+      }
+    } else {
+      if (matchedNoteRef.current !== noteKey) {
+        currentSamplesRef.current = [{ freq: frequency, cents }]
+        matchedNoteRef.current = noteKey
+      }
+    }
+  }, [currentNoteIndex, scaleNotes, sungNotes])
+
+  // Keep the processDetectedNote ref updated
+  useEffect(() => {
+    processDetectedNoteRef.current = processDetectedNote
+  }, [processDetectedNote])
+
+  const updateStats = useCallback(() => {
+    const totalExpected = scaleNotes.length
+    const totalSung = sungNotes.length + 1
+
+    const metrics = Array.from(noteMetrics.values())
+    const avgPitchAccuracy = metrics.length > 0
+      ? metrics.reduce((s, m) => s + m.pitchAccuracy, 0) / metrics.length
+      : 0
+
+    const sequenceAccuracy = (totalSung / totalExpected) * 100
+    const overallScore = (sequenceAccuracy * 0.5) + (avgPitchAccuracy * 0.5)
+
+    setSessionStats({
+      notesAttempted: totalExpected,
+      notesCorrect: totalSung,
+      sequenceAccuracy,
+      pitchAccuracy: avgPitchAccuracy,
+      overallScore,
+    })
+  }, [scaleNotes, sungNotes, noteMetrics])
+
+  const resetSession = () => {
     setCurrentNoteIndex(0)
     setSungNotes([])
     setNoteMetrics(new Map())
     setSessionStats({
-      notesAttempted: scaleNotes.length,
-      notesCompleted: 0,
-      completionRatePercent: 0,
+      notesAttempted: 0,
+      notesCorrect: 0,
       sequenceAccuracy: 0,
       pitchAccuracy: 0,
-      voiceStability: 0,
-      timingConsistency: 0,
       overallScore: 0,
     })
-    noteStartTimeRef.current = performance.now()
-    lastNoteEndTimeRef.current = 0
-    currentNoteSamplesRef.current = []
-    sustainedWrongNoteSamplesRef.current = { key: '', start: 0 }
-    wrongAttemptsCountRef.current = 0
-    hadErrorOnStepRef.current = false
+    lastNoteTimeRef.current = 0
+    currentSamplesRef.current = []
+    matchedNoteRef.current = null
     setSaveMessage(null)
-  }, [scaleNotes.length])
+  }
 
   const startPractice = async () => {
-    stopScalePlayback()
     if (!isListening) {
       await initAudio()
     }
     resetSession()
     setStartedAt(new Date())
-    noteStartTimeRef.current = performance.now()
     setIsPracticing(true)
+    setIsActive(true)
   }
 
   const stopPractice = () => {
     setIsPracticing(false)
+    updateStats()
   }
-
-  // ==========================================================================
-  // SAVE SESSION
-  // ==========================================================================
 
   const saveSession = async () => {
     if (!startedAt || sungNotes.length === 0) {
-      setSaveMessage('No scale notes recorded')
-      setTimeout(() => setSaveMessage(null), 3000)
+      setSaveMessage('No notes to save')
       return
     }
 
@@ -708,8 +506,6 @@ export default function ScaleTrainer({ variant = 'floating' }: ScaleTrainerProps
     setSaveMessage(null)
 
     try {
-      const inOrderCount = Array.from(noteMetrics.values()).filter(m => m.wasInOrder).length
-
       const response = await fetch('/api/scale-training/session', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -723,7 +519,7 @@ export default function ScaleTrainer({ variant = 'floating' }: ScaleTrainerProps
           tempo,
           totalNotesExpected: scaleNotes.length,
           totalNotesSung: sungNotes.length,
-          notesInCorrectOrder: inOrderCount,
+          notesInCorrectOrder: sungNotes.length,
           sequenceAccuracy: sessionStats.sequenceAccuracy,
           pitchAccuracy: sessionStats.pitchAccuracy,
           overallScore: sessionStats.overallScore,
@@ -732,17 +528,17 @@ export default function ScaleTrainer({ variant = 'floating' }: ScaleTrainerProps
       })
 
       const data = await response.json()
-      if (response.ok) {
-        setSaveMessage(`Session saved! Score: ${sessionStats.overallScore}%`)
-      } else {
-        setSaveMessage(data.message || 'Failed to save session')
+
+      if (!response.ok) {
+        throw new Error(data.error || 'Failed to save session')
       }
+
+      setSaveMessage(data.isNewBest ? 'New best score saved!' : 'Session saved!')
     } catch (err) {
       console.error('Error saving session:', err)
       setSaveMessage('Failed to save session')
     } finally {
       setIsSaving(false)
-      setTimeout(() => setSaveMessage(null), 5000)
     }
   }
 
@@ -750,7 +546,7 @@ export default function ScaleTrainer({ variant = 'floating' }: ScaleTrainerProps
   useEffect(() => {
     return () => {
       if (mediaStreamRef.current) {
-        mediaStreamRef.current.getTracks().forEach(t => t.stop())
+        mediaStreamRef.current.getTracks().forEach(track => track.stop())
       }
       if (scriptProcessorRef.current) {
         scriptProcessorRef.current.disconnect()
@@ -758,19 +554,27 @@ export default function ScaleTrainer({ variant = 'floating' }: ScaleTrainerProps
       if (audioContextRef.current) {
         audioContextRef.current.close()
       }
+      // Cleanup playback
       stopScalePlayback()
+      if (playbackContextRef.current) {
+        playbackContextRef.current.close()
+      }
     }
   }, [stopScalePlayback])
 
   const handleClose = () => {
-    stopPractice()
+    if (isPracticing) {
+      stopPractice()
+    }
+    // Stop audio playback
     stopScalePlayback()
+    // Stop pitch detection
     if (scriptProcessorRef.current) {
       scriptProcessorRef.current.disconnect()
       scriptProcessorRef.current = null
     }
     if (mediaStreamRef.current) {
-      mediaStreamRef.current.getTracks().forEach(t => t.stop())
+      mediaStreamRef.current.getTracks().forEach(track => track.stop())
       mediaStreamRef.current = null
     }
     if (audioContextRef.current) {
@@ -792,92 +596,53 @@ export default function ScaleTrainer({ variant = 'floating' }: ScaleTrainerProps
     }
   }
 
-  // ==========================================================================
-  // RENDER INTERFACE
-  // ==========================================================================
-
+  // Render the trainer content
   const renderTrainer = () => (
     <div className={`${isFullscreen ? 'fixed inset-0 z-[60] bg-[#0d0d1a]' : ''}`}>
       <div className={`${isFullscreen ? 'h-full overflow-y-auto p-6' : ''}`}>
         {/* Header */}
-        <div className="flex items-center justify-between mb-4">
+        <div className="flex items-center justify-between mb-6">
           <div className="flex items-center gap-3">
             <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-pink-500/20 to-purple-500/20 flex items-center justify-center">
               <Music className="w-5 h-5 text-pink-400" />
             </div>
             <div>
-              <h2 className="text-lg font-bold text-white">Scale & Vocal Agility Trainer</h2>
-              <p className="text-xs text-white/50">Interval intonation, legato transitions, and melodic sequence mastery</p>
+              <h2 className="text-lg font-semibold text-white">Scale Trainer</h2>
+              <p className="text-sm text-white/50">Practice scales with real-time feedback</p>
             </div>
           </div>
 
           <div className="flex items-center gap-2">
             {isListening && (
-              <div className="flex items-center gap-1.5 text-xs text-emerald-400 font-medium mr-2 bg-emerald-500/10 px-2.5 py-1 rounded-lg border border-emerald-500/20">
-                <Mic size={14} className="animate-pulse" />
-                <span>Mic Active</span>
+              <div className="flex items-center gap-2 text-sm text-green-400 mr-2">
+                <Mic size={16} />
+                <span>Listening</span>
               </div>
             )}
             <button
-              onClick={() => setShowTutorial(!showTutorial)}
-              className={`p-2 rounded-lg transition-colors ${showTutorial ? 'bg-pink-500/20 text-pink-300' : 'hover:bg-white/10 text-white/70'}`}
-              title="How to practice"
-            >
-              <HelpCircle size={18} />
-            </button>
-            <button
               onClick={() => setIsFullscreen(!isFullscreen)}
-              className="p-2 hover:bg-white/10 rounded-lg transition-colors text-white/70"
+              className="p-2 hover:bg-white/10 rounded-lg transition-colors"
             >
-              {isFullscreen ? <Minimize2 size={18} /> : <Maximize2 size={18} />}
+              {isFullscreen ? <Minimize2 size={18} className="text-white/70" /> : <Maximize2 size={18} className="text-white/70" />}
             </button>
             <button
               onClick={handleClose}
-              className="p-2 hover:bg-white/10 rounded-lg transition-colors text-white/70"
+              className="p-2 hover:bg-white/10 rounded-lg transition-colors"
             >
-              <X size={18} />
+              <X size={18} className="text-white/70" />
             </button>
           </div>
         </div>
 
-        {/* 3-Step Guided Practice Workflow Banner */}
-        {showTutorial && (
-          <div className="bg-gradient-to-r from-pink-500/10 via-purple-500/10 to-indigo-500/10 border border-pink-500/20 rounded-2xl p-4 mb-6 relative">
-            <button
-              onClick={() => setShowTutorial(false)}
-              className="absolute top-3 right-3 text-white/40 hover:text-white"
-            >
-              <X size={14} />
-            </button>
-            <h3 className="text-xs font-bold text-pink-300 uppercase tracking-wider mb-2 flex items-center gap-1.5">
-              <Sparkles size={14} /> Guided Scale Practice Flow
-            </h3>
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-3 text-xs">
-              <div className="bg-slate-900/40 p-3 rounded-xl border border-white/5">
-                <div className="font-semibold text-pink-400 mb-1">Step 1: 🔊 Listen & Internalize</div>
-                <p className="text-slate-300">Click <strong>Listen to Scale</strong> to hear the pitch and rhythm at your chosen BPM.</p>
-              </div>
-              <div className="bg-slate-900/40 p-3 rounded-xl border border-white/5">
-                <div className="font-semibold text-purple-400 mb-1">Step 2: 🎙️ Sing in Tempo</div>
-                <p className="text-slate-300">Press <strong>Start Practice</strong> and sing each note in sequence without stopping.</p>
-              </div>
-              <div className="bg-slate-900/40 p-3 rounded-xl border border-white/5">
-                <div className="font-semibold text-indigo-400 mb-1">Step 3: 📊 Review & Save</div>
-                <p className="text-slate-300">Examine interval accuracy, transition settle time, and save your attempt.</p>
-              </div>
-            </div>
-          </div>
-        )}
-
-        {/* Settings Grid */}
-        <div className="grid grid-cols-2 sm:grid-cols-5 gap-3 mb-6 bg-slate-900/40 p-4 rounded-2xl border border-white/5">
+        {/* Settings */}
+        <div className="grid grid-cols-2 md:grid-cols-5 gap-4 mb-6">
           <div>
-            <label className="block text-[11px] font-medium text-white/50 mb-1">Scale Type</label>
+            <label className="block text-xs text-white/50 mb-1">Scale</label>
             <select
               value={scaleType}
               onChange={(e) => setScaleType(e.target.value)}
-              disabled={isPracticing || isPlayingScale}
-              className="glass-select w-full text-xs font-medium py-2 rounded-xl"
+              disabled={isPracticing}
+              className="glass-select w-full text-sm"
             >
               {Object.entries(SCALE_DEFINITIONS).map(([key, scale]) => (
                 <option key={key} value={key}>{scale.name}</option>
@@ -886,67 +651,67 @@ export default function ScaleTrainer({ variant = 'floating' }: ScaleTrainerProps
           </div>
 
           <div>
-            <label className="block text-[11px] font-medium text-white/50 mb-1">Root Key</label>
+            <label className="block text-xs text-white/50 mb-1">Root Note</label>
             <select
               value={rootNote}
               onChange={(e) => setRootNote(e.target.value)}
-              disabled={isPracticing || isPlayingScale}
-              className="glass-select w-full text-xs font-medium py-2 rounded-xl"
+              disabled={isPracticing}
+              className="glass-select w-full text-sm"
             >
-              {AVAILABLE_ROOT_NOTES.map(note => (
+              {NOTE_NAMES.map(note => (
                 <option key={note} value={note}>{note}</option>
               ))}
             </select>
           </div>
 
           <div>
-            <label className="block text-[11px] font-medium text-white/50 mb-1">Starting Octave</label>
-            <div className="flex items-center gap-1">
+            <label className="block text-xs text-white/50 mb-1">Octave</label>
+            <div className="flex items-center gap-2">
               <button
                 onClick={() => setOctave(o => Math.max(2, o - 1))}
-                disabled={isPracticing || isPlayingScale || octave <= 2}
-                className="glass-button p-1.5 rounded-lg disabled:opacity-40"
+                disabled={isPracticing || octave <= 2}
+                className="glass-button p-2 rounded-lg disabled:opacity-50"
               >
-                <ChevronDown size={14} />
+                <ChevronDown size={16} />
               </button>
-              <span className="text-white font-mono font-bold w-6 text-center text-xs">{octave}</span>
+              <span className="text-white font-mono w-8 text-center">{octave}</span>
               <button
-                onClick={() => setOctave(o => Math.min(5, o + 1))}
-                disabled={isPracticing || isPlayingScale || octave >= 5}
-                className="glass-button p-1.5 rounded-lg disabled:opacity-40"
+                onClick={() => setOctave(o => Math.min(6, o + 1))}
+                disabled={isPracticing || octave >= 6}
+                className="glass-button p-2 rounded-lg disabled:opacity-50"
               >
-                <ChevronUp size={14} />
+                <ChevronUp size={16} />
               </button>
             </div>
           </div>
 
           <div>
-            <label className="block text-[11px] font-medium text-white/50 mb-1">Tempo (BPM)</label>
-            <div className="flex items-center gap-1">
+            <label className="block text-xs text-white/50 mb-1">Speed (BPM)</label>
+            <div className="flex items-center gap-2">
               <button
                 onClick={() => setTempo(t => Math.max(40, t - 10))}
-                disabled={isPracticing || isPlayingScale || tempo <= 40}
-                className="glass-button p-1.5 rounded-lg disabled:opacity-40"
+                disabled={isPracticing || tempo <= 40}
+                className="glass-button p-2 rounded-lg disabled:opacity-50"
               >
-                <ChevronDown size={14} />
+                <ChevronDown size={16} />
               </button>
-              <span className="text-white font-mono font-bold w-8 text-center text-xs">{tempo}</span>
+              <span className="text-white font-mono w-10 text-center">{tempo}</span>
               <button
                 onClick={() => setTempo(t => Math.min(200, t + 10))}
-                disabled={isPracticing || isPlayingScale || tempo >= 200}
-                className="glass-button p-1.5 rounded-lg disabled:opacity-40"
+                disabled={isPracticing || tempo >= 200}
+                className="glass-button p-2 rounded-lg disabled:opacity-50"
               >
-                <ChevronUp size={14} />
+                <ChevronUp size={16} />
               </button>
             </div>
           </div>
 
           <div>
-            <label className="block text-[11px] font-medium text-white/50 mb-1">Direction</label>
+            <label className="block text-xs text-white/50 mb-1">Direction</label>
             <button
               onClick={() => setDirection(d => d === 'ascending' ? 'descending' : d === 'descending' ? 'both' : 'ascending')}
-              disabled={isPracticing || isPlayingScale}
-              className="glass-button px-3 py-2 rounded-xl flex items-center gap-1.5 text-xs font-semibold w-full justify-center"
+              disabled={isPracticing}
+              className="glass-button px-4 py-2 rounded-lg flex items-center gap-2 text-sm w-full justify-center"
             >
               {getDirectionIcon()}
               <span className="capitalize">{direction}</span>
@@ -954,53 +719,75 @@ export default function ScaleTrainer({ variant = 'floating' }: ScaleTrainerProps
           </div>
         </div>
 
-        {/* Sensitivity & Volume Controls */}
-        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 mb-6 px-1">
-          <div>
-            <div className="flex items-center justify-between text-xs text-white/60 mb-1">
-              <span>Mic Sensitivity: <strong className="text-white">{sensitivity}%</strong></span>
+        {/* Sensitivity */}
+        <div className="mb-6">
+          <label className="block text-xs text-white/50 mb-2">Mic Sensitivity: {sensitivity}%</label>
+          <input
+            type="range"
+            min="0"
+            max="100"
+            value={sensitivity}
+            onChange={(e) => setSensitivity(Number(e.target.value))}
+            className="w-full accent-pink-500"
+          />
+        </div>
+
+        {/* Scale Display */}
+        <div className="mb-6">
+          <div className="flex items-center justify-between mb-3">
+            <div className="flex items-center gap-2">
+              <span className="text-sm text-white/70">Scale: </span>
+              <span className="text-pink-400 font-medium">
+                {rootNote} {SCALE_DEFINITIONS[scaleType]?.name}
+              </span>
+              <span className="text-white/40 text-xs">
+                ({SCALE_DEFINITIONS[scaleType]?.description})
+              </span>
             </div>
-            <input
-              type="range"
-              min="10"
-              max="100"
-              value={sensitivity}
-              onChange={(e) => setSensitivity(Number(e.target.value))}
-              className="w-full h-1.5 bg-slate-700 rounded-full appearance-none cursor-pointer accent-pink-500"
-            />
+
+            {/* Play Scale Button */}
+            <button
+              onClick={isPlayingScale ? stopScalePlayback : playEntireScale}
+              disabled={isPracticing}
+              className={`flex items-center gap-2 px-3 py-1.5 rounded-lg text-sm font-medium transition-all ${
+                isPlayingScale
+                  ? 'bg-pink-500/20 text-pink-400 border border-pink-500/50'
+                  : 'glass-button hover:bg-white/10'
+              } ${isPracticing ? 'opacity-50 cursor-not-allowed' : ''}`}
+            >
+              {isPlayingScale ? (
+                <>
+                  <Square size={14} />
+                  Stop
+                </>
+              ) : (
+                <>
+                  <Volume2 size={14} />
+                  Play Scale
+                </>
+              )}
+            </button>
           </div>
-          <div>
-            <div className="flex items-center justify-between text-xs text-white/60 mb-1">
-              <span className="flex items-center gap-1.5"><Volume2 size={13} /> Tone Volume: <strong className="text-white">{Math.round(volume * 100)}%</strong></span>
-            </div>
+
+          {/* Volume Control */}
+          <div className="flex items-center gap-2 mb-3">
+            <VolumeX size={14} className="text-white/40" />
             <input
               type="range"
               min="0"
               max="100"
               value={volume * 100}
               onChange={(e) => setVolume(Number(e.target.value) / 100)}
-              className="w-full h-1.5 bg-slate-700 rounded-full appearance-none cursor-pointer accent-pink-500"
+              className="w-24 accent-pink-500"
             />
-          </div>
-        </div>
-
-        {/* Scale Display & Note Pills */}
-        <div className="mb-6 bg-slate-900/60 p-4 rounded-2xl border border-white/5">
-          <div className="flex items-center justify-between mb-3">
-            <div>
-              <span className="text-sm font-bold text-pink-400">{rootNote} {SCALE_DEFINITIONS[scaleType]?.name}</span>
-              <span className="text-xs text-white/40 ml-2">({SCALE_DEFINITIONS[scaleType]?.description})</span>
-            </div>
-            <span className="text-xs text-slate-400 font-mono">
-              {tempo} BPM · {Math.round(60000 / tempo)}ms / note
-            </span>
+            <Volume2 size={14} className="text-white/40" />
           </div>
 
-          <div className="flex flex-wrap gap-2.5">
+          <div className="flex flex-wrap gap-2">
             {scaleNotes.map((note, idx) => {
-              const isCurrent = isPracticing && idx === currentNoteIndex
+              const isCurrentNote = idx === currentNoteIndex
               const isCompleted = idx < currentNoteIndex
-              const isPlayingNow = playingNoteIndex === idx
+              const isPlaying = playingNoteIndex === idx
               const metric = noteMetrics.get(`${note.position}`)
 
               return (
@@ -1009,35 +796,40 @@ export default function ScaleTrainer({ variant = 'floating' }: ScaleTrainerProps
                   onClick={() => !isPracticing && playScaleNote(idx)}
                   disabled={isPracticing}
                   className={`
-                    relative px-4 py-3 rounded-2xl border transition-all duration-200 select-none
-                    ${isPlayingNow ? 'border-amber-400 bg-amber-500/25 scale-105 shadow-lg shadow-amber-500/20' : ''}
-                    ${isCurrent && !isPlayingNow ? 'border-pink-500 bg-pink-500/25 scale-110 shadow-lg shadow-pink-500/20' : ''}
-                    ${isCompleted && !isPlayingNow ? 'border-emerald-500/60 bg-emerald-500/15' : ''}
-                    ${!isCurrent && !isCompleted && !isPlayingNow ? 'border-slate-700/80 bg-slate-800/40 hover:border-slate-600' : ''}
+                    relative px-4 py-3 rounded-xl border transition-all duration-300 cursor-pointer
+                    ${isPlaying ? 'border-yellow-500 bg-yellow-500/20 scale-105 shadow-lg shadow-yellow-500/30' : ''}
+                    ${isCurrentNote && !isPlaying ? 'border-pink-500 bg-pink-500/20 scale-110' : ''}
+                    ${isCompleted && !isPlaying ? 'border-green-500/50 bg-green-500/10' : ''}
+                    ${!isCurrentNote && !isCompleted && !isPlaying ? 'border-white/10 bg-white/5 hover:bg-white/10 hover:border-white/20' : ''}
+                    ${isPracticing ? 'cursor-default' : ''}
                   `}
                 >
                   <div className="text-center">
-                    <div className={`text-base font-extrabold ${
-                      isPlayingNow ? 'text-amber-300' :
-                      isCurrent ? 'text-pink-300' :
-                      isCompleted ? 'text-emerald-300' :
-                      'text-white/80'
+                    <div className={`text-lg font-bold ${
+                      isPlaying ? 'text-yellow-400' :
+                      isCurrentNote ? 'text-pink-400' :
+                      isCompleted ? 'text-green-400' :
+                      'text-white/70'
                     }`}>
                       {note.noteName}
                     </div>
-                    <div className="text-[10px] text-white/40 font-mono">{note.octave}</div>
+                    <div className="text-xs text-white/40">{note.octave}</div>
                   </div>
 
-                  {isPlayingNow && (
-                    <div className="absolute -top-1.5 -right-1.5 w-4 h-4 rounded-full bg-amber-400 flex items-center justify-center animate-ping" />
-                  )}
-                  {isCompleted && !isPlayingNow && (
-                    <div className="absolute -top-1.5 -right-1.5 w-4 h-4 rounded-full bg-emerald-500 flex items-center justify-center">
-                      <Check size={10} className="text-slate-950 stroke-[3]" />
+                  {isPlaying && (
+                    <div className="absolute -top-2 -right-2 w-5 h-5 rounded-full bg-yellow-500 flex items-center justify-center animate-pulse">
+                      <Volume2 size={10} className="text-white" />
                     </div>
                   )}
+
+                  {isCompleted && !isPlaying && (
+                    <div className="absolute -top-2 -right-2 w-5 h-5 rounded-full bg-green-500 flex items-center justify-center">
+                      <Check size={12} className="text-white" />
+                    </div>
+                  )}
+
                   {isCompleted && metric && (
-                    <div className="text-[9px] font-bold text-emerald-400 mt-0.5">
+                    <div className="absolute -bottom-1 left-1/2 -translate-x-1/2 text-[10px] text-green-400">
                       {Math.round(metric.pitchAccuracy)}%
                     </div>
                   )}
@@ -1045,149 +837,131 @@ export default function ScaleTrainer({ variant = 'floating' }: ScaleTrainerProps
               )
             })}
           </div>
+
+          {/* Hint */}
+          {!isPracticing && (
+            <p className="text-xs text-white/40 mt-2">
+              Click any note to hear it, or click &quot;Play Scale&quot; to hear the entire scale
+            </p>
+          )}
         </div>
 
-        {/* Live Pitch Detection HUD */}
+        {/* Live Detection */}
         {isPracticing && (
-          <div className="mb-6 p-4 rounded-2xl bg-slate-900/80 border border-pink-500/30 shadow-xl">
-            <div className="grid grid-cols-3 gap-4 text-center">
+          <div className="mb-6 p-4 rounded-xl bg-white/5 border border-white/10">
+            <div className="flex items-center justify-between">
               <div>
-                <span className="text-[11px] text-white/50 block mb-0.5">Detected Note</span>
-                <span className="text-2xl font-extrabold text-white font-mono">
+                <span className="text-xs text-white/50">Detected Note</span>
+                <div className="text-2xl font-bold text-white">
                   {detectedNote ? `${detectedNote}${detectedOctave}` : '—'}
-                </span>
+                </div>
               </div>
               <div>
-                <span className="text-[11px] text-white/50 block mb-0.5">Intonation Error</span>
-                <span className={`text-2xl font-extrabold font-mono ${
-                  Math.abs(centsDeviation) <= 15 ? 'text-emerald-400' :
-                  Math.abs(centsDeviation) <= 30 ? 'text-amber-400' : 'text-rose-400'
-                }`}>
-                  {centsDeviation > 0 ? `+${Math.round(centsDeviation)}` : Math.round(centsDeviation)}¢
-                </span>
+                <span className="text-xs text-white/50">Cents</span>
+                <div className={`text-2xl font-bold ${Math.abs(centsDeviation) < 15 ? 'text-green-400' : Math.abs(centsDeviation) < 30 ? 'text-yellow-400' : 'text-red-400'}`}>
+                  {centsDeviation > 0 ? '+' : ''}{Math.round(centsDeviation)}
+                </div>
               </div>
               <div>
-                <span className="text-[11px] text-white/50 block mb-0.5">Target Pitch</span>
-                <span className="text-2xl font-extrabold text-pink-400 font-mono">
-                  {scaleNotes[currentNoteIndex]?.noteName}{scaleNotes[currentNoteIndex]?.octave}
-                </span>
+                <span className="text-xs text-white/50">Target</span>
+                <div className="text-2xl font-bold text-pink-400">
+                  {scaleNotes[currentNoteIndex]?.noteName || '—'}{scaleNotes[currentNoteIndex]?.octave || ''}
+                </div>
               </div>
             </div>
 
-            {/* Paced Progress Bar */}
             <div className="mt-4">
-              <div className="flex justify-between text-xs text-white/50 mb-1 font-mono">
-                <span>Scale Progress</span>
+              <div className="flex justify-between text-xs text-white/50 mb-1">
+                <span>Progress</span>
                 <span>{currentNoteIndex} / {scaleNotes.length}</span>
               </div>
-              <div className="h-2 bg-slate-800 rounded-full overflow-hidden">
+              <div className="h-2 bg-white/10 rounded-full overflow-hidden">
                 <div
-                  className="h-full bg-gradient-to-r from-pink-500 to-purple-500 transition-all duration-200"
-                  style={{ width: `${(currentNoteIndex / Math.max(1, scaleNotes.length)) * 100}%` }}
+                  className="h-full bg-gradient-to-r from-pink-500 to-purple-500 transition-all duration-300"
+                  style={{ width: `${(currentNoteIndex / scaleNotes.length) * 100}%` }}
                 />
               </div>
             </div>
           </div>
         )}
 
-        {/* Session Analytics */}
+        {/* Stats */}
         {sungNotes.length > 0 && (
-          <div className="grid grid-cols-4 gap-3 mb-6 text-center">
-            <div className="p-3 rounded-2xl bg-slate-900/60 border border-white/5">
-              <div className="text-2xl font-extrabold text-white font-mono">{sessionStats.overallScore}%</div>
-              <div className="text-[10px] text-white/50 font-medium">Overall Score</div>
+          <div className="grid grid-cols-3 gap-4 mb-6">
+            <div className="text-center p-3 rounded-xl bg-white/5">
+              <div className="text-2xl font-bold text-pink-400">
+                {Math.round(sessionStats.sequenceAccuracy)}%
+              </div>
+              <div className="text-xs text-white/50">Sequence</div>
             </div>
-            <div className="p-3 rounded-2xl bg-slate-900/60 border border-white/5">
-              <div className="text-2xl font-extrabold text-pink-400 font-mono">{sessionStats.sequenceAccuracy}%</div>
-              <div className="text-[10px] text-white/50 font-medium">Sequence</div>
+            <div className="text-center p-3 rounded-xl bg-white/5">
+              <div className="text-2xl font-bold text-purple-400">
+                {Math.round(sessionStats.pitchAccuracy)}%
+              </div>
+              <div className="text-xs text-white/50">Pitch Accuracy</div>
             </div>
-            <div className="p-3 rounded-2xl bg-slate-900/60 border border-white/5">
-              <div className="text-2xl font-extrabold text-purple-400 font-mono">{sessionStats.pitchAccuracy}%</div>
-              <div className="text-[10px] text-white/50 font-medium">Intonation</div>
-            </div>
-            <div className="p-3 rounded-2xl bg-slate-900/60 border border-white/5">
-              <div className="text-2xl font-extrabold text-emerald-400 font-mono">{sessionStats.voiceStability}%</div>
-              <div className="text-[10px] text-white/50 font-medium">Stability</div>
+            <div className="text-center p-3 rounded-xl bg-white/5">
+              <div className="text-2xl font-bold text-green-400">
+                {Math.round(sessionStats.overallScore)}%
+              </div>
+              <div className="text-xs text-white/50">Overall Score</div>
             </div>
           </div>
         )}
 
-        {/* 3 Primary Action Buttons Layout */}
-        <div className="flex flex-wrap items-center gap-3">
-          {/* Button 1: Listen to Scale */}
-          <button
-            onClick={isPlayingScale ? stopScalePlayback : playEntireScale}
-            disabled={isPracticing}
-            className={`flex-1 min-w-[160px] py-3.5 px-4 rounded-2xl text-xs font-bold transition-all flex items-center justify-center gap-2 shadow-lg ${
-              isPlayingScale
-                ? 'bg-rose-500 hover:bg-rose-600 text-white'
-                : 'bg-slate-800 hover:bg-slate-700 text-amber-300 border border-amber-500/30'
-            } ${isPracticing ? 'opacity-40 cursor-not-allowed' : ''}`}
-          >
-            {isPlayingScale ? (
-              <>
-                <Square size={16} /> Stop Reference
-              </>
-            ) : (
-              <>
-                <Volume2 size={16} /> 1. Listen to Scale
-              </>
-            )}
-          </button>
-
-          {/* Button 2: Start Practice */}
+        {/* Controls */}
+        <div className="flex items-center gap-3">
           {!isPracticing ? (
             <button
               onClick={startPractice}
-              disabled={isPlayingScale}
-              className="flex-1 min-w-[160px] py-3.5 px-4 rounded-2xl bg-gradient-to-r from-pink-500 to-purple-600 hover:from-pink-400 hover:to-purple-500 text-white text-xs font-bold transition-all flex items-center justify-center gap-2 shadow-lg shadow-pink-500/25"
+              className="flex items-center gap-2 px-6 py-3 rounded-xl bg-gradient-to-r from-pink-500 to-purple-500 text-white font-medium hover:from-pink-400 hover:to-purple-400 transition-all"
             >
-              <Play size={16} /> 2. Start Practice
+              <Play size={18} />
+              Start Practice
             </button>
           ) : (
             <button
               onClick={stopPractice}
-              className="flex-1 min-w-[160px] py-3.5 px-4 rounded-2xl bg-rose-600 hover:bg-rose-500 text-white text-xs font-bold transition-all flex items-center justify-center gap-2 shadow-lg shadow-rose-500/25"
+              className="glass-button flex items-center gap-2 px-6 py-3 rounded-xl border-red-500/50 text-red-400 hover:bg-red-500/10"
             >
-              <Square size={16} /> Stop Practice
+              <Square size={18} />
+              Stop
             </button>
           )}
 
-          {/* Button 3: Reset */}
           <button
             onClick={resetSession}
-            disabled={isPracticing || isPlayingScale}
-            className="px-4 py-3.5 rounded-2xl bg-slate-800 hover:bg-slate-700 text-white/70 hover:text-white text-xs font-bold transition-all flex items-center justify-center gap-1.5 border border-slate-700 disabled:opacity-40"
+            disabled={isPracticing}
+            className="glass-button flex items-center gap-2 px-4 py-3 rounded-xl disabled:opacity-50"
           >
-            <RotateCcw size={16} /> Reset
+            <RotateCcw size={18} />
+            Reset
           </button>
 
-          {/* Save Button (when notes recorded) */}
           {sungNotes.length > 0 && !isPracticing && (
             <button
               onClick={saveSession}
               disabled={isSaving}
-              className="px-5 py-3.5 rounded-2xl bg-gradient-to-r from-amber-500 to-orange-500 hover:brightness-110 text-slate-950 text-xs font-extrabold transition-all flex items-center justify-center gap-2 shadow-lg shadow-amber-500/20 disabled:opacity-40"
+              className="glass-button-gold flex items-center gap-2 px-6 py-3 rounded-xl disabled:opacity-50"
             >
-              <Save size={16} /> {isSaving ? 'Saving...' : 'Save Session'}
+              <Save size={18} />
+              {isSaving ? 'Saving...' : 'Save Session'}
             </button>
           )}
         </div>
 
-        {/* Notification Messages */}
+        {/* Messages */}
         {saveMessage && (
-          <div className={`mt-4 p-3 rounded-xl text-xs font-semibold text-center ${
-            saveMessage.includes('saved') ? 'bg-emerald-500/20 text-emerald-300' : 'bg-amber-500/20 text-amber-300'
-          }`}>
+          <div className={`mt-4 p-3 rounded-xl text-sm ${saveMessage.includes('Failed') ? 'bg-red-500/10 text-red-400' : 'bg-green-500/10 text-green-400'}`}>
             {saveMessage}
           </div>
         )}
 
         {currentNoteIndex >= scaleNotes.length && scaleNotes.length > 0 && (
-          <div className="mt-4 p-4 rounded-2xl bg-emerald-500/15 border border-emerald-500/30 text-center">
-            <div className="text-emerald-400 font-bold text-sm mb-0.5">🎉 Scale Completed!</div>
-            <div className="text-white/80 text-xs">
-              Overall Score: <strong>{sessionStats.overallScore}%</strong> (Intonation: {sessionStats.pitchAccuracy}%, Sequence: {sessionStats.sequenceAccuracy}%)
+          <div className="mt-4 p-4 rounded-xl bg-green-500/10 border border-green-500/30 text-center">
+            <div className="text-green-400 font-semibold mb-1">Scale Completed!</div>
+            <div className="text-white/70 text-sm">
+              Overall Score: {Math.round(sessionStats.overallScore)}%
             </div>
           </div>
         )}
@@ -1197,6 +971,7 @@ export default function ScaleTrainer({ variant = 'floating' }: ScaleTrainerProps
 
   return (
     <>
+      {/* Trigger Button */}
       {variant === 'floating' ? (
         <button
           onClick={() => setIsOpen(true)}
@@ -1217,11 +992,12 @@ export default function ScaleTrainer({ variant = 'floating' }: ScaleTrainerProps
           </div>
           <div className="text-left flex-1">
             <p className="font-semibold text-lg">Scale Trainer</p>
-            <p className="text-sm text-white/70">Interval intonation, legato transitions & agility</p>
+            <p className="text-sm text-white/70">Practice scales & sequences</p>
           </div>
         </button>
       )}
 
+      {/* Modal */}
       {isOpen && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
           <div className="absolute inset-0 bg-black/60 backdrop-blur-sm" onClick={handleClose} />
@@ -1231,16 +1007,11 @@ export default function ScaleTrainer({ variant = 'floating' }: ScaleTrainerProps
         </div>
       )}
 
+      {/* Load Aubio.js */}
       <Script
-        src="/vendor/aubio.min.js"
+        src="https://cdn.jsdelivr.net/npm/aubiojs@0.1.1/build/aubio.min.js"
         strategy="lazyOnload"
         onLoad={() => setAubioLoaded(true)}
-        onError={() => {
-          const fallback = document.createElement('script')
-          fallback.src = 'https://cdn.jsdelivr.net/npm/aubiojs@0.1.1/build/aubio.min.js'
-          fallback.onload = () => setAubioLoaded(true)
-          document.head.appendChild(fallback)
-        }}
       />
     </>
   )

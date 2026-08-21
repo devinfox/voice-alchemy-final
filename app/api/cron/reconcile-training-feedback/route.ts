@@ -110,7 +110,7 @@ export async function GET(request: NextRequest) {
               // Pitch needs its per-note breakdown to say anything useful.
               const { data: noteMetrics } = await admin
                 .from('pitch_training_note_metrics')
-                .select('note_name, octave, pitch_accuracy, pitch_onset_speed_ms, pitch_stability, in_tune_sustain_ms, avg_cents_deviation, target_accuracy, voice_stability, pitch_direction, most_sung_note')
+                .select('note_name, octave, pitch_accuracy, pitch_onset_speed_ms, pitch_stability, in_tune_sustain_ms, avg_cents_deviation')
                 .eq('session_id', session.id)
 
               analysis = await analyzeSessionPerformance(
@@ -123,21 +123,14 @@ export async function GET(request: NextRequest) {
                   totalNotesAttempted: session.total_notes_attempted || 0,
                   totalNotesMatched: session.total_notes_matched || 0,
                   durationSeconds: session.duration_seconds || 0,
-                  avgTargetAccuracy: Number(session.avg_target_accuracy ?? session.avg_pitch_accuracy) || 0,
-                  avgVoiceStability: Number(session.avg_voice_stability ?? session.avg_pitch_stability) || 0,
-                  pitchTendency: session.pitch_tendency || 'on-target',
                 },
                 (noteMetrics || []).map(n => ({
                   noteName: n.note_name,
                   octave: n.octave,
-                  targetAccuracy: Number(n.target_accuracy ?? n.pitch_accuracy) || 0,
-                  voiceStability: Number(n.voice_stability ?? n.pitch_stability) || 0,
-                  pitchOnsetSpeedMs: Number(n.pitch_onset_speed_ms) || 0,
-                  inTuneSustainMs: Number(n.in_tune_sustain_ms) || 0,
-                  pitchDirection: n.pitch_direction || 'on-target',
-                  mostSungNote: n.most_sung_note,
                   pitchAccuracy: Number(n.pitch_accuracy) || 0,
+                  pitchOnsetSpeedMs: Number(n.pitch_onset_speed_ms) || 0,
                   pitchStability: Number(n.pitch_stability) || 0,
+                  inTuneSustainMs: Number(n.in_tune_sustain_ms) || 0,
                   avgCentsDeviation: Number(n.avg_cents_deviation) || 0,
                 })),
                 { lessonNotes }

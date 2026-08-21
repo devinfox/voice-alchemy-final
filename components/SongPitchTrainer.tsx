@@ -3,7 +3,7 @@
 import { useState, useEffect, useRef, useCallback } from 'react'
 import { Music, X, Maximize2, Minimize2, Mic, MicOff, Search, Loader2, TrendingUp, Save, Music2, ChevronRight, Volume2, Zap, RefreshCw, Check, AlertCircle } from 'lucide-react'
 import Script from 'next/script'
-import { analyzeBuffer, type DetectedNote as PitchDetectedNote } from '@/lib/pitch-detection'
+import { analyzeBuffer } from '@/lib/pitch-detection'
 
 // ============================================================================
 // CONSTANTS & TYPES
@@ -51,18 +51,19 @@ const SCALE_NOTES: Record<string, string[]> = {
 // MIDDLE_A / SEMITONE now live in lib/pitch-detection alongside the note math.
 const BUFFER_SIZE = 4096
 const IN_TUNE_THRESHOLD = 10
-const NOTE_EVENT_STABILITY_FRAMES = 3
-const NOTE_EVENT_GAP_RESET_MS = 350
-
-type AubioPitchDetector = { do: (buffer: Float32Array) => number }
-type AubioModule = { Pitch: new (method: string, bufferSize: number, hopSize: number, sampleRate: number) => AubioPitchDetector }
-type AudioContextConstructor = typeof AudioContext
 
 declare global {
   interface Window {
-    aubio: () => Promise<AubioModule>
-    webkitAudioContext?: AudioContextConstructor
+    aubio: () => Promise<any>
   }
+}
+
+interface DetectedNote {
+  name: string
+  value: number
+  cents: number
+  octave: number
+  frequency: number
 }
 
 interface SongResult {
@@ -84,13 +85,13 @@ interface SongResult {
 // PITCH DETECTION HOOK
 // ============================================================================
 
-function usePitchDetection(sensitivity: number, onNoteDetected: (note: PitchDetectedNote) => void) {
+function usePitchDetection(sensitivity: number, onNoteDetected: (note: DetectedNote) => void) {
   const [isListening, setIsListening] = useState(false)
   const [aubioLoaded, setAubioLoaded] = useState(false)
   const audioContextRef = useRef<AudioContext | null>(null)
   const analyserRef = useRef<AnalyserNode | null>(null)
   const scriptProcessorRef = useRef<ScriptProcessorNode | null>(null)
-  const pitchDetectorRef = useRef<AubioPitchDetector | null>(null)
+  const pitchDetectorRef = useRef<any>(null)
   const streamRef = useRef<MediaStream | null>(null)
   const sensitivityRef = useRef(sensitivity)
   const callbackRef = useRef(onNoteDetected)
@@ -104,9 +105,7 @@ function usePitchDetection(sensitivity: number, onNoteDetected: (note: PitchDete
       return
     }
     try {
-      const AudioContextCtor = window.AudioContext || window.webkitAudioContext
-      if (!AudioContextCtor) throw new Error('Web Audio is not supported in this browser')
-      audioContextRef.current = new AudioContextCtor()
+      audioContextRef.current = new (window.AudioContext || (window as any).webkitAudioContext)()
       analyserRef.current = audioContextRef.current.createAnalyser()
       scriptProcessorRef.current = audioContextRef.current.createScriptProcessor(BUFFER_SIZE, 1, 1)
       const aubioModule = await window.aubio()
@@ -123,16 +122,15 @@ function usePitchDetection(sensitivity: number, onNoteDetected: (note: PitchDete
 
         // Shared gating: amplitude threshold plus the 60-2000Hz plausibility
         // check, identical across all three trainers.
-        if (!pitchDetectorRef.current) return
         const detected = analyzeBuffer(input, pitchDetectorRef.current, sensitivityRef.current)
         if (!detected) return
 
         callbackRef.current(detected)
       })
       setIsListening(true)
-    } catch (error) {
+    } catch (error: any) {
       console.error('Mic error:', error)
-      alert(error instanceof Error ? error.message : 'Could not access microphone')
+      alert(error.message)
     }
   }, [])
 
@@ -164,7 +162,7 @@ export default function SongPitchTrainer({ variant = 'floating' }: SongPitchTrai
   const [isOpen, setIsOpen] = useState(false)
   const [isFullscreen, setIsFullscreen] = useState(false)
   const [sensitivity, setSensitivity] = useState(60)
-  const [detectedNote, setDetectedNote] = useState<PitchDetectedNote | null>(null)
+  const [detectedNote, setDetectedNote] = useState<DetectedNote | null>(null)
 
   // Song search
   const [searchQuery, setSearchQuery] = useState('')
@@ -177,10 +175,7 @@ export default function SongPitchTrainer({ variant = 'floating' }: SongPitchTrai
   const [inKeyNotes, setInKeyNotes] = useState(0)
   const [recentHistory, setRecentHistory] = useState<boolean[]>([])
   const [isSaving, setIsSaving] = useState(false)
-  const startTimeRef = useRef<Date | null>(null)
-  const totalCentsDeviationRef = useRef<number>(0)
-  const stableNoteRef = useRef<{ key: string; frames: number; note: PitchDetectedNote; counted: boolean } | null>(null)
-  const lastDetectionAtRef = useRef<number>(0)
+  const [startTime, setStartTime] = useState<Date | null>(null)
 
   // Key verification
   const [isVerifying, setIsVerifying] = useState(false)
@@ -197,40 +192,15 @@ export default function SongPitchTrainer({ variant = 'floating' }: SongPitchTrai
     return scale.some(n => n.replace('♯', '#') === normalized)
   }, [selectedSong])
 
-  // Track note events, not every pitch-detection frame. A sustained sung note
-  // produces many audio callbacks, so count only after the same note is stable.
+  // Track notes
   useEffect(() => {
     if (!detectedNote || !selectedSong || !isListening) return
-    const noteKey = `${detectedNote.nameAscii}-${detectedNote.octave}`
-    const stable = stableNoteRef.current
-    const nowMs = Date.now()
-    const detectionGapMs = nowMs - lastDetectionAtRef.current
-    lastDetectionAtRef.current = nowMs
-
-    if (stable?.key === noteKey && detectionGapMs <= NOTE_EVENT_GAP_RESET_MS) {
-      stable.frames += 1
-      stable.note = detectedNote
-    } else {
-      stableNoteRef.current = { key: noteKey, frames: 1, note: detectedNote, counted: false }
-      return
-    }
-
-    const currentStable = stableNoteRef.current
-    if (!currentStable || currentStable.frames < NOTE_EVENT_STABILITY_FRAMES) return
-    if (currentStable.counted) return
-
-    currentStable.counted = true
-    const note = currentStable.note
-    const inKey = isNoteInKey(note.name)
+    const inKey = isNoteInKey(detectedNote.name)
     setTotalNotes(n => n + 1)
     if (inKey) setInKeyNotes(n => n + 1)
-    totalCentsDeviationRef.current += Math.abs(note.cents)
     setRecentHistory(h => [...h.slice(-29), inKey])
-    if (!startTimeRef.current) {
-      const now = new Date()
-      startTimeRef.current = now
-    }
-  }, [detectedNote, selectedSong, isListening, isNoteInKey])
+    if (!startTime) setStartTime(new Date())
+  }, [detectedNote, selectedSong, isListening, isNoteInKey, startTime])
 
   // Search songs
   const searchSongs = async () => {
@@ -253,11 +223,8 @@ export default function SongPitchTrainer({ variant = 'floating' }: SongPitchTrai
     setSearchResults([])
     setTotalNotes(0)
     setInKeyNotes(0)
-    totalCentsDeviationRef.current = 0
-    stableNoteRef.current = null
-    lastDetectionAtRef.current = 0
     setRecentHistory([])
-    startTimeRef.current = null
+    setStartTime(null)
     setVerificationStatus('none')
   }
 
@@ -309,19 +276,17 @@ export default function SongPitchTrainer({ variant = 'floating' }: SongPitchTrai
     if (!selectedSong || totalNotes === 0) return
     setIsSaving(true)
     try {
-      const avgCents = totalNotes > 0 ? totalCentsDeviationRef.current / totalNotes : 0
       await fetch('/api/pitch-training/song-key-session', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          startedAt: startTimeRef.current?.toISOString() || new Date().toISOString(),
+          startedAt: startTime?.toISOString(),
           endedAt: new Date().toISOString(),
           songKey: selectedSong.key,
           songTitle: selectedSong.title,
           songArtist: selectedSong.artist,
           songBpm: selectedSong.bpm,
           inKeyPercentage: (inKeyNotes / totalNotes) * 100,
-          avgCentsDeviation: Math.round(avgCents * 10) / 10,
           totalNotes
         })
       })
@@ -682,15 +647,9 @@ export default function SongPitchTrainer({ variant = 'floating' }: SongPitchTrai
       )}
 
       <Script
-        src="/vendor/aubio.min.js"
+        src="https://cdn.jsdelivr.net/npm/aubiojs@0.1.1/build/aubio.min.js"
         strategy="lazyOnload"
         onLoad={() => setAubioLoaded(true)}
-        onError={() => {
-          const fallback = document.createElement('script')
-          fallback.src = 'https://cdn.jsdelivr.net/npm/aubiojs@0.1.1/build/aubio.min.js'
-          fallback.onload = () => setAubioLoaded(true)
-          document.head.appendChild(fallback)
-        }}
       />
     </>
   )

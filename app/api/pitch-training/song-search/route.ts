@@ -247,12 +247,6 @@ const SONG_DATABASE: SongResult[] = [
 
 export async function GET(request: NextRequest) {
   try {
-    const supabase = await createClient()
-    const { data: { user } } = await supabase.auth.getUser()
-    if (!user) {
-      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
-    }
-
     const { searchParams } = new URL(request.url)
     const query = searchParams.get('q')?.toLowerCase().trim()
 
@@ -264,6 +258,7 @@ export async function GET(request: NextRequest) {
     }
 
     // First, check our verified song keys cache (most accurate)
+    const supabase = await createClient()
     let verifiedMatches: SongResult[] = []
 
     try {

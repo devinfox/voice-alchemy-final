@@ -23,7 +23,7 @@ import { clearSharedMicStream, setSharedMicStream } from '@/lib/shared-mic-strea
 export interface VideoWebRTCHandle {
   disconnect: () => Promise<void>
   reconnect: () => void
-  stopRecording: () => Promise<{ videoBlob: Blob | null; audioBlob: Blob | null }>
+  stopRecording: () => Promise<Blob | null>
   isRecording: () => boolean
 }
 
@@ -36,7 +36,7 @@ interface VideoWebRTCProps {
   autoRecord?: boolean
   className?: string
   isMiniPlayer?: boolean
-  onRecordingComplete?: (videoBlob: Blob, audioBlob?: Blob | null) => Promise<void> | void
+  onRecordingComplete?: (blob: Blob) => Promise<void> | void
   onError?: (error: Error) => void
 }
 
@@ -122,9 +122,6 @@ const VideoWebRTC = forwardRef<VideoWebRTCHandle, VideoWebRTCProps>(function Vid
   const peerConnectionsRef = useRef<Map<string, PeerConnection>>(new Map())
   const mediaRecorderRef = useRef<MediaRecorder | null>(null)
   const recordedChunksRef = useRef<Blob[]>([])
-  const audioMediaRecorderRef = useRef<MediaRecorder | null>(null)
-  const recordedAudioChunksRef = useRef<Blob[]>([])
-  const mixedAudioStreamRef = useRef<MediaStream | null>(null)
   const audioContextRef = useRef<AudioContext | null>(null)
   // Periodic RMS logging of the mixed recording audio, for diagnosing silent recordings
   const audioLevelIntervalRef = useRef<NodeJS.Timeout | null>(null)
@@ -902,7 +899,6 @@ const VideoWebRTC = forwardRef<VideoWebRTCHandle, VideoWebRTCProps>(function Vid
       `${combinedStream.getAudioTracks().length} audio track(s)`
     )
 
-    mixedAudioStreamRef.current = destination.stream
     combinedStreamRef.current = combinedStream
     return combinedStream
   }, [remoteStreams])
@@ -981,6 +977,10 @@ const VideoWebRTC = forwardRef<VideoWebRTCHandle, VideoWebRTCProps>(function Vid
       }
       console.log('[VideoWebRTC] Combined stream created with', stream.getTracks().length, 'tracks')
 
+      // The audio mix is built once, here. A participant who joins after this
+      // point is NOT in the recorded audio, because createCombinedStream is not
+      // re-run. If recording starts before the student connects, the lesson is
+      // captured with the teacher's microphone only, or silence.
       if (remoteStreams.size === 0) {
         console.warn(
           '[RecordingAudio] Recording is starting with NO remote participant connected. ' +
@@ -989,7 +989,6 @@ const VideoWebRTC = forwardRef<VideoWebRTCHandle, VideoWebRTCProps>(function Vid
         )
       }
 
-      // 1. Master Video Recorder (Canvas + Audio Mix)
       const options = { mimeType: 'video/webm;codecs=vp9,opus' }
       if (!MediaRecorder.isTypeSupported(options.mimeType)) {
         options.mimeType = 'video/webm'
@@ -1001,60 +1000,29 @@ const VideoWebRTC = forwardRef<VideoWebRTCHandle, VideoWebRTCProps>(function Vid
       recorder.ondataavailable = (event) => {
         if (event.data.size > 0) {
           recordedChunksRef.current.push(event.data)
-          if (recordedChunksRef.current.length % 5 === 0) {
+          // Log every 10 chunks to confirm data is being captured
+          if (recordedChunksRef.current.length % 10 === 0) {
             const totalSize = recordedChunksRef.current.reduce((sum, chunk) => sum + chunk.size, 0)
-            console.log(`[VideoWebRTC] Recording progress: ${recordedChunksRef.current.length} video chunks, ${(totalSize / 1024 / 1024).toFixed(2)} MB`)
+            console.log(`[VideoWebRTC] Recording progress: ${recordedChunksRef.current.length} chunks, ${(totalSize / 1024 / 1024).toFixed(2)} MB`)
           }
-        }
-      }
-
-      // 2. Dedicated AI Audio Recorder (Lightweight Opus track < 25MB)
-      let audioRecorder: MediaRecorder | null = null
-      if (mixedAudioStreamRef.current && mixedAudioStreamRef.current.getAudioTracks().length > 0) {
-        try {
-          const audioOptions: MediaRecorderOptions = {
-            mimeType: 'audio/webm;codecs=opus',
-            audioBitsPerSecond: 32000,
-          }
-          if (!MediaRecorder.isTypeSupported(audioOptions.mimeType!)) {
-            audioOptions.mimeType = 'audio/webm'
-          }
-          audioRecorder = new MediaRecorder(mixedAudioStreamRef.current, audioOptions)
-          recordedAudioChunksRef.current = []
-          audioRecorder.ondataavailable = (event) => {
-            if (event.data.size > 0) {
-              recordedAudioChunksRef.current.push(event.data)
-            }
-          }
-          audioRecorder.start(5000)
-          audioMediaRecorderRef.current = audioRecorder
-          console.log('[VideoWebRTC] Dedicated AI audio recorder started (32kbps Opus)')
-        } catch (audioErr) {
-          console.warn('[VideoWebRTC] Could not start dedicated audio recorder:', audioErr)
         }
       }
 
       recorder.onstop = () => {
-        const videoBlob = new Blob(recordedChunksRef.current, { type: 'video/webm' })
-        const audioBlob = recordedAudioChunksRef.current.length > 0
-          ? new Blob(recordedAudioChunksRef.current, { type: 'audio/webm' })
-          : null
-
+        const blob = new Blob(recordedChunksRef.current, { type: 'video/webm' })
         recordedChunksRef.current = []
-        recordedAudioChunksRef.current = []
-
-        onRecordingComplete?.(videoBlob, audioBlob)
+        onRecordingComplete?.(blob)
 
         if (animationFrameRef.current) {
           cancelAnimationFrame(animationFrameRef.current)
         }
       }
 
-      recorder.start(5000)
+      recorder.start(1000)
       mediaRecorderRef.current = recorder
       recordingStartTimeRef.current = Date.now()
       setIsRecording(true)
-      console.log('[VideoWebRTC] Video and audio recording started with 5s timeslice')
+      console.log('[VideoWebRTC] Recording started')
 
       // Set up 2-hour auto-stop timer
       if (recordingTimeoutRef.current) {
@@ -1064,15 +1032,19 @@ const VideoWebRTC = forwardRef<VideoWebRTCHandle, VideoWebRTCProps>(function Vid
         console.log('[VideoWebRTC] 2-hour recording limit reached')
         autoStopRecording()
       }, RECORDING_MAX_DURATION)
+      console.log('[VideoWebRTC] Recording will auto-stop in 2 hours')
 
       signalingRef.current?.updateRecordingStatus(true)
     } catch (err) {
       console.error('[VideoWebRTC] Error starting recording:', err)
     }
+    // remoteStreams.size drives the "no participant connected" warning above.
+    // createCombinedStream already depends on remoteStreams, so this callback's
+    // identity was changing with it regardless.
   }, [createCombinedStream, onRecordingComplete, autoStopRecording, remoteStreams.size])
 
-  // Stop recording and return { videoBlob, audioBlob }
-  const stopRecordingAndGetBlob = useCallback(async (): Promise<{ videoBlob: Blob | null; audioBlob: Blob | null }> => {
+  // Stop recording and return the blob (without disconnecting)
+  const stopRecordingAndGetBlob = useCallback(async (): Promise<Blob | null> => {
     // Clear the 2-hour auto-stop timer
     if (recordingTimeoutRef.current) {
       clearTimeout(recordingTimeoutRef.current)
@@ -1080,43 +1052,29 @@ const VideoWebRTC = forwardRef<VideoWebRTCHandle, VideoWebRTCProps>(function Vid
     }
     recordingStartTimeRef.current = null
 
-    // Stop audio recorder if active
-    if (audioMediaRecorderRef.current && audioMediaRecorderRef.current.state !== 'inactive') {
-      try {
-        audioMediaRecorderRef.current.stop()
-      } catch (err) {
-        console.warn('[VideoWebRTC] Error stopping audio recorder:', err)
-      }
-    }
-
     if (!mediaRecorderRef.current || mediaRecorderRef.current.state === 'inactive') {
-      console.log('[VideoWebRTC] No active recording to stop')
-      return { videoBlob: null, audioBlob: null }
+      console.log('[VideoWebRTC] No active recording to stop - mediaRecorder:', mediaRecorderRef.current ? `state=${mediaRecorderRef.current.state}` : 'null')
+      return null
     }
 
-    console.log('[VideoWebRTC] Stopping recording... video chunks collected:', recordedChunksRef.current.length)
+    console.log('[VideoWebRTC] Stopping recording... chunks collected:', recordedChunksRef.current.length)
 
     // Create a promise that resolves when recording stops, with timeout
-    const recordingPromise = new Promise<{ videoBlob: Blob | null; audioBlob: Blob | null }>((resolve) => {
+    const recordingPromise = new Promise<Blob | null>((resolve) => {
       const recorder = mediaRecorderRef.current!
       const timeoutId = setTimeout(() => {
         console.warn('[VideoWebRTC] Recording stop timed out after 10s')
-        resolve({ videoBlob: null, audioBlob: null })
+        resolve(null)
       }, 10000)
 
       recorder.onstop = () => {
         clearTimeout(timeoutId)
-        const videoBlob = new Blob(recordedChunksRef.current, { type: 'video/webm' })
-        const audioBlob = recordedAudioChunksRef.current.length > 0
-          ? new Blob(recordedAudioChunksRef.current, { type: 'audio/webm' })
-          : null
-
-        console.log('[VideoWebRTC] Recording stopped, videoBlob:', videoBlob.size, 'audioBlob:', audioBlob?.size)
+        const blob = new Blob(recordedChunksRef.current, { type: 'video/webm' })
+        console.log('[VideoWebRTC] Recording stopped, blob size:', blob.size)
         recordedChunksRef.current = []
-        recordedAudioChunksRef.current = []
         setIsRecording(false)
         signalingRef.current?.updateRecordingStatus(false)
-        resolve({ videoBlob, audioBlob })
+        resolve(blob)
       }
 
       recorder.stop()
@@ -1145,6 +1103,12 @@ const VideoWebRTC = forwardRef<VideoWebRTCHandle, VideoWebRTCProps>(function Vid
   // Internal disconnect helper so we can optionally preserve auto-reconnect behavior.
   const disconnectInternal = useCallback(async (markUserDisconnected: boolean) => {
     console.log('[VideoWebRTC] Disconnecting... markUserDisconnected:', markUserDisconnected)
+    console.log('[VideoWebRTC] Current recording state:', {
+      mediaRecorderExists: !!mediaRecorderRef.current,
+      mediaRecorderState: mediaRecorderRef.current?.state,
+      isRecording,
+      hasOnRecordingComplete: !!onRecordingComplete
+    })
 
     // Mark explicit user disconnect only when requested (manual stop).
     if (markUserDisconnected) {
@@ -1153,18 +1117,23 @@ const VideoWebRTC = forwardRef<VideoWebRTCHandle, VideoWebRTCProps>(function Vid
 
     // Stop recording and upload
     console.log('[VideoWebRTC] Calling stopRecordingAndGetBlob...')
-    const { videoBlob, audioBlob } = await stopRecordingAndGetBlob()
+    const recordingBlob = await stopRecordingAndGetBlob()
+    console.log('[VideoWebRTC] stopRecordingAndGetBlob returned:', recordingBlob ? `${recordingBlob.size} bytes` : 'null')
 
-    if (videoBlob && videoBlob.size > 0 && onRecordingComplete) {
+    if (recordingBlob && recordingBlob.size > 0 && onRecordingComplete) {
       console.log('[VideoWebRTC] Uploading recording via onRecordingComplete...')
       try {
-        await onRecordingComplete(videoBlob, audioBlob)
+        await onRecordingComplete(recordingBlob)
         console.log('[VideoWebRTC] Recording uploaded successfully via onRecordingComplete')
       } catch (err) {
         console.error('[VideoWebRTC] Error uploading recording:', err)
       }
     } else {
-      console.warn('[VideoWebRTC] Skipping upload: no valid recording blob')
+      console.warn('[VideoWebRTC] Skipping upload:', {
+        hasBlob: !!recordingBlob,
+        blobSize: recordingBlob?.size ?? 0,
+        hasCallback: !!onRecordingComplete
+      })
     }
 
     // Close all peer connections

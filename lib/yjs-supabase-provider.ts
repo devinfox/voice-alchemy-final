@@ -139,61 +139,28 @@ export class YjsSupabaseProvider {
       }
     })
 
-    // Handle sync requests from other clients (state vector diff handshake)
+    // Handle sync requests from other clients
     this.channel.on('broadcast', { event: 'sync-request' }, ({ payload }) => {
       if (payload.clientId !== this.clientId && this.synced) {
-        try {
-          const remoteVector = payload.stateVector ? decodeUpdate(payload.stateVector) : null
-          const delta = remoteVector
-            ? Y.encodeStateAsUpdate(this.ydoc, remoteVector)
-            : Y.encodeStateAsUpdate(this.ydoc)
-
-          if (delta.byteLength > 0) {
-            this.channel?.send({
-              type: 'broadcast',
-              event: 'sync-response',
-              payload: {
-                clientId: this.clientId,
-                targetClientId: payload.clientId,
-                state: encodeUpdate(delta),
-                // Send our state vector so the remote peer can also send us any missing updates
-                stateVector: encodeUpdate(Y.encodeStateVector(this.ydoc)),
-              },
-            })
-          }
-        } catch (error) {
-          console.error('[YjsProvider] Error handling sync-request:', error)
-        }
+        const state = Y.encodeStateAsUpdate(this.ydoc)
+        this.channel?.send({
+          type: 'broadcast',
+          event: 'sync-response',
+          payload: {
+            clientId: this.clientId,
+            targetClientId: payload.clientId,
+            state: encodeUpdate(state),
+          },
+        })
       }
     })
 
-    // Handle sync responses (apply update delta and optionally send missing updates back)
+    // Handle sync responses
     this.channel.on('broadcast', { event: 'sync-response' }, ({ payload }) => {
       if (payload.targetClientId === this.clientId) {
         try {
-          if (payload.state) {
-            const state = decodeUpdate(payload.state)
-            if (state.byteLength > 0) {
-              Y.applyUpdate(this.ydoc, state, 'remote')
-            }
-          }
-
-          // If remote peer included their state vector, send back any updates they lack
-          if (payload.stateVector && this.synced) {
-            const remoteVector = decodeUpdate(payload.stateVector)
-            const delta = Y.encodeStateAsUpdate(this.ydoc, remoteVector)
-            if (delta.byteLength > 0) {
-              this.channel?.send({
-                type: 'broadcast',
-                event: 'sync-response',
-                payload: {
-                  clientId: this.clientId,
-                  targetClientId: payload.clientId,
-                  state: encodeUpdate(delta),
-                },
-              })
-            }
-          }
+          const state = decodeUpdate(payload.state)
+          Y.applyUpdate(this.ydoc, state, 'remote')
         } catch (error) {
           console.error('[YjsProvider] Error applying sync state:', error)
         }
@@ -258,14 +225,11 @@ export class YjsSupabaseProvider {
         // Load initial state from database
         await this.loadInitialState()
 
-        // Request state diff from any already-connected clients
+        // Request state from any already-connected clients (they may have newer state)
         this.channel?.send({
           type: 'broadcast',
           event: 'sync-request',
-          payload: {
-            clientId: this.clientId,
-            stateVector: encodeUpdate(Y.encodeStateVector(this.ydoc)),
-          },
+          payload: { clientId: this.clientId },
         })
 
         // Broadcast our initial awareness state
@@ -286,7 +250,7 @@ export class YjsSupabaseProvider {
     try {
       const { data: note, error } = await this.supabase
         .from('lesson_current_notes')
-        .select('yjs_state')
+        .select('yjs_document_state')
         .eq('student_id', this.documentId)
         .maybeSingle()
 
@@ -297,9 +261,9 @@ export class YjsSupabaseProvider {
         return
       }
 
-      if (note?.yjs_state) {
+      if (note?.yjs_document_state) {
         try {
-          const state = decodeUpdate(note.yjs_state)
+          const state = decodeUpdate(note.yjs_document_state)
           Y.applyUpdate(this.ydoc, state, 'remote')
         } catch (error) {
           console.error('[YjsProvider] Error applying initial state:', error)
@@ -352,62 +316,19 @@ export class YjsSupabaseProvider {
       const encodedState = encodeUpdate(state)
 
       const xmlFragment = this.ydoc.getXmlFragment('prosemirror')
-      const convertXmlToHtml = (node: unknown): string => {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const convertXmlToHtml = (node: any): string => {
         if (node instanceof Y.XmlText) {
-          const deltas = node.toDelta() as Array<{ insert?: unknown; attributes?: Record<string, any> }>
-          return deltas.map((delta) => {
-            let text = String(delta.insert ?? '')
-              .replace(/&/g, '&amp;')
-              .replace(/</g, '&lt;')
-              .replace(/>/g, '&gt;')
-
-            if (!delta.attributes) return text
-
-            if (delta.attributes.bold) text = `<strong>${text}</strong>`
-            if (delta.attributes.italic) text = `<em>${text}</em>`
-            if (delta.attributes.strike) text = `<s>${text}</s>`
-            if (delta.attributes.code) text = `<code>${text}</code>`
-            if (delta.attributes.link?.href) {
-              text = `<a href="${encodeURI(String(delta.attributes.link.href))}">${text}</a>`
-            }
-            return text
-          }).join('')
+          return node.toString()
         }
-
         if (node instanceof Y.XmlElement) {
           const tag = node.nodeName
-          const children = Array.from(node.toArray()).map(child => convertXmlToHtml(child)).join('')
-
-          switch (tag) {
-            case 'paragraph':
-              return `<p>${children}</p>`
-            case 'heading': {
-              const level = node.getAttribute('level') || 1
-              return `<h${level}>${children}</h${level}>`
-            }
-            case 'bullet_list':
-              return `<ul>${children}</ul>`
-            case 'ordered_list':
-              return `<ol>${children}</ol>`
-            case 'list_item':
-              return `<li>${children}</li>`
-            case 'blockquote':
-              return `<blockquote>${children}</blockquote>`
-            case 'code_block':
-              return `<pre><code>${children}</code></pre>`
-            case 'hard_break':
-              return '<br>'
-            case 'horizontal_rule':
-              return '<hr>'
-            default:
-              return `<${tag}>${children}</${tag}>`
-          }
+          const children = Array.from(node.toArray()).map((child: unknown) => convertXmlToHtml(child)).join('')
+          return `<${tag}>${children}</${tag}>`
         }
-
         if (node instanceof Y.XmlFragment) {
-          return Array.from(node.toArray()).map(child => convertXmlToHtml(child)).join('')
+          return Array.from(node.toArray()).map((child: unknown) => convertXmlToHtml(child)).join('')
         }
-
         return ''
       }
 
@@ -417,7 +338,7 @@ export class YjsSupabaseProvider {
         .from('lesson_current_notes')
         .upsert({
           student_id: this.documentId,
-          yjs_state: encodedState,
+          yjs_document_state: encodedState,
           content: contentHtml,
           updated_at: new Date().toISOString(),
         })

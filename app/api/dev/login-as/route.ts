@@ -75,25 +75,26 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'User not found in auth' }, { status: 404 })
     }
 
-    // Generate a one-time magic link token — does NOT modify the user's
-    // password or any other account state, so this is safe even if a dev
-    // environment is accidentally pointed at a shared Supabase project.
-    const { data: linkData, error: linkError } = await adminClient.auth.admin.generateLink({
-      type: 'magiclink',
-      email: targetEmail,
-    })
+    // Set a temporary dev password for this user
+    const devPassword = `dev-temp-${Date.now()}-${Math.random().toString(36).slice(2)}`
 
-    if (linkError || !linkData?.properties?.hashed_token) {
-      console.error('[Dev Login] Error generating magic link:', linkError)
-      return NextResponse.json({ error: linkError?.message || 'Failed to generate login link' }, { status: 500 })
+    const { error: updateError } = await adminClient.auth.admin.updateUserById(
+      targetUser.id,
+      { password: devPassword }
+    )
+
+    if (updateError) {
+      console.error('[Dev Login] Error setting dev password:', updateError)
+      return NextResponse.json({ error: updateError.message }, { status: 500 })
     }
 
-    // Client signs in with supabase.auth.verifyOtp({ type: 'magiclink', token_hash })
+    // Return credentials for client-side sign-in
     return NextResponse.json({
       success: true,
       email: targetEmail,
-      tokenHash: linkData.properties.hashed_token,
-      useOtpAuth: true
+      password: devPassword,
+      // Flag to indicate client should use signInWithPassword
+      usePasswordAuth: true
     })
 
   } catch (error) {

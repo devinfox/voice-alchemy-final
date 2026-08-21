@@ -142,12 +142,12 @@ export default function FindTeacherPage() {
       <button
         onClick={() => handleRequestJoin(teacher.id, getTeacherDisplayName(teacher))}
         disabled={requestingId === teacher.id}
-        className="flex items-center gap-2 px-4 py-2.5 bg-gradient-to-r from-[#CEB466] to-[#9c8644] hover:from-[#e0c97d] hover:to-[#CEB466] text-[#171229] font-bold rounded-xl transition-all shadow-md shadow-[#CEB466]/20 disabled:opacity-50"
+        className="flex items-center gap-2 px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg transition-colors disabled:opacity-50"
       >
         {requestingId === teacher.id ? (
-          <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-[#171229]"></div>
+          <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white"></div>
         ) : (
-          <UserPlus className="w-4 h-4 text-[#171229]" />
+          <UserPlus className="w-4 h-4" />
         )}
         <span>Request to Join</span>
       </button>
@@ -155,36 +155,75 @@ export default function FindTeacherPage() {
   }
 
   return (
-    <div className="space-y-6">
-      {/* Header */}
-      <div className="flex items-center gap-4">
-        <Link
-          href="/dashboard/my-lessons"
-          className="p-2.5 rounded-xl bg-white/5 hover:bg-white/10 text-gray-400 hover:text-white transition-all border border-white/10"
-        >
-          <ArrowLeft className="w-5 h-5" />
-        </Link>
-        <div>
-          <h1 className="text-2xl font-bold text-white">Find a Vocal Mentor</h1>
-          <p className="text-gray-400 mt-1">Explore academy teachers and request to join their private studio</p>
+    <div className="relative min-h-[calc(100vh-8rem)]">
+      {/* Coming Soon Overlay */}
+      <div className="absolute inset-0 z-50 flex items-center justify-center">
+        {/* Glassmorphic backdrop */}
+        <div className="absolute inset-0 bg-[#171229]/80 backdrop-blur-md" />
+
+        {/* Coming Soon Card */}
+        <div className="relative z-10 max-w-md mx-auto text-center px-6">
+          {/* Logo */}
+          <div className="mb-8">
+            <Image
+              src="/voice-alchemy-logo-stacked.png"
+              alt="Voice Alchemy Academy"
+              width={180}
+              height={44}
+              className="mx-auto"
+            />
+          </div>
+
+          {/* Sparkle Icon */}
+          <div className="w-20 h-20 mx-auto mb-6 rounded-full bg-gradient-to-br from-[#CEB466]/20 to-[#CEB466]/5 border border-[#CEB466]/30 flex items-center justify-center">
+            <Sparkles className="w-10 h-10 text-[#CEB466]" />
+          </div>
+
+          {/* Text */}
+          <h2 className="text-3xl font-bold text-white mb-3">Coming Soon</h2>
+          <p className="text-slate-400 mb-8 leading-relaxed">
+            We&apos;re working on something amazing! The teacher discovery feature will be available soon.
+          </p>
+
+          {/* Back Button */}
+          <Link
+            href="/dashboard"
+            className="inline-flex items-center gap-2 px-6 py-3 bg-gradient-to-r from-[#CEB466] to-[#9c8644] text-[#171229] font-semibold rounded-xl hover:from-[#d4bc70] hover:to-[#a8914a] transition-all shadow-lg shadow-[#CEB466]/20"
+          >
+            <ArrowLeft className="w-4 h-4" />
+            Back to Dashboard
+          </Link>
         </div>
       </div>
 
+      {/* Original Content (hidden behind overlay) */}
+      <div className="space-y-6 opacity-20 pointer-events-none select-none">
+        {/* Header */}
+        <div className="flex items-center gap-4">
+          <Link href="/dashboard/my-lessons" className="p-2 hover:bg-white/10 rounded-lg transition-colors">
+            <ArrowLeft className="w-5 h-5 text-gray-400" />
+          </Link>
+          <div>
+            <h1 className="text-2xl font-bold text-white">Find a Teacher</h1>
+            <p className="text-gray-400 mt-1">Search for teachers and request to join their lessons</p>
+          </div>
+        </div>
+
       {/* Search Form */}
-      <form onSubmit={handleSearch} className="flex gap-3 max-w-2xl">
+      <form onSubmit={handleSearch} className="flex gap-3">
         <div className="flex-1 relative">
-          <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 w-5 h-5 text-gray-400" />
+          <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-gray-500" />
           <input
             type="text"
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
-            placeholder="Search teachers by name or specialty..."
-            className="w-full pl-11 pr-4 py-3 glass-input rounded-xl text-white placeholder-gray-500"
+            placeholder="Search by name..."
+            className="w-full pl-10 pr-4 py-3 bg-white/5 border border-white/10 rounded-lg text-white placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
           />
         </div>
         <button
           type="submit"
-          className="px-6 py-3 bg-gradient-to-r from-[#CEB466] to-[#9c8644] hover:from-[#e0c97d] hover:to-[#CEB466] text-[#171229] font-bold rounded-xl transition-all shadow-lg shadow-[#CEB466]/20"
+          className="px-6 py-3 bg-blue-600 hover:bg-blue-700 text-white rounded-lg transition-colors"
         >
           Search
         </button>
@@ -192,15 +231,15 @@ export default function FindTeacherPage() {
 
       {/* Success Message */}
       {successMessage && (
-        <div className="bg-emerald-500/15 border border-emerald-500/30 text-emerald-300 px-4 py-3 rounded-xl flex items-center gap-2">
-          <Check className="w-5 h-5 text-emerald-400" />
+        <div className="bg-green-500/10 border border-green-500 text-green-400 px-4 py-3 rounded-lg flex items-center gap-2">
+          <Check className="w-5 h-5" />
           {successMessage}
         </div>
       )}
 
       {/* Error Message */}
       {error && (
-        <div className="bg-red-500/15 border border-red-500/30 text-red-300 px-4 py-3 rounded-xl flex items-center justify-between">
+        <div className="bg-red-500/10 border border-red-500 text-red-400 px-4 py-3 rounded-lg flex items-center justify-between">
           <span>{error}</span>
           <button onClick={() => setError(null)} className="text-red-400 hover:text-red-300">
             <X className="w-5 h-5" />
@@ -211,58 +250,36 @@ export default function FindTeacherPage() {
       {/* Teachers List */}
       {loading ? (
         <div className="flex items-center justify-center h-64">
-          <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-[#CEB466]"></div>
+          <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-white"></div>
         </div>
       ) : teachers.length === 0 ? (
-        <div className="text-center py-12 glass-card rounded-2xl border border-white/10 p-8">
-          <Search className="w-12 h-12 text-[#CEB466]/50 mx-auto mb-4" />
+        <div className="text-center py-12 bg-white/5 backdrop-blur-sm rounded-xl border border-white/10">
+          <Search className="w-12 h-12 text-gray-500 mx-auto mb-4" />
           <h3 className="text-lg font-medium text-white mb-2">No teachers found</h3>
-          <p className="text-gray-400 max-w-md mx-auto">
-            {searchQuery
-              ? 'Try a different search term or clear the filter.'
-              : 'Our faculty members will appear here. Check back shortly or contact support.'}
-          </p>
+          <p className="text-gray-400">{searchQuery ? 'Try a different search term.' : 'No teachers are available yet.'}</p>
         </div>
       ) : (
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+        <div className="space-y-4">
           {teachers.map((teacher) => (
-            <div
-              key={teacher.id}
-              className="glass-card rounded-2xl border border-white/10 p-6 flex flex-col justify-between hover:border-[#CEB466]/40 transition-all duration-300"
-            >
-              <div className="flex items-start gap-4">
-                <div className="w-14 h-14 rounded-2xl bg-gradient-to-br from-[#CEB466] to-[#9c8644] flex items-center justify-center text-[#171229] font-bold text-xl flex-shrink-0 shadow-lg shadow-[#CEB466]/20 ring-2 ring-[#CEB466]/30">
-                  {getTeacherInitials(teacher)}
+            <div key={teacher.id} className="bg-white/5 backdrop-blur-sm rounded-xl border border-white/10 p-5">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-4">
+                  <div className="w-14 h-14 rounded-full bg-gradient-to-br from-green-500 to-teal-600 flex items-center justify-center text-white font-bold text-xl">
+                    {getTeacherInitials(teacher)}
+                  </div>
+                  <div>
+                    <h3 className="font-semibold text-white text-lg">{getTeacherDisplayName(teacher)}</h3>
+                    {teacher.bio && <p className="text-gray-400 line-clamp-2">{teacher.bio}</p>}
+                  </div>
                 </div>
-                <div className="flex-1 min-w-0">
-                  <h3 className="font-semibold text-white text-lg truncate">
-                    {getTeacherDisplayName(teacher)}
-                  </h3>
-                  <p className="text-xs text-[#CEB466] font-medium uppercase tracking-wider mb-2">
-                    Vocal Instructor
-                  </p>
-                  {teacher.bio ? (
-                    <p className="text-sm text-gray-300 line-clamp-3 leading-relaxed">
-                      {teacher.bio}
-                    </p>
-                  ) : (
-                    <p className="text-sm text-gray-500 italic">
-                      Voice Alchemy Academy Certified Vocal Coach.
-                    </p>
-                  )}
-                </div>
-              </div>
 
-              <div className="mt-5 pt-4 border-t border-white/10 flex items-center justify-between">
-                <div className="text-xs text-gray-400">
-                  Private 1-on-1 Lessons
-                </div>
                 {getStatusButton(teacher)}
               </div>
             </div>
           ))}
         </div>
       )}
+      </div>
     </div>
   )
 }

@@ -1,18 +1,44 @@
 /**
- * Single code path for turning a lesson recording into a transcript and an AI summary.
+ * Single code path for turning a lesson recording into a transcript and an AI
+ * summary.
  *
- * Reliability & Correctness Features:
- *   1. Atomic Leased Claiming: Uses claim_lesson_recording RPC with a unique UUID lock token.
- *      Zero chance of two workers running or a stale worker overwriting a newer job.
- *   2. Decoupled Audio Ingestion: Prioritizes lightweight Opus voice assets (<25MB) for Whisper.
- *   3. Speech Coverage Sanity: Analyzes Whisper segments, total voiced duration, and word count.
- *   4. Exponential Backoff Retries: Schedules retry delays (2m, 10m, 30m, 2h) up to 5 max attempts.
- *   5. Chronological Multi-Session Context: Uses previous 3 summaries strictly preceding the current lesson.
- *   6. Strict Verification: Inspects all database write errors explicitly.
+ * This logic previously existed in four near-identical copies:
+ *   app/api/lessons/[relationshipId]/recordings/complete/route.ts
+ *   app/api/lessons/[relationshipId]/recordings/route.ts
+ *   app/api/lessons/[relationshipId]/process-recording/route.ts
+ *   app/api/cron/process-pending-recordings/route.ts
+ *   app/api/admin/process-all-recordings/route.ts
+ * They had drifted (different note lookups, different context depth, different
+ * error handling), so a recording could be summarised differently depending on
+ * which path happened to pick it up. Everything now calls processRecording().
+ *
+ * Two behaviours this adds over the originals:
+ *
+ *   1. A transcript sanity floor. Recordings whose audio is effectively silent
+ *      were still being sent to the summariser, which dutifully produced
+ *      confident lesson summaries from as little as 3 characters. Those are
+ *      fabrications. Below MIN_USABLE_TRANSCRIPT_CHARS we now fail loudly with
+ *      a diagnosable reason instead of writing fiction into the student record.
+ *
+ *   2. Real note context. The summariser prompt is built around the handwritten
+ *      class notes, but the old lookup was `.eq('recording_id', id)` only,
+ *      which never matched because the notes_archive FK pointed at the wrong
+ *      table. We now look up by recording_id and fall back to booking_id, so
+ *      context works even when linking has not happened yet.
  */
 
 import type { SupabaseClient } from '@supabase/supabase-js'
-import { transcribeAudio, generateLessonSummary, type LessonSummary, type LessonTranscript } from '@/lib/openai'
+import { transcribeAudio, generateLessonSummary, type LessonSummary } from '@/lib/openai'
+
+/**
+ * Minimum transcript length we will summarise.
+ *
+ * Calibrated against the existing corpus: real lessons produce thousands of
+ * characters, whereas the known-bad recordings produced 3, 12, 23 and 46. A
+ * genuine but very short lesson clip will be rejected too, which is the correct
+ * trade: a missing summary is recoverable, an invented one is not.
+ */
+export const MIN_USABLE_TRANSCRIPT_CHARS = 200
 
 /** Whisper rejects files above 25MB. Checked before download to save bandwidth. */
 export const MAX_TRANSCRIBABLE_BYTES = 25 * 1024 * 1024
@@ -30,114 +56,44 @@ interface ProcessOptions {
   force?: boolean
 }
 
-interface ClaimedRecording {
-  id: string
-  booking_id: string | null
-  student_id: string | null
-  storage_path: string | null
-  audio_storage_path: string | null
-  file_size_bytes: number | null
-  audio_file_size_bytes: number | null
-  duration_seconds: number | null
-  started_at: string | null
-  ended_at: string | null
-  ai_attempt_count: number
-  ai_lock_token: string
-}
-
 /**
- * Claim a recording for processing via atomic single-statement evaluation.
- * Returns the claimed row with its unique lock token, or null if another active worker owns it.
+ * Claim a recording for processing. Returns false when another worker already
+ * has it, which is what stops the cron, the upload handler and the end-class
+ * backup trigger from transcribing the same file three times.
  */
 async function claimRecording(
   admin: SupabaseClient,
   recordingId: string,
-  lockToken: string,
   force: boolean
-): Promise<ClaimedRecording | null> {
-  // 1. Try atomic Postgres RPC
-  const { data: rpcData, error: rpcError } = await admin.rpc('claim_lesson_recording', {
-    p_recording_id: recordingId,
-    p_lock_token: lockToken,
-    p_lease_seconds: 900, // 15-minute lease
-    p_max_attempts: 5,
-    p_force: force,
-  })
-
-  if (!rpcError && rpcData && rpcData.length > 0) {
-    return rpcData[0] as ClaimedRecording
-  }
-
-  // 2. Fallback to direct atomic conditional UPDATE if migration RPC not yet applied
-  const now = new Date().toISOString()
-  const fifteenMinutesAgo = new Date(Date.now() - 15 * 60 * 1000).toISOString()
-
-  let updateQuery = admin
+): Promise<boolean> {
+  const query = admin
     .from('lesson_recordings')
-    .update({
-      ai_processing_status: 'processing',
-      ai_locked_at: now,
-      ai_lock_token: lockToken,
-    })
+    .update({ ai_processing_status: 'processing' })
     .eq('id', recordingId)
+    .select('id')
 
-  if (!force) {
-    updateQuery = updateQuery.or(
-      `ai_processing_status.in.(pending,failed),and(ai_processing_status.eq.processing,ai_locked_at.lt.${fifteenMinutesAgo})`
-    )
-  }
+  // Without force, only claim rows that are genuinely waiting. The .in() filter
+  // is the atomic part: two concurrent callers cannot both match.
+  const { data } = force
+    ? await query.maybeSingle()
+    : await query.in('ai_processing_status', ['pending', 'failed']).maybeSingle()
 
-  const { data: directData, error: directError } = await updateQuery
-    .select('id, booking_id, student_id, storage_path, audio_storage_path, file_size_bytes, audio_file_size_bytes, duration_seconds, started_at, ended_at, ai_attempt_count, ai_lock_token')
-    .maybeSingle()
+  return !!data
+}
 
-  if (directError || !directData) {
-    return null
-  }
-
-  return directData as ClaimedRecording
+async function markFailed(admin: SupabaseClient, recordingId: string, reason: string) {
+  await admin
+    .from('lesson_recordings')
+    .update({ ai_processing_status: 'failed', ai_processing_error: reason })
+    .eq('id', recordingId)
 }
 
 /**
- * Mark recording as failed with exponential retry scheduling and lock token ownership check.
- */
-async function markFailed(
-  admin: SupabaseClient,
-  recordingId: string,
-  lockToken: string | null,
-  reason: string,
-  attemptCount: number
-) {
-  const retryDelaysMinutes = [2, 10, 30, 120]
-  const delayMin = retryDelaysMinutes[Math.min(attemptCount - 1, retryDelaysMinutes.length - 1)] || 120
-  const nextRetryAt = attemptCount < 5
-    ? new Date(Date.now() + delayMin * 60 * 1000).toISOString()
-    : null
-
-  let query = admin
-    .from('lesson_recordings')
-    .update({
-      ai_processing_status: 'failed',
-      ai_processing_error: reason,
-      ai_locked_at: null,
-      ai_lock_token: null,
-      ai_next_retry_at: nextRetryAt,
-      updated_at: new Date().toISOString(),
-    })
-    .eq('id', recordingId)
-
-  if (lockToken) {
-    query = query.eq('ai_lock_token', lockToken)
-  }
-
-  const { error } = await query
-  if (error) {
-    console.error(`[LessonProcessing] Failed to mark recording ${recordingId} as failed:`, error)
-  }
-}
-
-/**
- * Fetch handwritten note context for a recording.
+ * The handwritten notes for a recording.
+ *
+ * Prefers the linked note, falls back to the most recent archived note for the
+ * same booking. The fallback matters: notes_archive.recording_id was unusable
+ * until the FK was repointed, so linking may be absent for historical rows.
  */
 async function fetchNoteContext(
   admin: SupabaseClient,
@@ -172,44 +128,39 @@ async function fetchNoteContext(
 }
 
 /**
- * Fetch prior lesson summaries strictly preceding the current lesson (chronological safety).
+ * Prior lesson summaries for continuity, scoped to the STUDENT rather than the
+ * booking.
+ *
+ * The original implementation filtered by booking_id, which meant a student who
+ * moved between teachers, or whose relationship row was recreated, lost their
+ * entire history and every lesson read as their first. Continuity should follow
+ * the person.
  */
 async function fetchPreviousSummaries(
   admin: SupabaseClient,
   studentId: string | null,
   excludeRecordingId: string,
-  currentLessonStartedAt: string | null,
   limit = 3
 ): Promise<string[]> {
   if (!studentId) return []
 
-  let query = admin
+  const { data } = await admin
     .from('lesson_recordings')
-    .select('id, ai_summary, started_at, created_at')
+    .select('id, ai_summary, created_at')
     .eq('student_id', studentId)
     .eq('ai_processing_status', 'completed')
     .neq('id', excludeRecordingId)
-
-  if (currentLessonStartedAt) {
-    query = query.lt('started_at', currentLessonStartedAt)
-  }
-
-  const { data, error } = await query
-    .order('started_at', { ascending: false, nullsFirst: false })
+    .order('created_at', { ascending: false })
     .limit(limit)
 
-  if (error) {
-    console.warn('[LessonProcessing] Failed to fetch previous summaries:', error)
-    return []
-  }
-
   return (data || [])
-    .map((r) => (r.ai_summary as LessonSummary | null)?.summary)
+    .map(r => (r.ai_summary as LessonSummary | null)?.summary)
     .filter((s): s is string => typeof s === 'string' && s.length > 0)
 }
 
 /**
- * Download, transcribe, validate, and summarise one recording.
+ * Download, transcribe and summarise one recording. Idempotent and safe to call
+ * concurrently from multiple triggers.
  */
 export async function processRecording(
   admin: SupabaseClient,
@@ -217,148 +168,105 @@ export async function processRecording(
   options: ProcessOptions = {}
 ): Promise<ProcessResult> {
   const { force = false } = options
-  const lockToken = crypto.randomUUID()
 
-  // 1. Single-statement atomic leased claim
-  const recording = await claimRecording(admin, recordingId, lockToken, force)
-  if (!recording) {
-    return { recordingId, status: 'skipped', reason: 'Already claimed by another worker or retry delay active' }
+  const { data: recording, error: fetchError } = await admin
+    .from('lesson_recordings')
+    .select('id, booking_id, student_id, storage_path, file_size_bytes, ai_processing_status')
+    .eq('id', recordingId)
+    .single()
+
+  if (fetchError || !recording) {
+    return { recordingId, status: 'failed', reason: 'Recording not found' }
   }
 
-  const attemptCount = recording.ai_attempt_count || 1
+  if (recording.ai_processing_status === 'completed' && !force) {
+    return { recordingId, status: 'skipped', reason: 'Already processed' }
+  }
 
-  // 2. Select decoupled audio asset or fallback to master video
-  const targetPath = recording.audio_storage_path || recording.storage_path
-  const targetSize = recording.audio_storage_path
-    ? recording.audio_file_size_bytes
-    : recording.file_size_bytes
-
-  if (!targetPath) {
-    await markFailed(admin, recordingId, lockToken, 'No storage path on recording', attemptCount)
+  if (!recording.storage_path) {
+    await markFailed(admin, recordingId, 'No storage path on recording')
     return { recordingId, status: 'failed', reason: 'No storage path' }
   }
 
-  if (targetSize && targetSize > MAX_TRANSCRIBABLE_BYTES) {
-    const mb = (targetSize / 1024 / 1024).toFixed(1)
-    const reason = `File is ${mb}MB, above Whisper's 25MB limit. Please upload audio asset.`
-    await markFailed(admin, recordingId, lockToken, reason, attemptCount)
+  if (recording.file_size_bytes && recording.file_size_bytes > MAX_TRANSCRIBABLE_BYTES) {
+    const mb = (recording.file_size_bytes / 1024 / 1024).toFixed(1)
+    const reason = `Recording is ${mb}MB, above Whisper's 25MB limit. Needs audio extraction or chunking before transcription.`
+    await markFailed(admin, recordingId, reason)
     return { recordingId, status: 'failed', reason }
   }
 
+  if (!(await claimRecording(admin, recordingId, force))) {
+    return { recordingId, status: 'skipped', reason: 'Already claimed by another worker' }
+  }
+
   try {
-    // 3. Download audio asset from Supabase Storage
     const { data: file, error: downloadError } = await admin.storage
       .from('lesson-recordings')
-      .download(targetPath)
+      .download(recording.storage_path)
 
     if (downloadError || !file) {
       throw new Error(`Download failed: ${downloadError?.message ?? 'unknown error'}`)
     }
 
     const buffer = Buffer.from(await file.arrayBuffer())
-    console.log(`[LessonProcessing] ${recordingId}: downloaded ${buffer.length} bytes from ${targetPath}`)
+    console.log(`[LessonProcessing] ${recordingId}: downloaded ${buffer.length} bytes`)
 
-    if (buffer.length > MAX_TRANSCRIBABLE_BYTES) {
-      throw new Error(`Downloaded buffer is ${(buffer.length / 1024 / 1024).toFixed(1)}MB, exceeds 25MB ceiling`)
-    }
-
-    // 4. Audio Transcription with Whisper
-    const transcript: LessonTranscript = await transcribeAudio(buffer, `${recordingId}.webm`)
+    const transcript = await transcribeAudio(buffer, `${recordingId}.webm`)
     const transcriptText = (transcript.text || '').trim()
-    const segments = transcript.segments || []
+    console.log(`[LessonProcessing] ${recordingId}: transcript ${transcriptText.length} chars`)
 
-    console.log(`[LessonProcessing] ${recordingId}: transcribed ${transcriptText.length} chars across ${segments.length} segments`)
-
-    // 5. Speech Coverage & Sanity Analysis
-    let durationSeconds = recording.duration_seconds
-    if (!durationSeconds && recording.started_at && recording.ended_at) {
-      durationSeconds = Math.round((new Date(recording.ended_at).getTime() - new Date(recording.started_at).getTime()) / 1000)
-    }
-    const safeDuration = durationSeconds || 1800
-
-    const totalVoicedSeconds = segments.reduce((acc, seg) => acc + Math.max(0, seg.end - seg.start), 0)
-    const wordCount = transcriptText.split(/\s+/).filter(Boolean).length
-
-    // Minimum coverage check: A 60-min vocal class has scales & discussions.
-    // If a session > 5 min has < 12 seconds of voiced audio or < 4 segments, it is silent/corrupt.
-    const isSilentOrCorrupt = (safeDuration >= 300 && (totalVoicedSeconds < 12 || segments.length < 4 || wordCount < 25)) ||
-                             (safeDuration < 300 && (transcriptText.length < 15 || wordCount < 4))
-
-    if (isSilentOrCorrupt) {
+    // Sanity floor. Store the transcript we did get so the failure is
+    // diagnosable, but refuse to summarise from it.
+    if (transcriptText.length < MIN_USABLE_TRANSCRIPT_CHARS) {
       const reason =
-        `Transcript failed speech coverage validation for ${Math.round(safeDuration / 60)}min session ` +
-        `(${Math.round(totalVoicedSeconds)}s voiced across ${segments.length} segments, ${wordCount} words). ` +
-        `Audio track may be silent or missing participant audio.`
+        `Transcript too short to summarise (${transcriptText.length} chars, ` +
+        `minimum ${MIN_USABLE_TRANSCRIPT_CHARS}). The recording's audio track is ` +
+        `likely silent or missing - check microphone capture and that remote ` +
+        `participant audio is mixed into the recorded stream.`
 
-      await markFailed(admin, recordingId, lockToken, reason, attemptCount)
+      await admin
+        .from('lesson_recordings')
+        .update({
+          transcript: transcriptText || null,
+          ai_processing_status: 'failed',
+          ai_processing_error: reason,
+        })
+        .eq('id', recordingId)
+
       console.warn(`[LessonProcessing] ${recordingId}: ${reason}`)
       return { recordingId, status: 'failed', reason, transcriptChars: transcriptText.length }
     }
 
-    // 6. Context Lookups (Handwritten notes & Chronological historical summaries)
     const notes = await fetchNoteContext(admin, recordingId, recording.booking_id)
-    const previousSummaries = await fetchPreviousSummaries(
-      admin,
-      recording.student_id,
-      recordingId,
-      recording.started_at,
-      3
-    )
+    const previousSummaries = await fetchPreviousSummaries(admin, recording.student_id, recordingId)
 
     console.log(
-      `[LessonProcessing] ${recordingId}: context notes=${notes.text ? `${notes.text.length} chars` : 'none'} ` +
-      `previousSummaries=${previousSummaries.length}`
+      `[LessonProcessing] ${recordingId}: notes ${notes.text ? notes.text.length + ' chars' : 'none'}, ` +
+      `${previousSummaries.length} prior summaries for continuity`
     )
 
-    // 7. Synthesize complete pedagogical summary with Structured Outputs
-    const summary = await generateLessonSummary(
-      transcriptText,
-      notes.text || undefined,
-      previousSummaries.length ? previousSummaries : undefined
-    )
+    const summary = await generateLessonSummary(transcriptText, notes.text ?? undefined, previousSummaries)
 
-    // 8. Commit final summary with lock token verification
-    const now = new Date().toISOString()
-    const { data: updateData, error: updateError } = await admin
+    await admin
       .from('lesson_recordings')
       .update({
         transcript: transcriptText,
         ai_summary: summary,
         ai_processing_status: 'completed',
-        ai_processed_at: now,
+        ai_processed_at: new Date().toISOString(),
         ai_processing_error: null,
-        ai_locked_at: null,
-        ai_lock_token: null,
-        ai_next_retry_at: null,
-        updated_at: now,
       })
       .eq('id', recordingId)
-      .eq('ai_lock_token', lockToken)
-      .select('id')
-      .maybeSingle()
 
-    if (updateError || !updateData) {
-      console.warn(`[LessonProcessing] ${recordingId}: Lock lost to another worker during processing. Discarding duplicate write.`)
-      return { recordingId, status: 'skipped', reason: 'Lock lost during processing' }
-    }
-
-    // 9. Mirror summary to archived notes
+    // Mirror onto the note, and repair the link while we are here.
     if (notes.noteId) {
-      const { error: noteUpdateError } = await admin
+      await admin
         .from('notes_archive')
-        .update({
-          ai_summary: summary,
-          ai_summary_generated_at: now,
-          recording_id: recordingId,
-        })
+        .update({ ai_summary: summary, recording_id: recordingId })
         .eq('id', notes.noteId)
-
-      if (noteUpdateError) {
-        console.error(`[LessonProcessing] Failed to mirror AI summary to notes_archive ${notes.noteId}:`, noteUpdateError)
-      }
     }
 
-    console.log(`[LessonProcessing] ${recordingId}: Processing completed successfully.`)
+    console.log(`[LessonProcessing] ${recordingId}: completed`)
     return {
       recordingId,
       status: 'completed',
@@ -366,9 +274,9 @@ export async function processRecording(
       summary,
     }
   } catch (error) {
-    const reason = error instanceof Error ? error.message : 'Unknown error during processing'
-    console.error(`[LessonProcessing] ${recordingId} failed:`, error)
-    await markFailed(admin, recordingId, lockToken, reason, attemptCount)
+    const reason = error instanceof Error ? error.message : 'Unknown error'
+    await markFailed(admin, recordingId, reason)
+    console.error(`[LessonProcessing] ${recordingId}: failed -`, reason)
     return { recordingId, status: 'failed', reason }
   }
 }

@@ -73,26 +73,8 @@ export async function POST(request: NextRequest) {
     }
 
     const tempoBpm = body.tempo || 80 // Default to 80 BPM
-    const octave = body.octave || 4
 
-    // Server-side authoritative score recomputation
-    const totalExpected = body.totalNotesExpected || 8
-    const completedNotes = (body.noteMetrics || []).filter(m => m.actualPosition !== null)
-    const completionRate = totalExpected > 0 ? completedNotes.length / totalExpected : 0
-    const inOrderCount = (body.noteMetrics || []).filter(m => m.wasInOrder).length
-    const wrongAttempts = (body.noteMetrics || []).filter(m => !m.wasInOrder).length
-    const sequenceFidelity = totalExpected > 0 ? Math.max(0, (totalExpected - wrongAttempts) / totalExpected) : 1
-    const sequenceAccuracy = Math.round(completionRate * sequenceFidelity * 100)
-    const pitchAccuracy = completedNotes.length > 0
-      ? Math.round(completedNotes.reduce((s, m) => s + (m.pitchAccuracy || 0), 0) / completedNotes.length)
-      : 0
-    const voiceStability = completedNotes.length > 0
-      ? Math.round(completedNotes.reduce((s, m) => s + (m.voiceStability || 0), 0) / completedNotes.length)
-      : 0
-    const qualityScore = (sequenceAccuracy * 0.40) + (pitchAccuracy * 0.40) + (voiceStability * 0.20)
-    const overallScore = Math.max(0, Math.min(100, Math.round(completionRate * qualityScore)))
-
-    // Check if there's already a session for today with this scale at this tempo & octave
+    // Check if there's already a session for today with this scale at this tempo
     const { data: existingSession } = await supabase
       .from('scale_training_sessions')
       .select('id, overall_score')
@@ -100,17 +82,16 @@ export async function POST(request: NextRequest) {
       .eq('session_date', sessionDate)
       .eq('scale_type', body.scaleType)
       .eq('root_note', body.rootNote)
-      .eq('octave', octave)
       .eq('direction', body.direction)
       .eq('tempo_bpm', tempoBpm)
-      .maybeSingle()
+      .single()
 
     let sessionId: string
     let isNewBest = false
 
     if (existingSession) {
       // Check if new score is better
-      if (overallScore > (existingSession.overall_score || 0)) {
+      if (body.overallScore > (existingSession.overall_score || 0)) {
         // Update existing session
         const { data: updatedSession, error: updateError } = await supabase
           .from('scale_training_sessions')
@@ -118,13 +99,13 @@ export async function POST(request: NextRequest) {
             started_at: body.startedAt,
             ended_at: body.endedAt,
             duration_seconds: durationSeconds,
-            sequence_accuracy: sequenceAccuracy,
-            pitch_accuracy: pitchAccuracy,
+            sequence_accuracy: body.sequenceAccuracy,
+            pitch_accuracy: body.pitchAccuracy,
             timing_consistency: timingConsistency,
-            overall_score: overallScore,
-            total_notes_expected: totalExpected,
-            total_notes_sung: completedNotes.length,
-            notes_in_correct_order: inOrderCount,
+            overall_score: body.overallScore,
+            total_notes_expected: body.totalNotesExpected,
+            total_notes_sung: body.totalNotesSung,
+            notes_in_correct_order: body.notesInCorrectOrder,
             updated_at: new Date().toISOString(),
           })
           .eq('id', existingSession.id)
@@ -151,7 +132,7 @@ export async function POST(request: NextRequest) {
           isNewBest: false,
           message: 'Existing session has a higher score',
           existingScore: existingSession.overall_score,
-          newScore: overallScore,
+          newScore: body.overallScore,
         })
       }
     } else {
@@ -166,16 +147,16 @@ export async function POST(request: NextRequest) {
           duration_seconds: durationSeconds,
           scale_type: body.scaleType,
           root_note: body.rootNote,
-          octave: octave,
+          octave: body.octave,
           direction: body.direction,
           tempo_bpm: tempoBpm,
-          sequence_accuracy: sequenceAccuracy,
-          pitch_accuracy: pitchAccuracy,
+          sequence_accuracy: body.sequenceAccuracy,
+          pitch_accuracy: body.pitchAccuracy,
           timing_consistency: timingConsistency,
-          overall_score: overallScore,
-          total_notes_expected: totalExpected,
-          total_notes_sung: completedNotes.length,
-          notes_in_correct_order: inOrderCount,
+          overall_score: body.overallScore,
+          total_notes_expected: body.totalNotesExpected,
+          total_notes_sung: body.totalNotesSung,
+          notes_in_correct_order: body.notesInCorrectOrder,
         })
         .select('id')
         .single()

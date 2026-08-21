@@ -16,7 +16,6 @@ import {
   ClipboardList,
   Mail,
   FileText,
-  Sparkles,
 } from 'lucide-react'
 import { createClient } from '@/lib/supabase'
 import { useRouter } from 'next/navigation'
@@ -38,7 +37,6 @@ const teacherNavigation: NavItem[] = [
   { name: 'Email Templates', href: '/dashboard/email-templates', icon: FileText },
   { name: 'Courses', href: '/dashboard/courses', icon: GraduationCap },
   { name: 'Training Center', href: '/dashboard/training-center', icon: Music },
-  { name: 'Songwriting', href: '/dashboard/songwriting', icon: Sparkles },
   { name: 'Calendar', href: '/dashboard/calendar', icon: Calendar },
 ]
 
@@ -53,7 +51,6 @@ const studentNavigation: NavItem[] = [
   { name: 'My Lessons', href: '/dashboard/my-lessons', icon: BookOpen },
   { name: 'Courses', href: '/dashboard/courses', icon: GraduationCap },
   { name: 'Training Center', href: '/dashboard/training-center', icon: Music },
-  { name: 'Songwriting', href: '/dashboard/songwriting', icon: Sparkles },
   { name: 'Find Teacher', href: '/dashboard/find-teacher', icon: Search },
   { name: 'Calendar', href: '/dashboard/calendar', icon: Calendar },
 ]
