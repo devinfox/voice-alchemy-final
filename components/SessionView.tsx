@@ -17,20 +17,20 @@ import { SpotlightTour, SpotlightTriggerButton, SpotlightStep } from '@/componen
 const classroomTourSteps: SpotlightStep[] = [
   {
     target: '[data-tour="classroom-video"]',
-    title: '1. HD Live Video Classroom',
-    content: 'Ultra-low latency WebRTC video for vocal coaching, piano accompaniment, and technique drills.',
+    title: '1. Live Video Classroom',
+    content: 'Crystal-clear, real-time video built for vocal coaching, singing along, and piano drills with zero delay.',
     placement: 'bottom',
   },
   {
     target: '[data-tour="classroom-notes"]',
-    title: '2. Collaborative Live Notes',
-    content: 'Teacher and student share this document simultaneously. Lyric adjustments and practice assignments sync live.',
+    title: '2. Shared Lesson Notes',
+    content: 'Write notes, lyrics, and practice goals together in real time during your lesson.',
     placement: 'left',
   },
   {
     target: '[data-tour="classroom-controls"]',
-    title: '3. Lesson Controls & Archival',
-    content: 'Click "Start Class" to begin and record. When ended, recordings and notes automatically archive for review.',
+    title: '3. Class Controls & Recordings',
+    content: 'Click "Start Class" to begin your lesson and recording. Once finished, your lesson notes and recordings are saved automatically.',
     placement: 'top',
   },
 ]

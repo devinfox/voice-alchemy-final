@@ -36,23 +36,23 @@ export function DashboardSpotlight({ isTeacher = false, userName }: DashboardSpo
   const teacherSteps: SpotlightStep[] = [
     {
       target: '[data-tour="dashboard-courses-link"]',
-      title: '1. Course Studio & Optional Quizzes',
+      title: '1. Course Studio & Quizzes',
       content:
-        'Design custom courses and transformation modules for your students. Add optional quizzes at any lesson with multiple-choice questions, instant explanations, and scoring.',
+        'Design custom courses and transformation modules for your students. Add optional quizzes with multiple-choice questions, instant answers, and scoring.',
       placement: 'top',
     },
     {
       target: '[data-tour="dashboard-lessons-link"]',
       title: '2. Live Video Classroom & Shared Notes',
       content:
-        'Launch 1-on-1 HD WebRTC video sessions with your students, collaborate on lesson notes in real time, and auto-archive recorded sessions.',
+        'Launch 1-on-1 live video lessons with your students, collaborate on lesson notes in real time, and easily revisit past recorded sessions.',
       placement: 'top',
     },
     {
       target: '[data-tour="dashboard-reports-link"]',
-      title: '3. Student Rosters & Training Reports',
+      title: '3. Student Rosters & Progress Reports',
       content:
-        'Manage student bookings, review daily pitch and rhythm training metrics, and monitor student vocal progress over time.',
+        'Manage student bookings, review daily pitch and rhythm practice metrics, and monitor vocal progress over time.',
       placement: 'top',
     },
   ]
