@@ -146,7 +146,17 @@ export default function MyLessonsPage() {
         <div className="text-center py-12 bg-white/5 backdrop-blur-sm rounded-xl border border-white/10">
           <Users className="w-12 h-12 text-gray-500 mx-auto mb-4" />
           <h3 className="text-lg font-medium text-white mb-2">No lessons yet</h3>
-          <p className="text-gray-400 mb-4">Your assigned teacher will appear here automatically.</p>
+          <p className="text-gray-400 mb-5 max-w-md mx-auto">
+            Choose your voice coach to book your first 1:1 lesson — they&apos;ll see your practice
+            progress and build on it with you.
+          </p>
+          <Link
+            href="/dashboard/find-teacher"
+            className="inline-flex items-center gap-2 px-5 py-3 rounded-2xl bg-[#CEB466] text-[#171229] text-sm font-bold shadow-xl shadow-[#CEB466]/20 hover:bg-[#e0c97d] transition-all active:scale-[0.98]"
+          >
+            <Users className="w-4 h-4" />
+            <span>Find Your Coach</span>
+          </Link>
         </div>
       ) : (
         teachers.length > 0 && (

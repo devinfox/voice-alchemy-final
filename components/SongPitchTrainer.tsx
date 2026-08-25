@@ -1,6 +1,7 @@
 'use client'
 
 import { useState, useEffect, useRef, useCallback } from 'react'
+import { createPortal } from 'react-dom'
 import { Music, X, Maximize2, Minimize2, Mic, MicOff, Search, Loader2, TrendingUp, Save, Music2, ChevronRight, Volume2, Zap, RefreshCw, Check, AlertCircle } from 'lucide-react'
 import Script from 'next/script'
 import { analyzeBuffer } from '@/lib/pitch-detection'
@@ -9,20 +10,20 @@ import { SpotlightTour, SpotlightTriggerButton, SpotlightStep } from '@/componen
 const songTourSteps: SpotlightStep[] = [
   {
     target: '[data-tour="song-search-input"]',
-    title: '1. Search for Any Song',
-    content: 'Type any song title or artist. The system finds the track, key signature, and tempo.',
+    title: '1. Find a Song',
+    content: 'Type a song name or artist. The app will look up the song for you.',
     placement: 'bottom',
   },
   {
     target: '[data-tour="song-key-card"]',
-    title: '2. Key Signature & Scale Notes',
-    content: 'Displays the detected musical key and highlights all valid in-key vocal notes.',
+    title: '2. See the Song Key',
+    content: 'This shows the main notes that fit the song.',
     placement: 'bottom',
   },
   {
     target: '[data-tour="song-mic-toggle"]',
-    title: '3. Sing in Key & Track Accuracy',
-    content: 'Turn on the mic. Sung notes highlight green when in-key and red when out of key.',
+    title: '3. Sing Along',
+    content: 'Turn on the mic and sing. Green means the note fits the song. Red means try a nearby note.',
     placement: 'top',
   },
 ]
@@ -366,24 +367,29 @@ export default function SongPitchTrainer({ variant = 'floating' }: SongPitchTrai
       )}
 
       {/* Modal */}
-      {isOpen && (
-        <div className="fixed inset-0 z-[100] flex">
-          <div className="absolute inset-0 bg-black/90" onClick={() => setIsOpen(false)} />
+      {isOpen && createPortal(
+        <div className="fixed inset-0 z-[99990] flex bg-black/90">
+          <div className="absolute inset-0 bg-black/90 backdrop-blur-sm" onClick={() => setIsOpen(false)} />
           <SpotlightTour tourKey="song_trainer_v4" steps={songTourSteps} />
 
-          <div className={`relative flex w-full h-full ${isFullscreen ? '' : 'lg:m-8 lg:rounded-3xl overflow-hidden'}`}>
+          <div
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="song-trainer-title"
+            className={`relative flex w-full h-full min-h-0 flex-col border-[#CEB466]/30 bg-[#171229] shadow-2xl lg:flex-row ${isFullscreen ? '' : 'lg:m-8 lg:rounded-3xl lg:border overflow-hidden'}`}
+          >
             {/* Left Panel - Song Search */}
-            <div className="w-80 bg-slate-900 border-r border-slate-700/50 flex flex-col z-10">
+            <div className="z-10 flex h-[44dvh] w-full min-h-0 flex-col border-b border-[#CEB466]/20 bg-[#1b1233] lg:h-auto lg:w-80 lg:border-b-0 lg:border-r">
               {/* Search Header */}
-              <div className="p-4 border-b border-slate-700/50">
+              <div className="p-4 border-b border-[#CEB466]/20">
                 <div className="flex items-center justify-between mb-4">
                   <div className="flex items-center gap-3">
                     <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-emerald-500 to-teal-500 flex items-center justify-center">
                       <Music className="w-5 h-5 text-white" />
                     </div>
                     <div>
-                      <h2 className="font-bold text-white">Song Key Trainer</h2>
-                      <p className="text-xs text-slate-400">Search & sing in key</p>
+                      <h2 id="song-trainer-title" className="font-bold text-white">Song Key Trainer</h2>
+                      <p className="text-xs text-purple-100/70">Search & sing in key</p>
                     </div>
                   </div>
                   <SpotlightTriggerButton tourKey="song_trainer_v4" label="How to" />
@@ -398,14 +404,11 @@ export default function SongPitchTrainer({ variant = 'floating' }: SongPitchTrai
                     onChange={e => setSearchQuery(e.target.value)}
                     onKeyDown={e => e.key === 'Enter' && searchSongs()}
                     placeholder="Search any song..."
-                    className="w-full pl-9 pr-4 py-2.5 bg-slate-800 border border-slate-700 rounded-xl text-white text-sm placeholder-slate-500 focus:outline-none focus:border-emerald-500"
+                    className="w-full pl-9 pr-4 py-2.5 bg-[#0f0b1e] border border-[#CEB466]/20 rounded-xl text-white text-sm placeholder-slate-500 focus:outline-none focus:border-emerald-500"
                   />
                   {isSearching && <Loader2 className="absolute right-3 top-1/2 -translate-y-1/2 w-4 h-4 text-emerald-400 animate-spin" />}
                 </div>
               </div>
-
-              {/* Real On-Page Spotlight Tour */}
-              <SpotlightTour tourKey="song_trainer_v2" steps={songTourSteps} />
 
               {/* Search Results */}
               <div className="flex-1 overflow-y-auto">
@@ -413,7 +416,7 @@ export default function SongPitchTrainer({ variant = 'floating' }: SongPitchTrai
                   <button
                     key={song.id}
                     onClick={() => selectSong(song)}
-                    className="w-full flex items-center gap-3 px-4 py-3 hover:bg-slate-800/70 transition-colors text-left border-b border-slate-800"
+                    className="w-full flex items-center gap-3 px-4 py-3 hover:bg-white/10 transition-colors text-left border-b border-white/10"
                   >
                     <div className="w-10 h-10 rounded-lg bg-emerald-500/20 flex items-center justify-center flex-shrink-0">
                       <Music2 className="w-5 h-5 text-emerald-400" />
@@ -530,13 +533,13 @@ export default function SongPitchTrainer({ variant = 'floating' }: SongPitchTrai
                     </button>
                   </div>
                   <div className="grid grid-cols-2 gap-2">
-                    <div className="bg-slate-900 rounded-lg p-2 text-center">
+                    <div className="bg-[#0f0b1e] rounded-lg p-2 text-center">
                       <p className={`text-xl font-bold ${accuracy >= 80 ? 'text-green-400' : accuracy >= 60 ? 'text-yellow-400' : 'text-red-400'}`}>
                         {accuracy.toFixed(0)}%
                       </p>
                       <p className="text-xs text-slate-500">Accuracy</p>
                     </div>
-                    <div className="bg-slate-900 rounded-lg p-2 text-center">
+                    <div className="bg-[#0f0b1e] rounded-lg p-2 text-center">
                       <p className="text-xl font-bold text-white">{totalNotes}</p>
                       <p className="text-xs text-slate-500">Notes</p>
                     </div>
@@ -546,10 +549,10 @@ export default function SongPitchTrainer({ variant = 'floating' }: SongPitchTrai
             </div>
 
             {/* Right Panel - Pitch Display */}
-            <div className="flex-1 bg-gradient-to-br from-slate-900 via-slate-800 to-slate-900 flex flex-col items-center justify-center relative">
+            <div className="relative flex min-h-0 flex-1 flex-col items-center justify-center bg-gradient-to-br from-[#1b1233] via-[#171229] to-[#0f0b1e]">
               {/* Close Button */}
               <div className="absolute top-4 right-4 flex gap-2">
-                <button onClick={() => setIsFullscreen(!isFullscreen)} className="p-2 hover:bg-white/10 rounded-lg">
+                <button onClick={() => setIsFullscreen(!isFullscreen)} className="hidden sm:block p-2 hover:bg-white/10 rounded-lg">
                   {isFullscreen ? <Minimize2 className="w-5 h-5 text-slate-400" /> : <Maximize2 className="w-5 h-5 text-slate-400" />}
                 </button>
                 <button onClick={() => setIsOpen(false)} className="p-2 hover:bg-white/10 rounded-lg">
@@ -677,7 +680,8 @@ export default function SongPitchTrainer({ variant = 'floating' }: SongPitchTrai
               )}
             </div>
           </div>
-        </div>
+        </div>,
+        document.body
       )}
 
       <Script

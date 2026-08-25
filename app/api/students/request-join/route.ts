@@ -1,5 +1,6 @@
 import { createClient, getCurrentUser } from '@/lib/supabase-server'
 import { NextRequest, NextResponse } from 'next/server'
+import { notifyLessonRequest } from '@/lib/lesson-notifications'
 
 // POST /api/students/request-join - Request to join a teacher
 export async function POST(request: NextRequest) {
@@ -97,6 +98,11 @@ export async function POST(request: NextRequest) {
       console.error('[Students API] Error creating request:', insertError)
       return NextResponse.json({ error: 'Failed to submit request' }, { status: 500 })
     }
+
+    // Best-effort: let the teacher know a request is waiting
+    const studentName =
+      profile.name || `${profile.first_name || ''} ${profile.last_name || ''}`.trim() || 'A student'
+    await notifyLessonRequest(teacherId, studentName)
 
     return NextResponse.json({
       success: true,

@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { createClient, getCurrentUser } from '@/lib/supabase-server'
+import { requireEmailAccess } from '@/lib/email-access-server'
 import { getSupabaseAdmin } from '@/lib/supabase-admin'
 
 interface EmailAttachment {
@@ -32,14 +32,10 @@ interface ExportedEmail {
 
 export async function POST(request: NextRequest) {
   try {
-    const user = await getCurrentUser()
-    if (!user) {
-      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
-    }
-
-    // Only allow admins
-    if (!['admin', 'super_admin'].includes(user.role || '')) {
-      return NextResponse.json({ error: 'Admin access required' }, { status: 403 })
+    // Email-tools gate: admins plus teacher Julia (the app's email admin)
+    const gateProfile = await requireEmailAccess()
+    if (!gateProfile) {
+      return NextResponse.json({ error: 'Email tools access required' }, { status: 403 })
     }
 
     const body = await request.json()
@@ -135,25 +131,35 @@ export async function POST(request: NextRequest) {
       return fromMatch || toMatch || ccMatch
     })
 
-    // Map account IDs to user info
+    // Map account IDs to user info. profiles has no email column — real
+    // emails come from the `users` mirror table.
     const userIdsToFetch = accounts.map(a => a.user_id).filter(Boolean) as string[]
     const { data: profiles } = userIdsToFetch.length > 0
       ? await supabaseAdmin
           .from('profiles')
-          .select('id, first_name, last_name, name, email')
+          .select('id, first_name, last_name, name')
+          .in('id', userIdsToFetch)
+      : { data: [] }
+
+    const { data: userRows } = userIdsToFetch.length > 0
+      ? await supabaseAdmin
+          .from('users')
+          .select('id, email')
           .in('id', userIdsToFetch)
       : { data: [] }
 
     const profileMap = new Map(profiles?.map(p => [p.id, p]) || [])
+    const emailMap = new Map(userRows?.map(u => [u.id, u.email]) || [])
 
     const accountUserMap = new Map(
       accounts.map(a => {
         const prof = a.user_id ? profileMap.get(a.user_id) : null
+        const userEmail = a.user_id ? emailMap.get(a.user_id) : null
         return [
           a.id,
           {
             userName: prof?.name || `${prof?.first_name || ''} ${prof?.last_name || ''}`.trim() || a.display_name || 'Coach',
-            userEmail: prof?.email || a.email_address,
+            userEmail: userEmail || a.email_address,
           }
         ]
       })

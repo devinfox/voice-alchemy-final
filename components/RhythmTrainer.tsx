@@ -1,26 +1,27 @@
 'use client'
 
 import { useState, useEffect, useRef, useCallback } from 'react'
+import { createPortal } from 'react-dom'
 import { X, Maximize2, Minimize2, Play, Pause, Mic, MicOff, Save, TrendingUp, Settings2, Volume2 } from 'lucide-react'
 import { SpotlightTour, SpotlightTriggerButton, SpotlightStep } from '@/components/spotlight-tour'
 
 const rhythmTourSteps: SpotlightStep[] = [
   {
     target: '[data-tour="rhythm-bpm-control"]',
-    title: '1. Set Your Tempo (BPM)',
-    content: 'Adjust your practice speed using the tempo slider, buttons, or Tap Tempo.',
+    title: '1. Pick Your Speed',
+    content: 'Move the slider or tap the tempo button to choose how fast the beat goes.',
     placement: 'bottom',
   },
   {
     target: '[data-tour="rhythm-play-btn"]',
-    title: '2. Start the Metronome',
-    content: 'Click Play to start the audible click and rhythmic beat pulse.',
+    title: '2. Press Play',
+    content: 'Tap Play to start the beat.',
     placement: 'top',
   },
   {
     target: '[data-tour="rhythm-tap-pad"]',
-    title: '3. Tap or Sing on the Beat',
-    content: 'Tap this pad (or sing with mic on) to track precision: On Beat (Green), Early (Blue), Late (Orange).',
+    title: '3. Tap With the Beat',
+    content: 'Tap the pad when you hear the beat. Green means right on time. Blue is early. Orange is late.',
     placement: 'top',
   },
 ]
@@ -39,6 +40,12 @@ interface BeatTiming {
   actualTime: number | null
   offsetMs: number | null
   result: TimingResult
+}
+
+/** A scheduled metronome beat still waiting for a tap (or a missed verdict). */
+interface PendingBeat {
+  beatNumber: number // Monotonic, 1-based across the whole session
+  timeMs: number // Expected time on the Date.now() axis
 }
 
 interface SessionMetrics {
@@ -351,7 +358,9 @@ function calculateStats(timings: BeatTiming[]): SessionStats {
   // Calculate consistency (inverse of standard deviation)
   // For singers: scale appropriately - 0ms stdDev = 100%, 150ms stdDev = 0%
   // This is more forgiving than the original 100ms scale
-  let consistency = 100
+  // No completed taps at all (every beat missed) is no evidence of steadiness,
+  // so it earns 0 rather than the benefit-of-the-doubt 100.
+  let consistency = completedTimings.length > 0 ? 100 : 0
   if (completedTimings.length > 1) {
     const offsets = completedTimings.map(t => t.offsetMs || 0)
     const mean = offsets.reduce((a, b) => a + b, 0) / offsets.length
@@ -468,8 +477,12 @@ export default function RhythmTrainer({ variant = 'floating' }: RhythmTrainerPro
   const schedulerIntervalRef = useRef<NodeJS.Timeout | null>(null)
   const beatCounterRef = useRef(0)
   const sessionRef = useRef(session)
-  const expectedBeatTimesRef = useRef<number[]>([])
-  const lastProcessedBeatRef = useRef(-1)
+  // Scheduled beats awaiting a tap. Entries leave when matched by a tap or
+  // swept as missed once their timing window has expired, so the array stays
+  // small without the old 32-slot cap (whose shifting indices produced
+  // duplicate beat numbers in long sessions).
+  const pendingBeatsRef = useRef<PendingBeat[]>([])
+  const lastMatchedBeatNumberRef = useRef(0)
   // Time synchronization refs - store reference points for both time bases
   const audioContextStartTimeRef = useRef(0) // audioContext.currentTime at start
   const dateNowStartTimeRef = useRef(0) // Date.now() at start
@@ -496,16 +509,16 @@ export default function RhythmTrainer({ variant = 'floating' }: RhythmTrainerPro
    * landed outside the matching window (or the metronome is not running).
    */
   const handleOnset = useCallback((onsetTime: number): TimingResult | null => {
-    if (!isPlaying || expectedBeatTimesRef.current.length === 0) return null
+    if (!isPlaying || pendingBeatsRef.current.length === 0) return null
 
     // Find the closest expected beat
     let closestBeatIndex = -1
     let closestOffset = Infinity
 
-    expectedBeatTimesRef.current.forEach((expectedTime, index) => {
-      if (index <= lastProcessedBeatRef.current) return
+    pendingBeatsRef.current.forEach((beat, index) => {
+      if (beat.beatNumber <= lastMatchedBeatNumberRef.current) return
 
-      const offset = onsetTime - expectedTime
+      const offset = onsetTime - beat.timeMs
       if (Math.abs(offset) < TIMING_THRESHOLDS.window && Math.abs(offset) < Math.abs(closestOffset)) {
         closestOffset = offset
         closestBeatIndex = index
@@ -514,7 +527,12 @@ export default function RhythmTrainer({ variant = 'floating' }: RhythmTrainerPro
 
     if (closestBeatIndex === -1) return null
 
-    lastProcessedBeatRef.current = closestBeatIndex
+    const matchedBeat = pendingBeatsRef.current[closestBeatIndex]
+    lastMatchedBeatNumberRef.current = matchedBeat.beatNumber
+    // Matched beats leave the pending list so the missed-beat sweep cannot
+    // also count them. Any skipped-over earlier beats stay pending and will be
+    // swept as missed once their window expires.
+    pendingBeatsRef.current.splice(closestBeatIndex, 1)
 
     const result: TimingResult = Math.abs(closestOffset) <= TIMING_THRESHOLDS.onBeat
       ? 'on-beat'
@@ -523,8 +541,8 @@ export default function RhythmTrainer({ variant = 'floating' }: RhythmTrainerPro
         : 'late'
 
     const newTiming: BeatTiming = {
-      beatNumber: closestBeatIndex + 1,
-      expectedTime: expectedBeatTimesRef.current[closestBeatIndex],
+      beatNumber: matchedBeat.beatNumber,
+      expectedTime: matchedBeat.timeMs,
       actualTime: onsetTime,
       offsetMs: closestOffset,
       result,
@@ -661,6 +679,33 @@ export default function RhythmTrainer({ variant = 'floating' }: RhythmTrainerPro
     setTapTempoCount(0)
   }, [])
 
+  // Mark beats the user never answered. A beat whose ±window has fully passed
+  // can no longer be matched by any tap (handleOnset rejects offsets beyond
+  // TIMING_THRESHOLDS.window), so it is definitively missed. Without this,
+  // accuracy was computed over attempts only - three good taps across a
+  // hundred metronome beats scored ~100%.
+  const sweepMissedBeats = useCallback(() => {
+    const now = Date.now()
+    const expired = pendingBeatsRef.current.filter(b => now - b.timeMs > TIMING_THRESHOLDS.window)
+    if (expired.length === 0) return
+
+    pendingBeatsRef.current = pendingBeatsRef.current.filter(b => now - b.timeMs <= TIMING_THRESHOLDS.window)
+
+    const missedTimings: BeatTiming[] = expired.map(b => ({
+      beatNumber: b.beatNumber,
+      expectedTime: b.timeMs,
+      actualTime: null,
+      offsetMs: null,
+      result: 'missed',
+    }))
+
+    setRecentTimings(prev => [...prev, ...missedTimings].slice(-20))
+    setSession(prev => ({
+      ...prev,
+      beatTimings: [...prev.beatTimings, ...missedTimings],
+    }))
+  }, [])
+
   // Schedule metronome beats
   const scheduleBeats = useCallback(() => {
     if (!audioContextRef.current) return
@@ -689,14 +734,12 @@ export default function RhythmTrainer({ variant = 'floating' }: RhythmTrainerPro
       // Calculate: dateNow at beat = dateNowStart + (beatTime - audioContextStart) * 1000
       const expectedTimeMs = dateNowStartTimeRef.current +
         (beatTime - audioContextStartTimeRef.current) * 1000
-      expectedBeatTimesRef.current.push(expectedTimeMs)
-      // Keep only last 32 beats
-      if (expectedBeatTimesRef.current.length > 32) {
-        expectedBeatTimesRef.current.shift()
-        if (lastProcessedBeatRef.current > 0) {
-          lastProcessedBeatRef.current--
-        }
-      }
+      // beatCounterRef is 0-based and never resets mid-session, giving a
+      // monotonic 1-based beat number (the DB has UNIQUE(session_id, beat_number)).
+      pendingBeatsRef.current.push({
+        beatNumber: beatCounterRef.current + 1,
+        timeMs: expectedTimeMs,
+      })
 
       // Update visual beat indicator
       setTimeout(() => {
@@ -721,8 +764,8 @@ export default function RhythmTrainer({ variant = 'floating' }: RhythmTrainerPro
 
     beatCounterRef.current = 0
     nextBeatTimeRef.current = audioContextRef.current.currentTime
-    expectedBeatTimesRef.current = []
-    lastProcessedBeatRef.current = -1
+    pendingBeatsRef.current = []
+    lastMatchedBeatNumberRef.current = 0
 
     setIsPlaying(true)
     setSession({
@@ -735,9 +778,12 @@ export default function RhythmTrainer({ variant = 'floating' }: RhythmTrainerPro
     })
     setRecentTimings([])
 
-    schedulerIntervalRef.current = setInterval(scheduleBeats, 25)
+    schedulerIntervalRef.current = setInterval(() => {
+      scheduleBeats()
+      sweepMissedBeats()
+    }, 25)
     scheduleBeats()
-  }, [bpm, timeSignature, scheduleBeats])
+  }, [bpm, timeSignature, scheduleBeats, sweepMissedBeats])
 
   // Stop metronome
   const stopMetronome = useCallback(() => {
@@ -918,7 +964,7 @@ export default function RhythmTrainer({ variant = 'floating' }: RhythmTrainerPro
                   ? 'bg-orange-500'
                   : 'bg-slate-600'
           }`}
-          title={`${timing.result}: ${timing.offsetMs?.toFixed(0)}ms`}
+          title={timing.offsetMs !== null ? `${timing.result}: ${timing.offsetMs.toFixed(0)}ms` : 'missed: no tap'}
         />
       ))}
     </div>
@@ -1169,19 +1215,19 @@ export default function RhythmTrainer({ variant = 'floating' }: RhythmTrainerPro
       ) : (
         <button
           onClick={() => setIsOpen(true)}
-          className="flex items-center gap-4 px-6 py-5 bg-gradient-to-br from-amber-500 to-orange-600 hover:from-amber-400 hover:to-orange-500 text-white rounded-2xl transition-all duration-300 w-full group border border-white/10"
+          className="group flex h-full min-h-[88px] w-full items-center gap-3.5 rounded-2xl border border-white/10 bg-gradient-to-br from-amber-500 to-orange-600 hover:from-amber-400 hover:to-orange-500 px-5 py-4 text-white transition-all duration-300"
           style={{ boxShadow: '0 8px 32px rgba(245, 158, 11, 0.3), inset 0 1px 0 rgba(255,255,255,0.1)' }}
         >
-          <div className="w-12 h-12 rounded-xl bg-white/20 flex items-center justify-center group-hover:scale-110 transition-transform duration-300">
+          <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-white/20 transition-transform duration-300 group-hover:scale-110">
             <svg className="w-6 h-6" viewBox="0 0 24 24" fill="currentColor">
               <path d="M12 3v10.55c-.59-.34-1.27-.55-2-.55-2.21 0-4 1.79-4 4s1.79 4 4 4 4-1.79 4-4V7h4V3h-6z"/>
             </svg>
           </div>
-          <div className="text-left flex-1">
-            <p className="font-semibold text-lg">Rhythm Trainer</p>
-            <p className="text-sm text-white/70">BPM & timing practice</p>
+          <div className="min-w-0 flex-1 text-left">
+            <p className="text-[15px] font-bold leading-tight">Rhythm Trainer</p>
+            <p className="mt-0.5 text-xs leading-snug text-white/75">BPM & timing practice</p>
           </div>
-          <div className="w-8 h-8 rounded-lg bg-white/10 flex items-center justify-center group-hover:bg-white/20 transition-colors">
+          <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-white/10 transition-colors group-hover:bg-white/20">
             <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
             </svg>
@@ -1189,10 +1235,10 @@ export default function RhythmTrainer({ variant = 'floating' }: RhythmTrainerPro
         </button>
       )}
 
-      {isOpen && (
-        <div className="fixed inset-0 z-[100] flex items-center justify-center">
+      {isOpen && createPortal(
+        <div className="fixed inset-0 z-[99990] flex items-center justify-center bg-black/90">
           <div
-            className="absolute inset-0 bg-black/80 backdrop-blur-sm"
+            className="absolute inset-0 bg-black/90 backdrop-blur-sm"
             onClick={() => {
               setIsOpen(false)
               setIsFullscreen(false)
@@ -1200,26 +1246,29 @@ export default function RhythmTrainer({ variant = 'floating' }: RhythmTrainerPro
           />
 
           <div
-            className={`relative bg-gradient-to-br from-slate-900 via-slate-900 to-slate-800 shadow-2xl border border-slate-700/50 overflow-hidden transition-all duration-300 ${
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="rhythm-trainer-title"
+            className={`relative bg-gradient-to-br from-[#1b1233] via-[#171229] to-[#0f0b1e] shadow-2xl border border-[#CEB466]/30 overflow-hidden transition-all duration-300 ${
               isFullscreen
                 ? 'w-full h-full rounded-none lg:w-[95vw] lg:h-[95vh] lg:rounded-3xl'
                 : 'w-full h-full rounded-none lg:w-[90vw] lg:max-w-2xl lg:h-[85vh] lg:max-h-[700px] lg:rounded-3xl'
             }`}
           >
             {/* Header */}
-            <div className="flex items-center justify-between px-5 py-4 bg-gradient-to-r from-amber-600/20 via-orange-600/20 to-red-600/20 border-b border-slate-700/50">
+            <div className="flex items-center justify-between gap-3 px-4 py-3 sm:px-5 sm:py-4 bg-[#1b1233] border-b border-[#CEB466]/20">
               <div className="flex items-center gap-4">
                 <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-amber-500 to-orange-500 flex items-center justify-center shadow-lg">
                   <svg className="w-5 h-5 text-white" viewBox="0 0 24 24" fill="currentColor">
                     <path d="M12 3v10.55c-.59-.34-1.27-.55-2-.55-2.21 0-4 1.79-4 4s1.79 4 4 4 4-1.79 4-4V7h4V3h-6z"/>
                   </svg>
                 </div>
-                <div>
-                  <h2 className="text-xl font-bold text-white">Rhythm Trainer</h2>
-                  <p className="text-sm text-slate-400">Tap, clap, or sing along with the beat!</p>
+                <div className="min-w-0">
+                  <h2 id="rhythm-trainer-title" className="text-base sm:text-xl font-bold text-white truncate">Rhythm Trainer</h2>
+                  <p className="hidden sm:block text-sm text-purple-100/70">Tap, clap, or sing along with the beat!</p>
                 </div>
               </div>
-              <div className="flex items-center gap-2">
+              <div className="flex shrink-0 items-center gap-1.5 sm:gap-2">
                 <SpotlightTriggerButton tourKey="rhythm_trainer_v4" label="How to" />
                 <button
                   onClick={() => setShowSettings(!showSettings)}
@@ -1232,7 +1281,7 @@ export default function RhythmTrainer({ variant = 'floating' }: RhythmTrainerPro
                 </button>
                 <button
                   onClick={() => setIsFullscreen(!isFullscreen)}
-                  className="p-2.5 hover:bg-white/10 rounded-xl transition-colors"
+                  className="hidden sm:block p-2.5 hover:bg-white/10 rounded-xl transition-colors"
                   title={isFullscreen ? 'Exit fullscreen' : 'Fullscreen'}
                 >
                   {isFullscreen ? (
@@ -1389,7 +1438,8 @@ export default function RhythmTrainer({ variant = 'floating' }: RhythmTrainerPro
               {session.beatTimings.length > 0 && renderSessionStats()}
             </div>
           </div>
-        </div>
+        </div>,
+        document.body
       )}
     </>
   )

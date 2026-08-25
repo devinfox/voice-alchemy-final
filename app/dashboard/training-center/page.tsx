@@ -4,6 +4,9 @@ import { useState, useEffect } from 'react'
 import { TrendingUp, TrendingDown, Minus, Calendar, Target, Clock, Zap, Award, RefreshCw, Sparkles, Music2, Mic2, Activity, Brain, FileText, BookOpen, ChevronRight, Music } from 'lucide-react'
 import AIAnalysisPanel from '@/components/AIAnalysisPanel'
 import ScaleAnalysisPanel from '@/components/ScaleAnalysisPanel'
+import ModernPitchTrainer from '@/components/ModernPitchTrainer'
+import RhythmTrainer from '@/components/RhythmTrainer'
+import ScaleTrainer from '@/components/ScaleTrainer'
 import { SpotlightTour, SpotlightTriggerButton, SpotlightStep } from '@/components/spotlight-tour'
 
 interface WeeklyProgress {
@@ -270,32 +273,32 @@ function formatPracticeTime(seconds: number | null): string {
 const trainingCenterTourSteps: SpotlightStep[] = [
   {
     target: '[data-tour="training-tabs"]',
-    title: '1. Training Suites',
-    content: 'Switch between the Overview, Pitch Trainer, Rhythm Trainer, and Scale Trainer to practice specific technical vocal disciplines.',
+    title: '1. Pick a Practice Area',
+    content: 'Use these tabs to choose what you want to practice: pitch, rhythm, or scales.',
     placement: 'bottom',
   },
   {
     target: '[data-tour="training-summary"]',
-    title: '2. Real-Time Vocal Metrics',
-    content: 'Track your average pitch accuracy, voice stability, and pitch tendency (sharp, flat, or on-target) across all sessions.',
+    title: '2. See Your Scores',
+    content: 'This shows simple practice scores, like how close your notes were and whether you tend to sing high or low.',
     placement: 'bottom',
   },
   {
     target: '[data-tour="training-pitch-widget"]',
-    title: '3. Pitch Trainer Suite',
-    content: 'Practice sustained note holding with instant cents feedback to strengthen your pitch centering and vibrato stability.',
+    title: '3. Practice Pitch',
+    content: 'Use this to hold notes and see if you are close.',
     placement: 'bottom',
   },
   {
     target: '[data-tour="training-rhythm-widget"]',
-    title: '4. Rhythm & Groove Metronome',
-    content: 'Lock in tempo consistency, onset timing, and syncopated grooves to build rock-solid rhythm instincts.',
+    title: '4. Practice Rhythm',
+    content: 'Use this to tap or sing with the beat and build better timing.',
     placement: 'top',
   },
   {
     target: '[data-tour="training-ai-panel"]',
-    title: '5. AI Vocal Coach Insights',
-    content: 'Click Analyze Notes anytime to get personalized drill recommendations based on your lesson recordings and practice data.',
+    title: '5. Get Practice Tips',
+    content: 'Tap Analyze Notes to get ideas for what to practice next.',
     placement: 'bottom',
   },
 ]
@@ -312,6 +315,7 @@ export default function TrainingCenterPage() {
   const fetchProgress = async () => {
     try {
       setLoading(true)
+      setError(null)
       const [progressRes, notesRes, scaleRes] = await Promise.all([
         fetch('/api/pitch-training/progress?weeks=8&includeFeedback=true'),
         fetch('/api/pitch-training/recent-notes'),
@@ -539,6 +543,28 @@ export default function TrainingCenterPage() {
       {/* Overview Tab */}
       {activeTab === 'overview' && (
         <>
+          {/* Practice tools — launch a session right from here */}
+          <div className="space-y-3">
+            <div className="flex items-center justify-between">
+              <h2 className="text-lg font-bold text-white font-luxury flex items-center gap-2">
+                <Music className="w-5 h-5 text-[#CEB466]" />
+                <span>Start Practicing</span>
+              </h2>
+              <span className="text-xs text-slate-400">Sessions save automatically to your progress below</span>
+            </div>
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+              <div className="h-full transition-transform duration-300 hover:-translate-y-1">
+                <ModernPitchTrainer variant="card" />
+              </div>
+              <div className="h-full transition-transform duration-300 hover:-translate-y-1">
+                <RhythmTrainer variant="card" />
+              </div>
+              <div className="h-full transition-transform duration-300 hover:-translate-y-1">
+                <ScaleTrainer variant="card" />
+              </div>
+            </div>
+          </div>
+
           {/* Quick Stats Overview */}
           <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
             <div className="glass-card-subtle rounded-xl p-4 border-white/[0.08]">

@@ -55,15 +55,27 @@ export default async function FunnelDetailPage({ params }: PageProps) {
     .map((e: { contact_id?: string | null; lead_id?: string | null }) => e.contact_id || e.lead_id)
     .filter(Boolean) as string[]
 
-  let profileMap: Record<string, { first_name: string; last_name: string; name: string; email: string }> = {}
+  // profiles has no email column — real emails live in the `users` mirror
+  // table, so fetch both and merge in code.
+  let profileMap: Record<string, { first_name: string | null; last_name: string | null; name: string | null; email: string | null }> = {}
   if (participantIds.length > 0) {
-    const { data: profiles } = await supabase
-      .from('profiles')
-      .select('id, first_name, last_name, name, email')
-      .in('id', participantIds)
+    const [{ data: profiles }, { data: userRows }] = await Promise.all([
+      supabase
+        .from('profiles')
+        .select('id, first_name, last_name, name')
+        .in('id', participantIds),
+      supabase
+        .from('users')
+        .select('id, email')
+        .in('id', participantIds),
+    ])
+
+    const emailById = new Map((userRows || []).map(u => [u.id, u.email as string | null]))
 
     if (profiles) {
-      profileMap = Object.fromEntries(profiles.map(p => [p.id, p]))
+      profileMap = Object.fromEntries(
+        profiles.map(p => [p.id, { ...p, email: emailById.get(p.id) || null }])
+      )
     }
   }
 
@@ -332,12 +344,15 @@ export default async function FunnelDetailPage({ params }: PageProps) {
                   current_phase: number
                   enrolled_at: string
                   next_email_scheduled_at: string | null
-                  lead?: { id: string; first_name: string; last_name: string; email: string } | null
-                  contact?: { id: string; first_name: string; last_name: string; email: string } | null
+                  lead_id?: string | null
+                  contact_id?: string | null
                 }) => {
-                  const recipient = enrollment.lead || enrollment.contact
+                  // Recipients are profiles (no leads/contacts tables) —
+                  // resolved via the profileMap built above.
+                  const recipientId = enrollment.contact_id || enrollment.lead_id
+                  const recipient = recipientId ? profileMap[recipientId] : undefined
                   const recipientName = recipient
-                    ? `${recipient.first_name || ''} ${recipient.last_name || ''}`.trim() || recipient.email
+                    ? `${recipient.first_name || ''} ${recipient.last_name || ''}`.trim() || recipient.name || recipient.email || 'Unknown'
                     : 'Unknown'
 
                   const statusBadges: Record<string, { bg: string; text: string }> = {

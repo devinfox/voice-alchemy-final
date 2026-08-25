@@ -100,7 +100,7 @@ export default function ScaleAnalysisPanel({ isOpen, onClose, onAnalysisComplete
       />
 
       {/* Slide-out Panel */}
-      <div className="fixed top-0 right-0 h-full w-full max-w-md bg-gradient-to-b from-slate-900 to-slate-800 border-l border-slate-700/50 shadow-2xl z-50 overflow-hidden flex flex-col">
+      <div className="fixed top-0 right-0 h-full w-full max-w-md modal-solid border-l border-slate-700/50 shadow-2xl z-50 overflow-hidden flex flex-col">
         {/* Header */}
         <div className="flex items-center justify-between px-6 py-4 bg-gradient-to-r from-pink-600/20 via-purple-600/20 to-fuchsia-600/20 border-b border-slate-700/50">
           <div className="flex items-center gap-3">

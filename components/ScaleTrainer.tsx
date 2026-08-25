@@ -1,6 +1,7 @@
 'use client'
 
 import { useState, useEffect, useRef, useCallback } from 'react'
+import { createPortal } from 'react-dom'
 import Script from 'next/script'
 import { Music, Play, Square, Save, RotateCcw, ChevronUp, ChevronDown, Mic, MicOff, Check, X, ArrowUp, ArrowDown, ArrowUpDown, Maximize2, Minimize2, Volume2, VolumeX } from 'lucide-react'
 import { analyzeBuffer } from '@/lib/pitch-detection'
@@ -9,26 +10,26 @@ import { SpotlightTour, SpotlightTriggerButton, SpotlightStep } from '@/componen
 const scaleTourSteps: SpotlightStep[] = [
   {
     target: '[data-tour="scale-settings"]',
-    title: '1. Configure Your Scale',
-    content: 'Select your scale pattern (Major, Pentatonic, Blues), root note (C, D, E, etc.), and vocal octave range.',
+    title: '1. Set Your Scale',
+    content: 'Choose the kind of scale, the starting note, and a range that feels good for your voice.',
     placement: 'bottom',
   },
   {
     target: '[data-tour="listen-scale-btn"]',
-    title: '2. Step 1: Always Listen First!',
-    content: 'Click "1. Listen to Scale" to hear the reference notes played out. Internalizing the interval sequence with your ear before you sing is essential for pitch mastery.',
+    title: '2. Listen First',
+    content: 'Tap "1. Listen to Scale" so your ear knows what the notes should sound like.',
     placement: 'bottom',
   },
   {
     target: '[data-tour="start-practice-btn"]',
-    title: '3. Step 2: Start Practice & Sing',
-    content: 'Once you know the scale, click "2. Start Practice" and sing each note into your microphone in order. Hold each pitch steady.',
+    title: '3. Sing the Scale',
+    content: 'Tap "2. Start Practice" and sing each note one at a time.',
     placement: 'bottom',
   },
   {
     target: '[data-tour="scale-notes-strip"]',
-    title: '4. Visual Interval Sequence',
-    content: 'Each note box highlights as you sing and turns green with an accuracy percentage as your voice hits the target frequency.',
+    title: '4. Follow the Notes',
+    content: 'The note boxes light up as you sing. Green means you are close.',
     placement: 'top',
   },
 ]
@@ -629,28 +630,28 @@ export default function ScaleTrainer({ variant = 'floating' }: ScaleTrainerProps
     <div className={`${isFullscreen ? 'fixed inset-0 z-[60] bg-[#0d0d1a]' : ''}`}>
       <div className={`${isFullscreen ? 'h-full overflow-y-auto p-6' : ''}`}>
         {/* Header */}
-        <div className="flex items-center justify-between mb-6">
-          <div className="flex items-center gap-3">
-            <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-pink-500/20 to-purple-500/20 flex items-center justify-center">
+        <div className="flex items-center justify-between gap-3 mb-6">
+          <div className="flex min-w-0 items-center gap-3">
+            <div className="w-10 h-10 flex-shrink-0 rounded-xl bg-gradient-to-br from-pink-500/20 to-purple-500/20 flex items-center justify-center">
               <Music className="w-5 h-5 text-pink-400" />
             </div>
-            <div>
-              <h2 className="text-lg font-semibold text-white">Scale Trainer</h2>
-              <p className="text-sm text-white/50">Practice scales with real-time feedback</p>
+            <div className="min-w-0">
+              <h2 id="scale-trainer-title" className="text-lg font-semibold text-white truncate">Scale Trainer</h2>
+              <p className="hidden sm:block text-sm text-white/50">Practice scales with real-time feedback</p>
             </div>
           </div>
 
-          <div className="flex items-center gap-2">
+          <div className="flex shrink-0 items-center gap-1.5 sm:gap-2">
             <SpotlightTriggerButton tourKey="scale_trainer_v4" label="How to" />
             {isListening && (
-              <div className="flex items-center gap-2 text-sm text-green-400 mr-2">
+              <div className="flex items-center gap-2 text-sm text-green-400 sm:mr-2">
                 <Mic size={16} />
-                <span>Listening</span>
+                <span className="hidden sm:inline">Listening</span>
               </div>
             )}
             <button
               onClick={() => setIsFullscreen(!isFullscreen)}
-              className="p-2 hover:bg-white/10 rounded-lg transition-colors"
+              className="hidden sm:block p-2 hover:bg-white/10 rounded-lg transition-colors"
             >
               {isFullscreen ? <Minimize2 size={18} className="text-white/70" /> : <Maximize2 size={18} className="text-white/70" />}
             </button>
@@ -1045,27 +1046,38 @@ export default function ScaleTrainer({ variant = 'floating' }: ScaleTrainerProps
       ) : (
         <button
           onClick={() => setIsOpen(true)}
-          className="flex items-center gap-4 px-6 py-5 bg-gradient-to-br from-pink-500 to-purple-600 hover:from-pink-400 hover:to-purple-500 text-white rounded-2xl transition-all duration-300 w-full group border border-white/10"
+          className="group flex h-full min-h-[88px] w-full items-center gap-3.5 rounded-2xl border border-white/10 bg-gradient-to-br from-pink-500 to-purple-600 hover:from-pink-400 hover:to-purple-500 px-5 py-4 text-white transition-all duration-300"
           style={{ boxShadow: '0 8px 32px rgba(236, 72, 153, 0.3), inset 0 1px 0 rgba(255,255,255,0.1)' }}
         >
-          <div className="w-12 h-12 rounded-xl bg-white/20 flex items-center justify-center group-hover:scale-110 transition-transform duration-300">
+          <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-white/20 transition-transform duration-300 group-hover:scale-110">
             <Music className="w-6 h-6" />
           </div>
-          <div className="text-left flex-1">
-            <p className="font-semibold text-lg">Scale Trainer</p>
-            <p className="text-sm text-white/70">Practice scales & sequences</p>
+          <div className="min-w-0 flex-1 text-left">
+            <p className="text-[15px] font-bold leading-tight">Scale Trainer</p>
+            <p className="mt-0.5 text-xs leading-snug text-white/75">Practice scales & sequences</p>
+          </div>
+          <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-white/10 transition-colors group-hover:bg-white/20">
+            <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+            </svg>
           </div>
         </button>
       )}
 
       {/* Modal */}
-      {isOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
-          <div className="absolute inset-0 bg-black/60 backdrop-blur-sm" onClick={handleClose} />
-          <div className={`relative glass-card p-6 w-full ${isFullscreen ? 'max-w-none h-full' : 'max-w-2xl max-h-[90vh] overflow-y-auto'} rounded-2xl`}>
+      {isOpen && createPortal(
+        <div className="fixed inset-0 z-[99990] flex items-center justify-center bg-black/90 p-3 sm:p-4">
+          <div className="absolute inset-0 bg-black/90 backdrop-blur-sm" onClick={handleClose} />
+          <div
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="scale-trainer-title"
+            className={`relative w-full rounded-2xl border border-[#CEB466]/30 bg-gradient-to-br from-[#1b1233] via-[#171229] to-[#0f0b1e] p-4 shadow-2xl sm:p-6 ${isFullscreen ? 'max-w-none h-full overflow-y-auto' : 'max-w-2xl max-h-[calc(100dvh-1.5rem)] overflow-y-auto'}`}
+          >
             {renderTrainer()}
           </div>
-        </div>
+        </div>,
+        document.body
       )}
 
       {/* Load Aubio.js */}

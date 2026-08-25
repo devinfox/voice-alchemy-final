@@ -57,7 +57,14 @@ export default async function DashboardLayout({
 
       {/* Floating Buttons - adjusted position for mobile */}
       {profile && (
-        <DashboardFloatingButtons currentUserId={profile.id} />
+        <DashboardFloatingButtons
+          currentUserId={profile.id}
+          isTeacher={
+            profile.role === 'teacher' ||
+            profile.role === 'instructor' ||
+            profile.role === 'admin'
+          }
+        />
       )}
     </div>
   )

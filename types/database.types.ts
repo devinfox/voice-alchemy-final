@@ -13,8 +13,9 @@ export type ProfileRole = 'student' | 'teacher' | 'instructor' | 'admin';
 // Booking status
 export type BookingStatus = 'pending' | 'confirmed' | 'completed' | 'cancelled';
 
-// Course level
-export type CourseLevel = 'beginner' | 'intermediate' | 'advanced';
+// Course level — matches the DB default ('Beginner') and the values the
+// course builder writes ('Beginner' | 'Intermediate' | 'Advanced').
+export type CourseLevel = 'Beginner' | 'Intermediate' | 'Advanced' | 'All Levels';
 
 // ============================================================================
 // TABLE TYPES
@@ -31,56 +32,49 @@ export interface Profile {
   created_at: string;
 }
 
-export interface Course {
+// Matches the courses table as built by 00006_safe_courses.sql plus the
+// columns added in 20260730000001_teacher_courses_system.sql. Curriculum is
+// a JSONB column of sections/lessons — there are no modules/lessons tables.
+export interface DbCourse {
   id: string;
-  title: string;
+  name: string;
+  title: string | null;
+  slug: string | null;
+  subtitle: string | null;
   description: string | null;
-  instructor_id: string; // References profiles.id
+  category: string | null;
+  instructor_id: string | null; // References profiles.id (ON DELETE SET NULL)
+  instructor_name: string | null;
   thumbnail_url: string | null;
-  level: CourseLevel;
+  preview_video_url: string | null;
+  level: CourseLevel | null;
   is_published: boolean;
-  video_url: string | null;
+  is_active: boolean;
+  is_free: boolean;
+  price: number | null;
+  what_you_will_learn: string[];
+  requirements: string[];
+  curriculum: unknown; // JSONB array of sections/lessons (CourseSection[] shape)
+  estimated_duration: string | null;
+  max_students: number | null;
   created_at: string;
   updated_at: string;
   // Joined data
   instructor?: Profile;
 }
 
-export interface Module {
-  id: string;
-  course_id: string;
-  title: string;
-  description: string | null;
-  order_index: number;
-  created_at: string;
-  // Joined data
-  course?: Course;
-  lessons?: Lesson[];
-}
-
-export interface Lesson {
-  id: string;
-  module_id: string;
-  title: string;
-  description: string | null;
-  video_url: string | null;
-  duration: number | null;
-  keywords: string[] | null;
-  watch_required: boolean;
-  order_index: number;
-  created_at: string;
-  // Joined data
-  module?: Module;
-}
-
 export interface CourseEnrollment {
   id: string;
   student_id: string;
   course_id: string;
+  status: string;
   enrolled_at: string;
+  completed_at: string | null;
+  created_at: string;
+  updated_at: string;
   // Joined data
   student?: Profile;
-  course?: Course;
+  course?: DbCourse;
 }
 
 export interface Booking {
@@ -158,21 +152,9 @@ export interface Database {
         Relationships: [];
       };
       courses: {
-        Row: Course;
-        Insert: Partial<Course> & Pick<Course, 'title' | 'instructor_id'>;
-        Update: Partial<Course>;
-        Relationships: [];
-      };
-      modules: {
-        Row: Module;
-        Insert: Partial<Module> & Pick<Module, 'course_id' | 'title'>;
-        Update: Partial<Module>;
-        Relationships: [];
-      };
-      lessons: {
-        Row: Lesson;
-        Insert: Partial<Lesson> & Pick<Lesson, 'module_id' | 'title'>;
-        Update: Partial<Lesson>;
+        Row: DbCourse;
+        Insert: Partial<DbCourse> & Pick<DbCourse, 'name'>;
+        Update: Partial<DbCourse>;
         Relationships: [];
       };
       course_enrollments: {
@@ -206,8 +188,8 @@ export interface Database {
         Relationships: [];
       };
     };
-    Views: {};
-    Functions: {};
+    Views: Record<string, never>;
+    Functions: Record<string, never>;
     Enums: {
       profile_role: ProfileRole;
       booking_status: BookingStatus;

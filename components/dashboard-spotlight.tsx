@@ -12,23 +12,23 @@ export function DashboardSpotlight({ isTeacher = false, userName }: DashboardSpo
   const studentSteps: SpotlightStep[] = [
     {
       target: '[data-tour="dashboard-practice-arena"]',
-      title: '1. The Three Live Practice Tools',
+      title: '1. Practice Tools',
       content:
-        'Right on your homepage, you have instant access to Pitch Perfect (chromatic ear training), the Rhythm Metronome game, and the Scale Trainer. In the Scale Trainer, remember to always click "1. Listen to Scale" first to internalize the intervals, then click "2. Start Practice" to sing!',
+        'Start here to practice pitch, rhythm, and scales. For scales, listen first, then sing.',
       placement: 'top',
     },
     {
       target: '[data-tour="dashboard-reports-link"]',
-      title: '2. Training Center & Progress Reports',
+      title: '2. See Your Progress',
       content:
-        'View in-depth reports tracking your pitch onset speed, vocal stability, and singing accuracy over time. Run AI Coach Analysis on your notes and practice recordings.',
+        'Open the Training Center to see how your practice is going and get simple coaching tips.',
       placement: 'top',
     },
     {
       target: '[data-tour="dashboard-lessons-link"]',
-      title: '3. Live Classes & Collaborative Notes',
+      title: '3. Book Your Coach',
       content:
-        'Enter your 1-on-1 live video classroom with your vocal coach, take synchronized notes together in real time, and review archived lesson recordings anytime.',
+        'When you’re ready, find your voice coach and request a 1:1 lesson. Once you have one, your live lessons and shared notes happen right here.',
       placement: 'top',
     },
   ]
@@ -36,23 +36,23 @@ export function DashboardSpotlight({ isTeacher = false, userName }: DashboardSpo
   const teacherSteps: SpotlightStep[] = [
     {
       target: '[data-tour="dashboard-courses-link"]',
-      title: '1. Course Studio & Quizzes',
+      title: '1. Make Courses',
       content:
-        'Design custom courses and transformation modules for your students. Add optional quizzes with multiple-choice questions, instant answers, and scoring.',
+        'Create lessons for your students and add simple quizzes if you want.',
       placement: 'top',
     },
     {
       target: '[data-tour="dashboard-lessons-link"]',
-      title: '2. Live Video Classroom & Shared Notes',
+      title: '2. Teach Live Lessons',
       content:
-        'Launch 1-on-1 live video lessons with your students, collaborate on lesson notes in real time, and easily revisit past recorded sessions.',
+        'Start a video lesson, take notes together, and review past sessions later.',
       placement: 'top',
     },
     {
       target: '[data-tour="dashboard-reports-link"]',
-      title: '3. Student Rosters & Progress Reports',
+      title: '3. Check Student Progress',
       content:
-        'Manage student bookings, review daily pitch and rhythm practice metrics, and monitor vocal progress over time.',
+        'See your students, their bookings, and how their practice is going.',
       placement: 'top',
     },
   ]
@@ -69,9 +69,9 @@ export function DashboardSpotlight({ isTeacher = false, userName }: DashboardSpo
           ? `Welcome Coach ${userName || ''}`
           : 'Welcome to Voice Alchemy Academy',
         message: isTeacher
-          ? 'Ready to guide your vocalists? Take a quick tour to see how to build custom courses & quizzes, launch live classes, and review student progress reports.'
-          : "There's tons of tools to help you become the brightest star you can! Would you like a walk around the platform?",
-        confirmText: 'Yes, Walk Me Around',
+          ? 'Want a quick tour? I can show you where to make courses, start lessons, and check student progress.'
+          : 'Want a quick tour? I can show you where to practice, take lessons, and see your progress.',
+        confirmText: 'Yes, Show Me',
         cancelText: 'No thanks',
       }}
     />

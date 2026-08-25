@@ -1,4 +1,5 @@
 import { createClient } from '@/lib/supabase-server'
+import { requireEmailAccess } from '@/lib/email-access-server'
 import { createClient as createServiceClient } from '@supabase/supabase-js'
 import { NextRequest, NextResponse } from 'next/server'
 
@@ -8,16 +9,19 @@ export async function GET(
   { params }: { params: Promise<{ id: string }> }
 ) {
   try {
-    const supabase = await createClient()
     const { id } = await params
 
-    // Verify user is authenticated
-    const { data: { user }, error: authError } = await supabase.auth.getUser()
-    if (authError || !user) {
-      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+    // Only email-tools users (admins / Julia) may use funnels
+    const profile = await requireEmailAccess()
+    if (!profile) {
+      return NextResponse.json({ error: 'Email tools access required' }, { status: 403 })
     }
 
-    // Fetch funnel with phases and enrollments
+    const supabase = await createClient()
+
+    // Fetch funnel with phases and enrollments. There are no leads/contacts
+    // tables in this app — enrollment recipients are profiles/users, resolved
+    // by the callers that need them.
     const { data: funnel, error } = await supabase
       .from('email_funnels')
       .select(`
@@ -26,11 +30,7 @@ export async function GET(
           *,
           template:email_templates(id, name, subject)
         ),
-        enrollments:email_funnel_enrollments(
-          *,
-          lead:leads(id, first_name, last_name, email),
-          contact:contacts(id, first_name, last_name, email)
-        )
+        enrollments:email_funnel_enrollments(*)
       `)
       .eq('id', id)
       .eq('is_deleted', false)
@@ -63,14 +63,13 @@ export async function PATCH(
   { params }: { params: Promise<{ id: string }> }
 ) {
   try {
-    const supabase = await createClient()
     const { id } = await params
     const body = await request.json()
 
-    // Verify user is authenticated
-    const { data: { user }, error: authError } = await supabase.auth.getUser()
-    if (authError || !user) {
-      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+    // Only email-tools users (admins / Julia) may use funnels
+    const profile = await requireEmailAccess()
+    if (!profile) {
+      return NextResponse.json({ error: 'Email tools access required' }, { status: 403 })
     }
 
     const { name, description, status, phases, tags, auto_enroll_enabled } = body
@@ -108,37 +107,79 @@ export async function PATCH(
 
     console.log('[Email Funnels API] Update result:', updateResult)
 
-    // Update phases if provided
+    // Update phases if provided. Upsert rather than delete-and-reinsert:
+    // deleting phases cascades away email_funnel_logs and wipes per-phase
+    // stats, so existing phases are updated in place, new ones inserted, and
+    // only genuinely removed phases deleted.
     if (phases !== undefined) {
-      // Delete existing phases
-      await serviceClient
+      const { data: existingPhases, error: existingError } = await serviceClient
         .from('email_funnel_phases')
-        .delete()
+        .select('id')
         .eq('funnel_id', id)
 
-      // Insert new phases
-      if (phases.length > 0) {
-        const phasesData = phases.map((phase: {
-          template_id?: string
-          name?: string
-          delay_days?: number
-          delay_hours?: number
-        }, index: number) => ({
-          funnel_id: id,
+      if (existingError) {
+        console.error('Error fetching existing phases:', existingError)
+        return NextResponse.json({ error: existingError.message }, { status: 500 })
+      }
+
+      const existingIds = new Set((existingPhases || []).map(p => p.id))
+      const keptIds = new Set<string>()
+
+      const incoming: Array<{
+        id?: string
+        template_id?: string
+        name?: string
+        delay_days?: number
+        delay_hours?: number
+      }> = phases
+
+      for (const [index, phase] of incoming.entries()) {
+        const phaseData = {
           template_id: phase.template_id || null,
           phase_order: index + 1,
           name: phase.name || `Phase ${index + 1}`,
           delay_days: phase.delay_days || 0,
           delay_hours: phase.delay_hours || 0,
-        }))
+        }
 
-        const { error: phasesError } = await serviceClient
+        if (phase.id && existingIds.has(phase.id)) {
+          // Existing phase — update in place, preserving logs/stats
+          keptIds.add(phase.id)
+          const { error: phaseError } = await serviceClient
+            .from('email_funnel_phases')
+            .update(phaseData)
+            .eq('id', phase.id)
+            .eq('funnel_id', id)
+
+          if (phaseError) {
+            console.error('Error updating phase:', phaseError)
+            return NextResponse.json({ error: phaseError.message }, { status: 500 })
+          }
+        } else {
+          // New phase (no id, or a client-generated placeholder id)
+          const { error: phaseError } = await serviceClient
+            .from('email_funnel_phases')
+            .insert({ funnel_id: id, ...phaseData })
+
+          if (phaseError) {
+            console.error('Error inserting phase:', phaseError)
+            return NextResponse.json({ error: phaseError.message }, { status: 500 })
+          }
+        }
+      }
+
+      // Delete only the phases the client actually removed
+      const removedIds = [...existingIds].filter(phaseId => !keptIds.has(phaseId))
+      if (removedIds.length > 0) {
+        const { error: deleteError } = await serviceClient
           .from('email_funnel_phases')
-          .insert(phasesData)
+          .delete()
+          .eq('funnel_id', id)
+          .in('id', removedIds)
 
-        if (phasesError) {
-          console.error('Error updating phases:', phasesError)
-          return NextResponse.json({ error: phasesError.message }, { status: 500 })
+        if (deleteError) {
+          console.error('Error deleting removed phases:', deleteError)
+          return NextResponse.json({ error: deleteError.message }, { status: 500 })
         }
       }
     }
@@ -174,13 +215,12 @@ export async function DELETE(
   { params }: { params: Promise<{ id: string }> }
 ) {
   try {
-    const supabase = await createClient()
     const { id } = await params
 
-    // Verify user is authenticated
-    const { data: { user }, error: authError } = await supabase.auth.getUser()
-    if (authError || !user) {
-      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+    // Only email-tools users (admins / Julia) may use funnels
+    const profile = await requireEmailAccess()
+    if (!profile) {
+      return NextResponse.json({ error: 'Email tools access required' }, { status: 403 })
     }
 
     // Use service role to bypass RLS

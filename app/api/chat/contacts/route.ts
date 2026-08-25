@@ -20,7 +20,8 @@ export async function GET() {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     }
 
-    const isTeacher = profile.role === 'teacher' || profile.role === 'instructor' || profile.role === 'admin'
+    const isAdmin = profile.role === 'admin'
+    const isTeacher = profile.role === 'teacher' || profile.role === 'instructor' || isAdmin
 
     // Fetch all profiles
     const { data: allProfiles, error } = await supabase
@@ -32,6 +33,23 @@ export async function GET() {
     if (error) {
       console.error('[Chat Contacts API] Error fetching profiles:', error)
       return NextResponse.json({ error: 'Failed to fetch contacts' }, { status: 500 })
+    }
+
+    // Non-admin teachers/instructors may only see students they have a confirmed booking with
+    let allowedStudentIds: Set<string> | null = null
+    if (isTeacher && !isAdmin) {
+      const { data: bookings, error: bookingsError } = await supabase
+        .from('bookings')
+        .select('student_id')
+        .eq('instructor_id', profile.id)
+        .eq('status', 'confirmed')
+
+      if (bookingsError) {
+        console.error('[Chat Contacts API] Error fetching bookings:', bookingsError)
+        return NextResponse.json({ error: 'Failed to fetch contacts' }, { status: 500 })
+      }
+
+      allowedStudentIds = new Set((bookings || []).map((b) => b.student_id))
     }
 
     // Categorize contacts
@@ -50,7 +68,7 @@ export async function GET() {
 
       if (p.role === 'teacher' || p.role === 'instructor' || p.role === 'admin') {
         teachers.push(contact)
-      } else {
+      } else if (!allowedStudentIds || allowedStudentIds.has(p.id)) {
         students.push(contact)
       }
     })

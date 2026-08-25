@@ -6,13 +6,19 @@ import TunerButton from '@/components/TunerButton'
 
 interface DashboardFloatingButtonsProps {
   currentUserId: string
+  isTeacher?: boolean
 }
 
-export function DashboardFloatingButtons({ currentUserId }: DashboardFloatingButtonsProps) {
+export function DashboardFloatingButtons({ currentUserId, isTeacher = false }: DashboardFloatingButtonsProps) {
   const pathname = usePathname()
 
   // Hide chat inside an individual lesson view to avoid overlapping controls.
   const isLessonView = pathname.startsWith('/dashboard/my-lessons/')
+  const isDashboardHome = pathname === '/dashboard'
+
+  if (isDashboardHome && !isTeacher) {
+    return null
+  }
 
   return (
     <>
@@ -21,4 +27,3 @@ export function DashboardFloatingButtons({ currentUserId }: DashboardFloatingBut
     </>
   )
 }
-

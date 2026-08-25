@@ -76,7 +76,7 @@ export async function GET(request: NextRequest) {
 
       // Get booking info for all students
       const studentIds = allStudents?.map(s => s.id) || []
-      let bookingMap: Record<string, { id: string; lesson_day_of_week: number | null; lesson_time: string | null; lesson_duration_minutes: number | null; instructor_id: string }> = {}
+      const bookingMap: Record<string, { id: string; lesson_day_of_week: number | null; lesson_time: string | null; lesson_duration_minutes: number | null; instructor_id: string }> = {}
 
       if (studentIds.length > 0) {
         const { data: bookings } = await supabase
@@ -95,7 +95,7 @@ export async function GET(request: NextRequest) {
       }
 
       // Format and add schedule info
-      let studentsWithBookings = allStudents?.map(student => {
+      const studentsWithBookings = allStudents?.map(student => {
         const booking = bookingMap[student.id]
         return {
           id: booking?.id || `profile-${student.id}`,

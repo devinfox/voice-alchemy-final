@@ -1,4 +1,5 @@
 import { createClient } from '@/lib/supabase-server'
+import { requireEmailAccess } from '@/lib/email-access-server'
 import { createClient as createServiceClient } from '@supabase/supabase-js'
 import { NextRequest, NextResponse } from 'next/server'
 import { sendEmail } from '@/lib/sendgrid'
@@ -8,6 +9,12 @@ import { v4 as uuidv4 } from 'uuid'
 // POST /api/email-templates/send - Send a template to selected leads
 export async function POST(request: NextRequest) {
   try {
+    // Only email-tools users (admins / Julia) may send templates
+    const gateProfile = await requireEmailAccess()
+    if (!gateProfile) {
+      return NextResponse.json({ error: 'Email tools access required' }, { status: 403 })
+    }
+
     const supabase = await createClient()
 
     // Verify user is authenticated
@@ -32,20 +39,6 @@ export async function POST(request: NextRequest) {
       process.env.NEXT_PUBLIC_SUPABASE_URL!,
       process.env.SUPABASE_SERVICE_ROLE_KEY!
     )
-
-    // Get user from profiles table
-    const { data: profile } = await serviceClient
-      .from('profiles')
-      .select('id, first_name, last_name, name, email')
-      .eq('id', user.id)
-      .maybeSingle()
-
-    const userData = {
-      id: user.id,
-      first_name: profile?.first_name || profile?.name?.split(' ')[0] || user.email?.split('@')[0] || 'User',
-      last_name: profile?.last_name || profile?.name?.split(' ').slice(1).join(' ') || '',
-      email: profile?.email || user.email || '',
-    }
 
     // Get user's active email account with verified domain
     const { data: emailAccount, error: accountError } = await serviceClient
@@ -84,19 +77,40 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'Template not found' }, { status: 404 })
     }
 
-    // VAAA: recipients are users (students/teachers) from profiles
-    const { data: leads, error: leadsError } = await serviceClient
+    // VAAA: recipients are users (students/teachers). profiles has no email
+    // column — emails live in the `users` mirror table — so fetch both and
+    // join in code, skipping anyone without an email row.
+    const { data: recipientProfiles, error: leadsError } = await serviceClient
       .from('profiles')
-      .select('id, first_name, last_name, name, email')
+      .select('id, first_name, last_name, name')
       .in('id', lead_ids)
-      .not('email', 'is', null)
 
     if (leadsError) {
       console.error('Error fetching recipients:', leadsError)
       return NextResponse.json({ error: leadsError.message }, { status: 500 })
     }
 
-    if (!leads || leads.length === 0) {
+    const { data: recipientUsers, error: usersError } = await serviceClient
+      .from('users')
+      .select('id, email')
+      .in('id', lead_ids)
+
+    if (usersError) {
+      console.error('Error fetching recipient emails:', usersError)
+      return NextResponse.json({ error: usersError.message }, { status: 500 })
+    }
+
+    const emailById = new Map<string, string>(
+      (recipientUsers || [])
+        .filter((u): u is { id: string; email: string } => !!u.email)
+        .map(u => [u.id, u.email])
+    )
+
+    const leads = (recipientProfiles || [])
+      .map(p => ({ ...p, email: emailById.get(p.id) || null }))
+      .filter((p): p is typeof p & { email: string } => !!p.email)
+
+    if (leads.length === 0) {
       return NextResponse.json({ error: 'No valid recipients found with email addresses' }, { status: 400 })
     }
 
@@ -217,14 +231,6 @@ export async function POST(request: NextRequest) {
             sendgrid_message_id: result.messageId,
           })
           .eq('id', emailId)
-
-        // Log activity
-        await serviceClient.from('activities').insert({
-          user_id: userData.id,
-          type: 'email_sent',
-          description: `Sent email: "${subject}"`,
-          created_at: now,
-        })
 
         sentCount++
       } catch (sendError: any) {

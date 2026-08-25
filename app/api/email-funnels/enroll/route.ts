@@ -1,16 +1,14 @@
-import { createClient } from '@/lib/supabase-server'
+import { requireEmailAccess } from '@/lib/email-access-server'
 import { createClient as createServiceClient } from '@supabase/supabase-js'
 import { NextRequest, NextResponse } from 'next/server'
 
 // POST /api/email-funnels/enroll - Enroll leads in a funnel
 export async function POST(request: NextRequest) {
   try {
-    const supabase = await createClient()
-
-    // Verify user is authenticated
-    const { data: { user }, error: authError } = await supabase.auth.getUser()
-    if (authError || !user) {
-      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+    // Only email-tools users (admins / Julia) may use funnels
+    const profile = await requireEmailAccess()
+    if (!profile) {
+      return NextResponse.json({ error: 'Email tools access required' }, { status: 403 })
     }
 
     const body = await request.json()
@@ -90,7 +88,7 @@ export async function POST(request: NextRequest) {
       status: 'active',
       current_phase: 1,
       enrolled_at: enrolledAt,
-      enrolled_by: user.id,
+      enrolled_by: profile.id,
       next_email_scheduled_at: nextEmailAt,
     }))
 
@@ -125,57 +123,55 @@ export async function POST(request: NextRequest) {
   }
 }
 
-// GET /api/email-funnels/enroll?tags=tag1,tag2 - Get leads by tags for enrollment preview
+// GET /api/email-funnels/enroll - Get enrollable recipients for preview
+// VAAA has no leads table (and no ai_tags data): candidates are profiles,
+// with emails joined in from the `users` mirror table.
 export async function GET(request: NextRequest) {
   try {
-    const supabase = await createClient()
-
-    // Verify user is authenticated
-    const { data: { user }, error: authError } = await supabase.auth.getUser()
-    if (authError || !user) {
-      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+    // Only email-tools users (admins / Julia) may use funnels
+    const profile = await requireEmailAccess()
+    if (!profile) {
+      return NextResponse.json({ error: 'Email tools access required' }, { status: 403 })
     }
 
     const { searchParams } = new URL(request.url)
-    const tags = searchParams.get('tags')?.split(',').filter(Boolean) || []
     const funnelId = searchParams.get('funnel_id')
 
-    if (tags.length === 0) {
-      return NextResponse.json({ error: 'At least one tag is required' }, { status: 400 })
-    }
-
-    // Use service role to fetch leads
+    // Use service role to fetch candidate recipients
     const serviceClient = createServiceClient(
       process.env.NEXT_PUBLIC_SUPABASE_URL!,
       process.env.SUPABASE_SERVICE_ROLE_KEY!
     )
 
-    // Fetch all leads with AI tags
-    const { data: leads, error: leadsError } = await serviceClient
-      .from('leads')
-      .select('id, first_name, last_name, email, ai_tags')
-      .eq('is_deleted', false)
-      .not('ai_tags', 'is', null)
+    const { data: candidates, error: candidatesError } = await serviceClient
+      .from('profiles')
+      .select('id, first_name, last_name, name')
+      .order('first_name', { ascending: true })
 
-    if (leadsError) {
-      console.error('Error fetching leads:', leadsError)
-      return NextResponse.json({ error: leadsError.message }, { status: 500 })
+    if (candidatesError) {
+      console.error('Error fetching candidates:', candidatesError)
+      return NextResponse.json({ error: candidatesError.message }, { status: 500 })
     }
 
-    // Filter leads that have ANY of the specified tags
-    const matchingLeads = (leads || []).filter(lead => {
-      const leadTags = lead.ai_tags as Array<{ label: string; category: string }> | null
-      if (!leadTags || !Array.isArray(leadTags)) return false
+    const candidateIds = (candidates || []).map(c => c.id)
+    const emailById = new Map<string, string>()
+    if (candidateIds.length > 0) {
+      const { data: userRows } = await serviceClient
+        .from('users')
+        .select('id, email')
+        .in('id', candidateIds)
 
-      return leadTags.some(tag =>
-        tags.some(searchTag =>
-          tag.label.toLowerCase().includes(searchTag.toLowerCase()) ||
-          tag.category.toLowerCase().includes(searchTag.toLowerCase())
-        )
-      )
-    })
+      for (const row of userRows || []) {
+        if (row.email) emailById.set(row.id, row.email)
+      }
+    }
 
-    // If funnel_id provided, check which leads are already enrolled
+    // Only people with an email address can be enrolled
+    const matchingLeads = (candidates || [])
+      .map(c => ({ ...c, email: emailById.get(c.id) || null }))
+      .filter(c => !!c.email)
+
+    // If funnel_id provided, check which recipients are already enrolled
     let enrolledLeadIds: string[] = []
     if (funnelId) {
       const { data: enrollments } = await serviceClient
@@ -188,7 +184,7 @@ export async function GET(request: NextRequest) {
       enrolledLeadIds = (enrollments || []).map(e => e.lead_id)
     }
 
-    // Add enrollment status to leads
+    // Add enrollment status
     const leadsWithStatus = matchingLeads.map(lead => ({
       ...lead,
       already_enrolled: enrolledLeadIds.includes(lead.id),

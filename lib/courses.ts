@@ -30,7 +30,6 @@ export interface CourseSection {
   id: string
   title: string
   lessons: CourseLesson[]
-  quiz?: CourseQuiz
 }
 
 export interface Course {
@@ -389,6 +388,50 @@ export const courses: Course[] = [
 
 const CUSTOM_COURSES_KEY = 'vaaa_custom_courses_v1'
 
+export function generateId(prefix: string): string {
+  const unique =
+    typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function'
+      ? crypto.randomUUID()
+      : `${Date.now()}-${Math.random().toString(36).slice(2, 10)}`
+  return `${prefix}-${unique}`
+}
+
+export function slugify(text: string): string {
+  return text
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/(^-|-$)/g, '')
+}
+
+/**
+ * Slugify a title and de-collide it against every existing course
+ * (built-in and custom). `currentSlug` exempts the course being edited.
+ */
+export function generateUniqueSlug(title: string, currentSlug?: string): string {
+  const base = slugify(title) || `custom-course-${Date.now()}`
+  const taken = new Set(
+    getAllCourses()
+      .map((c) => c.slug)
+      .filter((slug) => slug !== currentSlug)
+  )
+  if (!taken.has(base)) return base
+  let n = 2
+  while (taken.has(`${base}-${n}`)) n++
+  return `${base}-${n}`
+}
+
+export function getCourseTotalMinutes(course: Course): number {
+  return course.sections.reduce(
+    (sum, section) =>
+      sum +
+      section.lessons.reduce((lessonSum, lesson) => {
+        const match = lesson.duration.match(/\d+/)
+        return lessonSum + (match ? parseInt(match[0], 10) : 0)
+      }, 0),
+    0
+  )
+}
+
 export function getCustomCourses(): Course[] {
   if (typeof window === 'undefined') return []
   try {
@@ -401,8 +444,13 @@ export function getCustomCourses(): Course[] {
   }
 }
 
-export function saveCustomCourse(course: Course): Course {
-  if (typeof window === 'undefined') return course
+/**
+ * Persist a custom course. Returns the saved course, or null when
+ * persistence failed (e.g. localStorage quota exceeded) so callers can
+ * surface the error instead of silently dropping the teacher's work.
+ */
+export function saveCustomCourse(course: Course): Course | null {
+  if (typeof window === 'undefined') return null
   try {
     const current = getCustomCourses()
     const index = current.findIndex((c) => c.slug === course.slug)
@@ -423,7 +471,7 @@ export function saveCustomCourse(course: Course): Course {
     return updated
   } catch (e) {
     console.error('Failed to save custom course', e)
-    return course
+    return null
   }
 }
 

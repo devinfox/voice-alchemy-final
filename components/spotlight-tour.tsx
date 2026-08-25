@@ -47,11 +47,10 @@ export function SpotlightTour({
   const [isActive, setIsActive] = useState(false)
   const [currentStepIndex, setCurrentStepIndex] = useState(0)
   const [targetRect, setTargetRect] = useState<TargetRect | null>(null)
-  const [isMounted, setIsMounted] = useState(false)
+  const [isMounted] = useState(() => typeof document !== 'undefined')
   const tooltipRef = useRef<HTMLDivElement>(null)
 
   useEffect(() => {
-    setIsMounted(true)
     return () => {
       // Ensure body scroll is unlocked on unmount
       if (typeof document !== 'undefined') {
@@ -164,18 +163,42 @@ export function SpotlightTour({
   useEffect(() => {
     if (!isActive) return
 
-    // Immediately measure target then re-measure after smooth scrollsettles
-    updateTargetRect()
+    // Measure after activation, then re-measure after smooth scroll settles.
+    const initialTimer = setTimeout(updateTargetRect, 0)
     const timer = setTimeout(updateTargetRect, 60)
     window.addEventListener('resize', updateTargetRect)
     window.addEventListener('scroll', updateTargetRect, true)
+    window.visualViewport?.addEventListener('resize', updateTargetRect)
 
     return () => {
+      clearTimeout(initialTimer)
       clearTimeout(timer)
       window.removeEventListener('resize', updateTargetRect)
       window.removeEventListener('scroll', updateTargetRect, true)
+      window.visualViewport?.removeEventListener('resize', updateTargetRect)
     }
   }, [isActive, currentStepIndex, updateTargetRect])
+
+  useEffect(() => {
+    if (!isActive && !isPromptOpen) return
+
+    const bodyOverflow = document.body.style.overflow
+    const bodyTouchAction = document.body.style.touchAction
+    const rootOverflow = document.documentElement.style.overflow
+    const rootTouchAction = document.documentElement.style.touchAction
+
+    document.body.style.overflow = 'hidden'
+    document.body.style.touchAction = 'none'
+    document.documentElement.style.overflow = 'hidden'
+    document.documentElement.style.touchAction = 'none'
+
+    return () => {
+      document.body.style.overflow = bodyOverflow
+      document.body.style.touchAction = bodyTouchAction
+      document.documentElement.style.overflow = rootOverflow
+      document.documentElement.style.touchAction = rootTouchAction
+    }
+  }, [isActive, isPromptOpen])
 
   const handleStartFromPrompt = () => {
     setIsPromptOpen(false)
@@ -221,22 +244,25 @@ export function SpotlightTour({
   // 1. RENDER SOLID OPAQUE ROYAL PURPLE WELCOME MODAL
   if (isPromptOpen && welcomePrompt) {
     return createPortal(
-      <div className="fixed inset-0 z-[9990] flex items-center justify-center p-4">
+      <div className="fixed inset-0 z-[100000] flex items-center justify-center p-3 sm:p-4">
         {/* Dark backdrop overlay */}
         <div
-          className="fixed inset-0 bg-black/85 transition-opacity"
+          className="fixed inset-0 bg-black/90 transition-opacity"
           onClick={handleDismissPrompt}
         />
 
         {/* Solid High-Contrast Opaque Purple Welcome Card */}
         <div
-          className="relative z-[9995] w-full max-w-lg p-6 sm:p-8 rounded-3xl border-2 border-[#CEB466] shadow-[0_25px_70px_rgba(0,0,0,0.95)] text-center bg-[#1b1233] text-white max-h-[90dvh] overflow-y-auto"
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby={`${tourKey}-welcome-title`}
+          className="relative z-[100005] w-full max-w-lg p-5 sm:p-8 rounded-2xl sm:rounded-3xl border-2 border-[#CEB466] shadow-[0_25px_70px_rgba(0,0,0,0.95)] text-center bg-[#1b1233] text-white max-h-[calc(100dvh-1.5rem)] sm:max-h-[calc(100dvh-2rem)] overflow-y-auto overscroll-contain"
         >
           <div className="w-14 h-14 mx-auto rounded-2xl bg-[#CEB466] text-[#171229] flex items-center justify-center shadow-xl shadow-[#CEB466]/25 mb-4">
             <Sparkles className="w-7 h-7" />
           </div>
 
-          <h3 className="text-xl sm:text-2xl font-bold text-white font-luxury mb-3">
+          <h3 id={`${tourKey}-welcome-title`} className="text-xl sm:text-2xl font-bold text-white font-luxury mb-3">
             {welcomePrompt.title || 'Welcome to Voice Alchemy Academy'}
           </h3>
 
@@ -269,60 +295,71 @@ export function SpotlightTour({
   if (!isActive) return null
 
   // 2. CALCULATE DYNAMIC TOOLTIP PLACEMENT (SMOOTH & RESPONSIVE)
-  const isMobile = typeof window !== 'undefined' && window.innerWidth < 640
+  const viewport = typeof window !== 'undefined'
+    ? {
+        width: window.visualViewport?.width ?? window.innerWidth,
+        height: window.visualViewport?.height ?? window.innerHeight,
+        offsetLeft: window.visualViewport?.offsetLeft ?? 0,
+        offsetTop: window.visualViewport?.offsetTop ?? 0,
+      }
+    : { width: 0, height: 0, offsetLeft: 0, offsetTop: 0 }
+  const isMobile = viewport.width < 640
 
-  let tooltipStyle: React.CSSProperties = {
+  const tooltipStyle: React.CSSProperties = {
     position: 'fixed',
     zIndex: 10000,
     maxWidth: '420px',
-    width: 'calc(100vw - 2rem)',
+    width: `min(420px, calc(100vw - 1.5rem))`,
+    maxHeight: 'calc(100dvh - 1.5rem)',
+    overflow: 'hidden',
     transition: 'top 0.25s cubic-bezier(0.16, 1, 0.3, 1), left 0.25s cubic-bezier(0.16, 1, 0.3, 1), transform 0.25s cubic-bezier(0.16, 1, 0.3, 1)',
   }
 
   if (targetRect) {
     if (isMobile) {
       // Mobile Smart Positioning: Top vs Bottom of screen depending on element position
-      const isTargetInBottomHalf = targetRect.top > (window.innerHeight / 2)
+      const isTargetInBottomHalf = targetRect.top > (viewport.height / 2)
+      const mobileInset = 12
       if (isTargetInBottomHalf) {
-        tooltipStyle.top = '16px'
+        tooltipStyle.top = `${viewport.offsetTop + mobileInset}px`
         tooltipStyle.bottom = 'auto'
-        tooltipStyle.left = '16px'
-        tooltipStyle.right = '16px'
+        tooltipStyle.left = `${viewport.offsetLeft + mobileInset}px`
+        tooltipStyle.right = `${mobileInset}px`
         tooltipStyle.width = 'auto'
         tooltipStyle.maxWidth = 'none'
       } else {
-        tooltipStyle.bottom = '16px'
+        tooltipStyle.bottom = `${mobileInset}px`
         tooltipStyle.top = 'auto'
-        tooltipStyle.left = '16px'
-        tooltipStyle.right = '16px'
+        tooltipStyle.left = `${viewport.offsetLeft + mobileInset}px`
+        tooltipStyle.right = `${mobileInset}px`
         tooltipStyle.width = 'auto'
         tooltipStyle.maxWidth = 'none'
       }
     } else {
       // Desktop Adaptive Placement
       const padding = 16
-      const tooltipWidth = Math.min(420, window.innerWidth - 32)
-      const tooltipHeight = 220
+      const tooltipWidth = Math.min(420, viewport.width - 32)
+      const tooltipHeight = 260
 
       const spaceAbove = targetRect.top
-      const spaceBelow = window.innerHeight - targetRect.bottom
+      const spaceBelow = viewport.height - targetRect.bottom
       const spaceLeft = targetRect.left
-      const spaceRight = window.innerWidth - targetRect.right
+      const spaceRight = viewport.width - targetRect.right
 
       const preferred = currentStep?.placement || 'auto'
 
       if (preferred === 'bottom' || (preferred === 'auto' && spaceBelow >= tooltipHeight)) {
-        tooltipStyle.top = `${Math.min(window.innerHeight - tooltipHeight - 16, targetRect.bottom + padding)}px`
-        tooltipStyle.left = `${Math.max(16, Math.min(window.innerWidth - tooltipWidth - 16, targetRect.left + targetRect.width / 2 - tooltipWidth / 2))}px`
+        tooltipStyle.top = `${viewport.offsetTop + Math.min(viewport.height - tooltipHeight - 16, targetRect.bottom + padding)}px`
+        tooltipStyle.left = `${viewport.offsetLeft + Math.max(16, Math.min(viewport.width - tooltipWidth - 16, targetRect.left + targetRect.width / 2 - tooltipWidth / 2))}px`
       } else if (preferred === 'top' || (preferred === 'auto' && spaceAbove >= tooltipHeight)) {
-        tooltipStyle.top = `${Math.max(16, targetRect.top - tooltipHeight - padding)}px`
-        tooltipStyle.left = `${Math.max(16, Math.min(window.innerWidth - tooltipWidth - 16, targetRect.left + targetRect.width / 2 - tooltipWidth / 2))}px`
+        tooltipStyle.top = `${viewport.offsetTop + Math.max(16, targetRect.top - tooltipHeight - padding)}px`
+        tooltipStyle.left = `${viewport.offsetLeft + Math.max(16, Math.min(viewport.width - tooltipWidth - 16, targetRect.left + targetRect.width / 2 - tooltipWidth / 2))}px`
       } else if (preferred === 'right' && spaceRight >= tooltipWidth) {
-        tooltipStyle.top = `${Math.max(16, targetRect.top + targetRect.height / 2 - tooltipHeight / 2)}px`
+        tooltipStyle.top = `${viewport.offsetTop + Math.max(16, Math.min(viewport.height - tooltipHeight - 16, targetRect.top + targetRect.height / 2 - tooltipHeight / 2))}px`
         tooltipStyle.left = `${targetRect.right + padding}px`
       } else if (preferred === 'left' && spaceLeft >= tooltipWidth) {
-        tooltipStyle.top = `${Math.max(16, targetRect.top + targetRect.height / 2 - tooltipHeight / 2)}px`
-        tooltipStyle.left = `${Math.max(16, targetRect.left - tooltipWidth - padding)}px`
+        tooltipStyle.top = `${viewport.offsetTop + Math.max(16, Math.min(viewport.height - tooltipHeight - 16, targetRect.top + targetRect.height / 2 - tooltipHeight / 2))}px`
+        tooltipStyle.left = `${viewport.offsetLeft + Math.max(16, targetRect.left - tooltipWidth - padding)}px`
       } else {
         tooltipStyle.top = '50%'
         tooltipStyle.left = '50%'
@@ -338,7 +375,7 @@ export function SpotlightTour({
   const maskId = `spotlight-mask-${tourKey}`
 
   return createPortal(
-    <div className="fixed inset-0 z-[9990] pointer-events-auto">
+    <div className="fixed inset-0 z-[100000] pointer-events-auto">
       {/* 1. CRYSTAL-CLEAR SVG CUTOUT MASK (ZERO BLUR, REASONABLE 55% SOFT OPACITY) */}
       <svg
         className="fixed inset-0 w-full h-full pointer-events-none"
@@ -379,7 +416,7 @@ export function SpotlightTour({
       {/* 2. GLOWING GOLD BORDER RING AROUND REAL TARGET */}
       {targetRect && (
         <div
-          className="fixed pointer-events-none transition-all duration-300 z-[9995]"
+          className="fixed pointer-events-none transition-all duration-300 z-[100005]"
           style={{
             top: `${Math.max(0, targetRect.top - 6)}px`,
             left: `${Math.max(0, targetRect.left - 6)}px`,
@@ -404,7 +441,12 @@ export function SpotlightTour({
         style={tooltipStyle}
         className="pointer-events-auto"
       >
-        <div className="p-4 sm:p-6 rounded-2xl sm:rounded-3xl border-2 border-[#CEB466] shadow-[0_20px_60px_rgba(0,0,0,0.95)] relative overflow-hidden bg-[#1b1233] text-white">
+        <div
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby={`${tourKey}-step-title`}
+          className="flex max-h-[calc(100dvh-1.5rem)] flex-col rounded-2xl sm:rounded-3xl border-2 border-[#CEB466] bg-[#1b1233] p-4 text-white shadow-[0_20px_60px_rgba(0,0,0,0.95)] sm:p-6"
+        >
           {/* Header */}
           <div className="flex items-center justify-between gap-2 pb-2.5 sm:pb-3 border-b border-white/[0.08] relative z-10">
             <div className="flex items-center gap-2">
@@ -426,8 +468,8 @@ export function SpotlightTour({
           </div>
 
           {/* Body */}
-          <div className="py-2.5 sm:py-3.5 relative z-10">
-            <h4 className="text-sm sm:text-lg font-bold text-white font-luxury">
+          <div className="py-2.5 sm:py-3.5 relative z-10 overflow-y-auto overscroll-contain">
+            <h4 id={`${tourKey}-step-title`} className="text-sm sm:text-lg font-bold text-white font-luxury">
               {currentStep?.title}
             </h4>
             <p className="text-xs sm:text-sm text-gray-200 mt-1 sm:mt-1.5 leading-relaxed">
@@ -488,7 +530,7 @@ export function SpotlightTriggerButton({
   return (
     <button
       onClick={() => window.dispatchEvent(new CustomEvent(`start-spotlight-${tourKey}`))}
-      className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-[#CEB466]/10 hover:bg-[#CEB466]/20 text-[#CEB466] border border-[#CEB466]/30 text-xs font-semibold transition-all hover:scale-105 active:scale-95 shadow-sm ${className}`}
+      className={`inline-flex w-fit shrink-0 items-center gap-1.5 px-2.5 py-2 sm:px-3 sm:py-1.5 rounded-xl bg-[#CEB466]/10 hover:bg-[#CEB466]/20 text-[#CEB466] border border-[#CEB466]/30 text-xs font-semibold transition-all hover:scale-105 active:scale-95 shadow-sm ${className}`}
       title={`How to use this tool`}
     >
       <HelpCircle className="w-3.5 h-3.5" />

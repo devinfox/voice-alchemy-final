@@ -162,7 +162,7 @@ export function LabelPicker({ threadId, appliedLabelIds, onLabelsChange }: Label
       </button>
 
       {isOpen && (
-        <div className="absolute right-0 mt-2 w-64 bg-gray-900 border border-white/10 rounded-lg shadow-xl z-50">
+        <div className="absolute right-0 mt-2 w-64 modal-solid border border-white/10 rounded-lg shadow-xl z-50">
           <div className="p-2 border-b border-white/10">
             <span className="text-xs font-medium text-gray-400 uppercase">Labels</span>
           </div>

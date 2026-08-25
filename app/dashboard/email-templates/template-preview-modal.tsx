@@ -48,7 +48,7 @@ export function TemplatePreviewModal({
       />
 
       {/* Modal */}
-      <div className="relative glass-card w-full max-w-3xl mx-4 max-h-[90vh] overflow-hidden flex flex-col">
+      <div className="relative glass-card modal-solid w-full max-w-3xl mx-4 max-h-[90vh] overflow-hidden flex flex-col">
         {/* Header */}
         <div className="flex items-center justify-between p-5 border-b border-white/10">
           <div className="flex items-center gap-3">

@@ -121,7 +121,7 @@ export function MobileNav({ user, userEmail }: MobileNavProps) {
       {/* Mobile Drawer Overlay */}
       {isOpen && (
         <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-md animate-fade-in">
-          <div className="fixed inset-y-0 left-0 w-72 max-w-[85vw] glass-card-luxe bg-[#171229]/95 border-r border-white/[0.08] flex flex-col p-4 space-y-4 shadow-2xl overflow-y-auto">
+          <div className="fixed inset-y-0 left-0 w-72 max-w-[85vw] glass-card-luxe modal-solid border-r border-white/[0.08] flex flex-col p-4 space-y-4 shadow-2xl overflow-y-auto">
             {/* Header */}
             <div className="flex items-center justify-between pb-3 border-b border-white/[0.08]">
               <Image

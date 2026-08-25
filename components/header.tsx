@@ -2,7 +2,7 @@
 
 import { useState, useRef, useEffect } from 'react'
 import Link from 'next/link'
-import { useRouter } from 'next/navigation'
+import { usePathname, useRouter } from 'next/navigation'
 import { Search, ChevronDown, Settings, LogOut, Users, GraduationCap, X, Sparkles } from 'lucide-react'
 import { createClient } from '@/lib/supabase'
 import type { User } from '@/types/database.types'
@@ -29,6 +29,21 @@ export function Header({ user }: HeaderProps) {
   const searchRef = useRef<HTMLDivElement>(null)
 
   const isTeacher = user?.role === 'teacher' || user?.role === 'instructor' || user?.role === 'admin'
+
+  const pathname = usePathname()
+
+  // Map the current page to its live spotlight tour key (v4).
+  // Pages without a mounted tour (or teacher-only tours viewed by a student) get no button.
+  let pageTourKey: string | null = null
+  if (pathname === '/dashboard') {
+    pageTourKey = isTeacher ? 'teacher_dashboard_v4' : 'student_dashboard_v4'
+  } else if (pathname === '/dashboard/students') {
+    pageTourKey = isTeacher ? 'teacher_roster_v4' : null
+  } else if (pathname === '/dashboard/courses') {
+    pageTourKey = isTeacher ? 'teacher_course_builder_v4' : null
+  } else if (pathname === '/dashboard/training-center') {
+    pageTourKey = 'training_center_v4'
+  }
 
   // Close dropdowns when clicking outside
   useEffect(() => {
@@ -144,7 +159,7 @@ export function Header({ user }: HeaderProps) {
 
           {/* Search Results Dropdown */}
           {showResults && (searchResults.length > 0 || isSearching) && (
-            <div className="absolute top-full left-0 right-0 mt-2 glass-card rounded-xl shadow-2xl shadow-black/40 py-2 z-50 max-h-80 overflow-y-auto border border-white/10 animate-slide-up">
+            <div className="absolute top-full left-0 right-0 mt-2 glass-card modal-solid rounded-xl shadow-2xl shadow-black/40 py-2 z-50 max-h-80 overflow-y-auto border border-white/10 animate-slide-up">
               {isSearching ? (
                 <div className="px-4 py-3 text-sm text-gray-400 flex items-center gap-2">
                   <div className="w-4 h-4 border-2 border-[#CEB466]/30 border-t-[#CEB466] rounded-full animate-spin" />
@@ -185,14 +200,16 @@ export function Header({ user }: HeaderProps) {
       {/* Actions */}
       <div className="flex items-center gap-3 sm:gap-4">
         {/* Guided Walkthrough Trigger Button */}
-        <button
-          onClick={() => window.dispatchEvent(new CustomEvent('start-spotlight-dashboard_main_v3'))}
-          className="flex items-center gap-1.5 px-3 py-2 rounded-xl bg-gradient-to-r from-[#CEB466]/20 via-[#CEB466]/10 to-transparent hover:from-[#CEB466]/30 hover:to-[#CEB466]/20 border border-[#CEB466]/40 text-[#CEB466] text-xs font-bold shadow-md shadow-[#CEB466]/10 hover:brightness-110 transition-all"
-          title="Start on-page spotlight walkthrough"
-        >
-          <Sparkles className="w-3.5 h-3.5" />
-          <span className="hidden sm:inline">Page Tour</span>
-        </button>
+        {pageTourKey && (
+          <button
+            onClick={() => window.dispatchEvent(new CustomEvent(`start-spotlight-${pageTourKey}`))}
+            className="flex items-center gap-1.5 px-3 py-2 rounded-xl bg-gradient-to-r from-[#CEB466]/20 via-[#CEB466]/10 to-transparent hover:from-[#CEB466]/30 hover:to-[#CEB466]/20 border border-[#CEB466]/40 text-[#CEB466] text-xs font-bold shadow-md shadow-[#CEB466]/10 hover:brightness-110 transition-all"
+            title="Start on-page spotlight walkthrough"
+          >
+            <Sparkles className="w-3.5 h-3.5" />
+            <span className="hidden sm:inline">Page Tour</span>
+          </button>
+        )}
 
         {/* User Menu with Dropdown */}
         {user && (
@@ -217,19 +234,21 @@ export function Header({ user }: HeaderProps) {
 
             {/* Dropdown Menu */}
             {isProfileOpen && (
-              <div className="absolute right-0 mt-2 w-52 glass-card rounded-xl shadow-2xl shadow-black/40 py-2 z-50 border border-white/10 animate-slide-up">
-                <button
-                  onClick={() => {
-                    setIsProfileOpen(false)
-                    window.dispatchEvent(new CustomEvent('start-spotlight-dashboard_main_v3'))
-                  }}
-                  className="w-[calc(100%-16px)] flex items-center gap-3 px-4 py-2.5 text-sm text-[#CEB466] hover:bg-white/[0.06] transition-all duration-200 mx-2 rounded-lg text-left font-medium"
-                >
-                  <div className="w-8 h-8 rounded-lg bg-[#CEB466]/20 flex items-center justify-center text-[#CEB466]">
-                    <Sparkles className="w-4 h-4" />
-                  </div>
-                  Page Tour
-                </button>
+              <div className="absolute right-0 mt-2 w-52 glass-card modal-solid rounded-xl shadow-2xl shadow-black/40 py-2 z-50 border border-white/10 animate-slide-up">
+                {pageTourKey && (
+                  <button
+                    onClick={() => {
+                      setIsProfileOpen(false)
+                      window.dispatchEvent(new CustomEvent(`start-spotlight-${pageTourKey}`))
+                    }}
+                    className="w-[calc(100%-16px)] flex items-center gap-3 px-4 py-2.5 text-sm text-[#CEB466] hover:bg-white/[0.06] transition-all duration-200 mx-2 rounded-lg text-left font-medium"
+                  >
+                    <div className="w-8 h-8 rounded-lg bg-[#CEB466]/20 flex items-center justify-center text-[#CEB466]">
+                      <Sparkles className="w-4 h-4" />
+                    </div>
+                    Page Tour
+                  </button>
+                )}
                 <Link
                   href="/dashboard/settings"
                   onClick={() => setIsProfileOpen(false)}

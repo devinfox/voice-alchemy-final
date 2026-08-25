@@ -1,6 +1,20 @@
+import { requireEmailAccess } from '@/lib/email-access-server'
 import { createClient } from '@/lib/supabase-server'
 import { createClient as createServiceClient } from '@supabase/supabase-js'
 import { NextRequest, NextResponse } from 'next/server'
+
+// Columns a client is allowed to update via PATCH. Everything else on
+// email_templates (created_by, organization_id, is_deleted, timestamps, id)
+// is server-managed and must never come from the request body.
+const UPDATABLE_TEMPLATE_COLUMNS = [
+  'name',
+  'subject',
+  'body',
+  'body_html',
+  'description',
+  'category',
+  'is_active',
+] as const
 
 // DELETE /api/email-templates/[id] - Soft delete a template
 export async function DELETE(
@@ -8,17 +22,14 @@ export async function DELETE(
   { params }: { params: Promise<{ id: string }> }
 ) {
   try {
-    const supabase = await createClient()
     const { id } = await params
 
-    // Verify user is authenticated
-    const { data: { user }, error: authError } = await supabase.auth.getUser()
-    console.log('Auth check - user:', user?.id, 'error:', authError?.message)
-
-    if (authError || !user) {
+    // Only email-tools users (admins / Julia) may manage templates
+    const profile = await requireEmailAccess()
+    if (!profile) {
       return NextResponse.json(
-        { error: 'Unauthorized' },
-        { status: 401 }
+        { error: 'Email tools access required' },
+        { status: 403 }
       )
     }
 
@@ -69,26 +80,32 @@ export async function PATCH(
   { params }: { params: Promise<{ id: string }> }
 ) {
   try {
-    const supabase = await createClient()
     const { id } = await params
     const body = await request.json()
 
-    // Verify user is authenticated
-    const { data: { user }, error: authError } = await supabase.auth.getUser()
-    if (authError || !user) {
+    // Only email-tools users (admins / Julia) may manage templates
+    const profile = await requireEmailAccess()
+    if (!profile) {
       return NextResponse.json(
-        { error: 'Unauthorized' },
-        { status: 401 }
+        { error: 'Email tools access required' },
+        { status: 403 }
       )
     }
 
+    // Whitelist updatable columns — never spread the raw body into the update
+    const updateData: Record<string, unknown> = {}
+    for (const column of UPDATABLE_TEMPLATE_COLUMNS) {
+      if (body[column] !== undefined) {
+        updateData[column] = body[column]
+      }
+    }
+    updateData.updated_at = new Date().toISOString()
+
     // Update the template
+    const supabase = await createClient()
     const { data, error } = await supabase
       .from('email_templates')
-      .update({
-        ...body,
-        updated_at: new Date().toISOString(),
-      })
+      .update(updateData)
       .eq('id', id)
       .select()
 

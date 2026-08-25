@@ -2,8 +2,8 @@
 
 import Link from 'next/link'
 import { use, useEffect, useMemo, useState } from 'react'
-import { ArrowLeft, CheckCircle2, ChevronDown, ChevronRight, Circle, Clock3, PlayCircle } from 'lucide-react'
-import { getCourseBySlug, type CourseLesson } from '@/lib/courses'
+import { ArrowLeft, CheckCircle2, ChevronDown, ChevronRight, Circle, Clock3, PlayCircle, RotateCcw } from 'lucide-react'
+import { getCourseBySlug, type Course, type CourseLesson } from '@/lib/courses'
 import { CourseQuizRunner } from '@/components/course-quiz-runner'
 
 interface LessonPointer {
@@ -19,7 +19,72 @@ function getProgressKey(slug: string) {
 
 export default function CoursePlayerPage({ params }: { params: Promise<{ slug: string }> }) {
   const { slug } = use(params)
-  const course = getCourseBySlug(slug)
+
+  // Course data and saved progress are loaded after mount. Custom courses and
+  // saved progress live in localStorage, which the server can't see — reading
+  // them during render would make the server and client HTML disagree.
+  const [isLoaded, setIsLoaded] = useState(false)
+  const [course, setCourse] = useState<Course | null>(null)
+  const [expandedSections, setExpandedSections] = useState<Record<string, boolean>>({})
+  const [activeLessonId, setActiveLessonId] = useState<string>('')
+  const [completedLessonIds, setCompletedLessonIds] = useState<string[]>([])
+
+  useEffect(() => {
+    const loadedCourse = getCourseBySlug(slug) ?? null
+    const validLessonIds = new Set(
+      loadedCourse?.sections.flatMap((section) => section.lessons.map((lesson) => lesson.id)) ?? []
+    )
+    const defaultLessonId = loadedCourse?.sections[0]?.lessons[0]?.id ?? ''
+
+    let savedActiveId = ''
+    let savedCompletedIds: string[] = []
+    if (loadedCourse) {
+      try {
+        const saved = localStorage.getItem(getProgressKey(loadedCourse.slug))
+        if (saved) {
+          const parsed = JSON.parse(saved) as { activeLessonId?: string; completedLessonIds?: string[] }
+          savedActiveId = parsed.activeLessonId || ''
+          savedCompletedIds = Array.isArray(parsed.completedLessonIds) ? parsed.completedLessonIds : []
+        }
+      } catch {
+        // Corrupt progress data — start fresh.
+      }
+    }
+
+    // Drop ids that no longer exist (e.g. the teacher deleted a lesson), and
+    // fall back to the first lesson when the saved pointer is stale.
+    const activeId = validLessonIds.has(savedActiveId) ? savedActiveId : defaultLessonId
+    const completedIds = savedCompletedIds.filter((id) => validLessonIds.has(id))
+
+    const activeSectionId =
+      loadedCourse?.sections.find((section) => section.lessons.some((lesson) => lesson.id === activeId))?.id ??
+      loadedCourse?.sections[0]?.id
+
+    // One-shot post-hydration load from localStorage; server HTML and the
+    // client's first render intentionally agree on the loading state first.
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    setCourse(loadedCourse)
+    setActiveLessonId(activeId)
+    setCompletedLessonIds(completedIds)
+    setExpandedSections(
+      loadedCourse
+        ? Object.fromEntries(loadedCourse.sections.map((section) => [section.id, section.id === activeSectionId]))
+        : {}
+    )
+    setIsLoaded(true)
+  }, [slug])
+
+  useEffect(() => {
+    if (!isLoaded || !course) return
+    try {
+      localStorage.setItem(
+        getProgressKey(course.slug),
+        JSON.stringify({ completedLessonIds, activeLessonId })
+      )
+    } catch (e) {
+      console.error('Failed to persist course progress', e)
+    }
+  }, [isLoaded, course, completedLessonIds, activeLessonId])
 
   const lessonPointers = useMemo<LessonPointer[]>(
     () =>
@@ -36,46 +101,15 @@ export default function CoursePlayerPage({ params }: { params: Promise<{ slug: s
     [course]
   )
 
-  const defaultExpanded = useMemo<Record<string, boolean>>(
-    () =>
-      course
-        ? Object.fromEntries(course.sections.map((section, idx) => [section.id, idx === 0]))
-        : {},
-    [course]
-  )
-  const defaultLessonId = course?.sections[0]?.lessons[0]?.id ?? ''
-
-  const [expandedSections, setExpandedSections] = useState<Record<string, boolean>>(defaultExpanded)
-  const [activeLessonId, setActiveLessonId] = useState<string>(() => {
-    if (!course || typeof window === 'undefined') return defaultLessonId
-    try {
-      const saved = localStorage.getItem(getProgressKey(course.slug))
-      if (!saved) return defaultLessonId
-      const parsed = JSON.parse(saved) as { activeLessonId?: string }
-      return parsed.activeLessonId || defaultLessonId
-    } catch {
-      return defaultLessonId
-    }
-  })
-  const [completedLessonIds, setCompletedLessonIds] = useState<string[]>(() => {
-    if (!course || typeof window === 'undefined') return []
-    try {
-      const saved = localStorage.getItem(getProgressKey(course.slug))
-      if (!saved) return []
-      const parsed = JSON.parse(saved) as { completedLessonIds?: string[] }
-      return parsed.completedLessonIds || []
-    } catch {
-      return []
-    }
-  })
-
-  useEffect(() => {
-    if (!course) return
-    localStorage.setItem(
-      getProgressKey(course.slug),
-      JSON.stringify({ completedLessonIds, activeLessonId })
+  if (!isLoaded) {
+    return (
+      <div className="p-6">
+        <div className="glass-card rounded-2xl border-white/[0.08] p-8 text-center">
+          <p className="text-slate-400 animate-pulse">Loading course…</p>
+        </div>
+      </div>
     )
-  }, [course, completedLessonIds, activeLessonId])
+  }
 
   if (!course || !course.isUnlocked) {
     return (
@@ -96,23 +130,40 @@ export default function CoursePlayerPage({ params }: { params: Promise<{ slug: s
   const activeLessonIndex = lessonPointers.findIndex((item) => item.lesson.id === activeLesson?.id)
   const totalLessons = lessonPointers.length
   const completedCount = completedLessonIds.length
-  const progressPercent = totalLessons > 0 ? Math.round((completedCount / totalLessons) * 100) : 0
+  const progressPercent = totalLessons > 0 ? Math.min(100, Math.round((completedCount / totalLessons) * 100)) : 0
+  const isActiveLessonComplete = !!activeLesson && completedLessonIds.includes(activeLesson.id)
 
-  const goToLesson = (lessonId: string) => setActiveLessonId(lessonId)
+  const goToLesson = (lessonId: string) => {
+    setActiveLessonId(lessonId)
+    const sectionId = lessonPointers.find((item) => item.lesson.id === lessonId)?.sectionId
+    if (sectionId) {
+      setExpandedSections((prev) => (prev[sectionId] ? prev : { ...prev, [sectionId]: true }))
+    }
+    // On mobile the curriculum sidebar sits below the lesson content; jump
+    // back up so the newly selected lesson is visible.
+    window.scrollTo({ top: 0, behavior: 'smooth' })
+  }
 
   const markComplete = () => {
     if (!activeLesson) return
     setCompletedLessonIds((prev) => (prev.includes(activeLesson.id) ? prev : [...prev, activeLesson.id]))
   }
 
+  const toggleComplete = () => {
+    if (!activeLesson) return
+    setCompletedLessonIds((prev) =>
+      prev.includes(activeLesson.id) ? prev.filter((id) => id !== activeLesson.id) : [...prev, activeLesson.id]
+    )
+  }
+
   const goNext = () => {
     if (activeLessonIndex < 0 || activeLessonIndex >= lessonPointers.length - 1) return
-    setActiveLessonId(lessonPointers[activeLessonIndex + 1].lesson.id)
+    goToLesson(lessonPointers[activeLessonIndex + 1].lesson.id)
   }
 
   const goPrev = () => {
     if (activeLessonIndex <= 0) return
-    setActiveLessonId(lessonPointers[activeLessonIndex - 1].lesson.id)
+    goToLesson(lessonPointers[activeLessonIndex - 1].lesson.id)
   }
 
   return (
@@ -160,45 +211,55 @@ export default function CoursePlayerPage({ params }: { params: Promise<{ slug: s
           </div>
 
           <div className="glass-card-subtle rounded-2xl border-white/[0.08] p-5 space-y-5">
-            <div>
-              <h3 className="text-white font-semibold">Lesson Breakdown</h3>
-              <div className="mt-3 space-y-3">
-                {activeLesson?.body.map((paragraph) => (
-                  <p key={paragraph} className="text-sm text-slate-300 leading-relaxed">{paragraph}</p>
-                ))}
+            {activeLesson && activeLesson.body.length > 0 && (
+              <div>
+                <h3 className="text-white font-semibold">Lesson Breakdown</h3>
+                <div className="mt-3 space-y-3">
+                  {activeLesson.body.map((paragraph, idx) => (
+                    <p key={`${activeLesson.id}-body-${idx}`} className="text-sm text-slate-300 leading-relaxed">{paragraph}</p>
+                  ))}
+                </div>
               </div>
-            </div>
+            )}
 
-            <div>
-              <h3 className="text-white font-semibold">Key Points</h3>
-              <ul className="mt-2 space-y-2">
-                {activeLesson?.keyPoints.map((point) => (
-                  <li key={point} className="text-sm text-slate-300 flex items-start gap-2">
-                    <span className="mt-1.5 h-1.5 w-1.5 rounded-full bg-[#a855f7] shrink-0" />
-                    <span>{point}</span>
-                  </li>
-                ))}
-              </ul>
-            </div>
+            {activeLesson && activeLesson.keyPoints.length > 0 && (
+              <div>
+                <h3 className="text-white font-semibold">Key Points</h3>
+                <ul className="mt-2 space-y-2">
+                  {activeLesson.keyPoints.map((point, idx) => (
+                    <li key={`${activeLesson.id}-point-${idx}`} className="text-sm text-slate-300 flex items-start gap-2">
+                      <span className="mt-1.5 h-1.5 w-1.5 rounded-full bg-[#a855f7] shrink-0" />
+                      <span>{point}</span>
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            )}
 
-            <div>
-              <h3 className="text-white font-semibold">Practice Assignment</h3>
-              <ul className="mt-2 space-y-2">
-                {activeLesson?.practice.map((item) => (
-                  <li key={item} className="text-sm text-slate-300 flex items-start gap-2">
-                    <PlayCircle className="w-4 h-4 text-[#d8b4fe] mt-0.5 shrink-0" />
-                    <span>{item}</span>
-                  </li>
-                ))}
-              </ul>
-            </div>
+            {activeLesson && activeLesson.practice.length > 0 && (
+              <div>
+                <h3 className="text-white font-semibold">Practice Assignment</h3>
+                <ul className="mt-2 space-y-2">
+                  {activeLesson.practice.map((item, idx) => (
+                    <li key={`${activeLesson.id}-practice-${idx}`} className="text-sm text-slate-300 flex items-start gap-2">
+                      <PlayCircle className="w-4 h-4 text-[#d8b4fe] mt-0.5 shrink-0" />
+                      <span>{item}</span>
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            )}
 
-            {/* Optional Quiz / Knowledge Check */}
+            {/* Quiz / Knowledge Check — passing auto-marks the lesson complete */}
             {activeLesson?.quiz && (
               <CourseQuizRunner
                 key={activeLesson.id}
                 quiz={activeLesson.quiz}
-                onComplete={() => markComplete()}
+                onComplete={(scorePercent) => {
+                  if (scorePercent >= (activeLesson.quiz?.passingScorePercent ?? 70)) {
+                    markComplete()
+                  }
+                }}
               />
             )}
           </div>
@@ -212,10 +273,24 @@ export default function CoursePlayerPage({ params }: { params: Promise<{ slug: s
               Previous Lesson
             </button>
             <button
-              onClick={markComplete}
-              className="px-4 py-2 rounded-xl bg-gradient-to-r from-[#a855f7] to-[#7c3aed] hover:from-[#c084fc] hover:to-[#8b5cf6] text-white font-semibold shadow-lg shadow-[#a855f7]/20"
+              onClick={toggleComplete}
+              className={`px-4 py-2 rounded-xl font-semibold shadow-lg transition-all flex items-center gap-2 ${
+                isActiveLessonComplete
+                  ? 'bg-white/[0.08] text-green-300 border border-green-500/40 hover:bg-white/[0.12]'
+                  : 'bg-gradient-to-r from-[#a855f7] to-[#7c3aed] hover:from-[#c084fc] hover:to-[#8b5cf6] text-white shadow-[#a855f7]/20'
+              }`}
             >
-              Mark as Complete
+              {isActiveLessonComplete ? (
+                <>
+                  <RotateCcw className="w-4 h-4" />
+                  <span>Completed — Undo</span>
+                </>
+              ) : (
+                <>
+                  <CheckCircle2 className="w-4 h-4" />
+                  <span>Mark as Complete</span>
+                </>
+              )}
             </button>
             <button
               onClick={goNext}
@@ -240,6 +315,7 @@ export default function CoursePlayerPage({ params }: { params: Promise<{ slug: s
                 <div key={section.id} className="rounded-xl border border-white/[0.08] bg-white/[0.03] overflow-hidden">
                   <button
                     onClick={() => setExpandedSections((prev) => ({ ...prev, [section.id]: !isOpen }))}
+                    aria-expanded={isOpen}
                     className="w-full px-3 py-2.5 flex items-center justify-between text-left hover:bg-white/[0.05] transition-colors"
                   >
                     <div>

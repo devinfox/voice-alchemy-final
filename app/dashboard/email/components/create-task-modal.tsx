@@ -122,7 +122,7 @@ export function CreateTaskModal({
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
-      <div className="w-full max-w-lg bg-gray-900 border border-white/10 rounded-xl shadow-2xl">
+      <div className="w-full max-w-lg modal-solid border border-white/10 rounded-xl shadow-2xl">
         {/* Header */}
         <div className="flex items-center justify-between p-4 border-b border-white/10">
           <div className="flex items-center gap-2">

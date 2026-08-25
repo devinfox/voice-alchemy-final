@@ -56,7 +56,7 @@ export function FunnelTagsEditor({
 
       {/* Modal */}
       <div className="relative w-full max-w-2xl mx-4 max-h-[90vh] animate-in fade-in zoom-in duration-200">
-        <div className="glass-card border border-white/20 rounded-2xl overflow-hidden shadow-2xl flex flex-col max-h-[90vh]">
+        <div className="glass-card modal-solid border border-white/20 rounded-2xl overflow-hidden shadow-2xl flex flex-col max-h-[90vh]">
           {/* Header */}
           <div className="bg-gradient-to-r from-yellow-500/20 to-amber-500/20 px-6 py-4 border-b border-white/10 flex-shrink-0">
             <div className="flex items-center justify-between">

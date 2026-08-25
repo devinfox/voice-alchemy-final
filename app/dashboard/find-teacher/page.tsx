@@ -41,7 +41,16 @@ export default function FindTeacherPage() {
   const [successMessage, setSuccessMessage] = useState<string | null>(null)
 
   useEffect(() => {
-    fetchTeachers()
+    // Honor a query passed from the header search (?search=...)
+    const params = new URLSearchParams(window.location.search)
+    const initialQuery = params.get('search')?.trim() || ''
+    if (initialQuery) {
+      setSearchQuery(initialQuery)
+      fetchTeachers(initialQuery)
+    } else {
+      fetchTeachers()
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
   const fetchTeachers = async (query: string = '') => {
@@ -126,7 +135,7 @@ export default function FindTeacherPage() {
         <button
           onClick={() => handleRequestJoin(teacher.id, getTeacherDisplayName(teacher))}
           disabled={requestingId === teacher.id}
-          className="flex items-center gap-2 px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg transition-colors disabled:opacity-50"
+          className="flex items-center gap-2 px-4 py-2 bg-[#CEB466] hover:bg-[#e0c97d] text-[#171229] font-bold rounded-xl transition-colors disabled:opacity-50"
         >
           {requestingId === teacher.id ? (
             <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white"></div>
@@ -142,7 +151,7 @@ export default function FindTeacherPage() {
       <button
         onClick={() => handleRequestJoin(teacher.id, getTeacherDisplayName(teacher))}
         disabled={requestingId === teacher.id}
-        className="flex items-center gap-2 px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg transition-colors disabled:opacity-50"
+        className="flex items-center gap-2 px-4 py-2 bg-[#CEB466] hover:bg-[#e0c97d] text-[#171229] font-bold rounded-xl transition-colors disabled:opacity-50"
       >
         {requestingId === teacher.id ? (
           <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white"></div>
@@ -177,12 +186,12 @@ export default function FindTeacherPage() {
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
             placeholder="Search by name..."
-            className="w-full pl-10 pr-4 py-3 bg-white/5 border border-white/10 rounded-lg text-white placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+            className="w-full pl-10 pr-4 py-3 bg-white/5 border border-white/10 rounded-lg text-white placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-[#CEB466]/60 focus:border-transparent"
           />
         </div>
         <button
           type="submit"
-          className="px-6 py-3 bg-blue-600 hover:bg-blue-700 text-white rounded-lg transition-colors"
+          className="px-6 py-3 bg-[#CEB466] hover:bg-[#e0c97d] text-[#171229] font-bold rounded-xl transition-colors"
         >
           Search
         </button>
@@ -209,7 +218,7 @@ export default function FindTeacherPage() {
       {/* Teachers List */}
       {loading ? (
         <div className="flex items-center justify-center h-64">
-          <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-white"></div>
+          <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-[#CEB466]"></div>
         </div>
       ) : teachers.length === 0 ? (
         <div className="text-center py-12 bg-white/5 backdrop-blur-sm rounded-xl border border-white/10">
@@ -223,12 +232,24 @@ export default function FindTeacherPage() {
             <div key={teacher.id} className="bg-white/5 backdrop-blur-sm rounded-xl border border-white/10 p-5">
               <div className="flex items-center justify-between">
                 <div className="flex items-center gap-4">
-                  <div className="w-14 h-14 rounded-full bg-gradient-to-br from-green-500 to-teal-600 flex items-center justify-center text-white font-bold text-xl">
-                    {getTeacherInitials(teacher)}
-                  </div>
+                  {teacher.avatar_url ? (
+                    <Image
+                      src={teacher.avatar_url}
+                      alt={getTeacherDisplayName(teacher)}
+                      width={56}
+                      height={56}
+                      className="w-14 h-14 rounded-2xl object-cover border border-[#CEB466]/30"
+                    />
+                  ) : (
+                    <div className="w-14 h-14 rounded-2xl bg-gradient-to-br from-[#CEB466] to-[#9c8644] flex items-center justify-center text-[#171229] font-bold text-xl">
+                      {getTeacherInitials(teacher)}
+                    </div>
+                  )}
                   <div>
-                    <h3 className="font-semibold text-white text-lg">{getTeacherDisplayName(teacher)}</h3>
-                    {teacher.bio && <p className="text-gray-400 line-clamp-2">{teacher.bio}</p>}
+                    <h3 className="font-semibold text-white text-lg font-luxury">{getTeacherDisplayName(teacher)}</h3>
+                    <p className="text-gray-400 line-clamp-2 text-sm">
+                      {teacher.bio || 'Voice coach at Voice Alchemy Academy'}
+                    </p>
                   </div>
                 </div>
 

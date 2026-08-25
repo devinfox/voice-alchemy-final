@@ -17,20 +17,20 @@ import { SpotlightTour, SpotlightTriggerButton, SpotlightStep } from '@/componen
 const classroomTourSteps: SpotlightStep[] = [
   {
     target: '[data-tour="classroom-video"]',
-    title: '1. Live Video Classroom',
-    content: 'Crystal-clear, real-time video built for vocal coaching, singing along, and piano drills with zero delay.',
+    title: '1. Video Lesson',
+    content: 'This is where you and your coach see and hear each other.',
     placement: 'bottom',
   },
   {
     target: '[data-tour="classroom-notes"]',
-    title: '2. Shared Lesson Notes',
-    content: 'Write notes, lyrics, and practice goals together in real time during your lesson.',
+    title: '2. Lesson Notes',
+    content: 'Write notes, lyrics, and practice ideas here during the lesson.',
     placement: 'left',
   },
   {
     target: '[data-tour="classroom-controls"]',
-    title: '3. Class Controls & Recordings',
-    content: 'Click "Start Class" to begin your lesson and recording. Once finished, your lesson notes and recordings are saved automatically.',
+    title: '3. Start and Save',
+    content: 'Tap "Start Class" when the lesson begins. Your notes and recordings are saved when you finish.',
     placement: 'top',
   },
 ]
@@ -279,11 +279,9 @@ export default function SessionView({ studentId, bookingId, isAdmin = false, cur
     const editor = editorRef.current
     const provider = providerRef.current
 
-    // Clear notes for fresh start
-    editor?.commands.clearContent(true)
-    await provider?.forceSave()
-
-    // Call API to start class - this handles both class_sessions and session_notes
+    // Call API to start class FIRST - this handles both class_sessions and
+    // session_notes. The editor is only cleared after the API succeeds, so
+    // a failed start can never destroy unsaved notes.
     const response = await fetch(`/api/lessons/${bookingId}/start-class`, { method: 'POST' })
     const result = await response.json()
 
@@ -292,6 +290,10 @@ export default function SessionView({ studentId, bookingId, isAdmin = false, cur
       alert(`Failed to start class: ${result.error || 'Unknown error'}`)
       return
     }
+
+    // Clear notes for a fresh session now that the class has started
+    editor?.commands.clearContent(true)
+    await provider?.forceSave()
 
     // Set local state - this makes canJoin=true and autoRecord=true
     const now = result.startedAt ? new Date(result.startedAt) : new Date()
@@ -986,10 +988,24 @@ function ArchivedNoteAccordion({ id, bookingId, title, subtitle, isAdmin, onDele
 
   const onSave = async () => {
     setSaving('saving')
-    const { error } = await supabase.from('notes_archive').update({ content: text }).eq('id', id)
+    // Persist content_html too — every reader (this view and the student's
+    // archive page) prefers content_html, so updating only `content` made
+    // edits silently revert on reload.
+    const escaped = text
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;')
+    const html = escaped
+      .split(/\n{2,}/)
+      .map((para) => `<p>${para.replace(/\n/g, '<br>')}</p>`)
+      .join('')
+    const { error } = await supabase
+      .from('notes_archive')
+      .update({ content: text, content_html: html })
+      .eq('id', id)
     if (error) { setSaving('error'); return }
     setOriginal(text)
-    setContentHtml('')
+    setContentHtml(html)
     setSaving('saved')
     setEditing(false)
     setTimeout(() => setSaving('idle'), 900)
@@ -998,7 +1014,12 @@ function ArchivedNoteAccordion({ id, bookingId, title, subtitle, isAdmin, onDele
   const onCancel = () => { setText(original); setEditing(false); setSaving('idle') }
   const onDeleteClick = async () => {
     if (!window.confirm('Are you sure?')) return
-    await supabase.from('notes_archive').delete().eq('id', id)
+    const { error } = await supabase.from('notes_archive').delete().eq('id', id)
+    if (error) {
+      console.error('[SessionView] Failed to delete archived note:', error)
+      alert('Failed to delete the note.')
+      return
+    }
     onDelete()
   }
 
@@ -1043,7 +1064,7 @@ function ArchivedNoteAccordion({ id, bookingId, title, subtitle, isAdmin, onDele
                     )}
                     {isAdmin && <button className="ml-2 p-1 hover:bg-white/10 rounded transition-colors flex-shrink-0" onClick={onDeleteClick} title="Delete"><Trash2 size={18} className="text-red-400" /></button>}
                   </div>
-                  <button className="px-3 py-1.5 rounded bg-white/10 hover:bg-white/20 text-sm text-white" onClick={() => setEditing(true)}>Edit</button>
+                  {isAdmin && <button className="px-3 py-1.5 rounded bg-white/10 hover:bg-white/20 text-sm text-white" onClick={() => setEditing(true)}>Edit</button>}
                 </>
               ) : (
                 <>

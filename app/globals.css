@@ -763,3 +763,11 @@ select.glass-input option {
     0 8px 32px rgba(0, 0, 0, 0.4),
     0 0 0 1px rgba(255, 255, 255, 0.05) inset;
 }
+
+/* Solid modal/popup surface — popups and modals use an opaque deep purple
+   instead of glassmorphism so page content never bleeds through. */
+.modal-solid {
+  background: #1b1233 !important;
+  backdrop-filter: none !important;
+  -webkit-backdrop-filter: none !important;
+}

@@ -525,11 +525,20 @@ export default function QuickSendPage() {
       } = await supabase.auth.getUser()
       if (!user) return
 
-      const { data: profile } = await supabase
-        .from('profiles')
-        .select('id, first_name, last_name, name, email')
-        .eq('id', user.id)
-        .maybeSingle()
+      // profiles has no email column — the real email lives in the `users`
+      // mirror table.
+      const [{ data: profile }, { data: userRow }] = await Promise.all([
+        supabase
+          .from('profiles')
+          .select('id, first_name, last_name, name')
+          .eq('id', user.id)
+          .maybeSingle(),
+        supabase
+          .from('users')
+          .select('email')
+          .eq('id', user.id)
+          .maybeSingle(),
+      ])
 
       if (profile) {
         setUserId(profile.id)
@@ -537,7 +546,7 @@ export default function QuickSendPage() {
         setRepInfo({
           name: coachName,
           phone: '(310) 209-8166',
-          email: profile.email || user.email || '',
+          email: userRow?.email || user.email || '',
         })
       }
 
@@ -572,10 +581,13 @@ export default function QuickSendPage() {
     try {
       const supabase = createClient()
 
-      const { data: studentProfile } = await supabase
-        .from('profiles')
+      // Recipient linking: profiles has no email column — look the student up
+      // in the `users` mirror table (its id equals profiles.id).
+      const { data: studentUser } = await supabase
+        .from('users')
         .select('id')
         .eq('email', email.toLowerCase())
+        .limit(1)
         .maybeSingle()
 
       const canvasDoc = iframeRef.current?.contentDocument
@@ -600,7 +612,7 @@ export default function QuickSendPage() {
           subject: subject.trim() || selectedTemplate.subject,
           body_html: bodyHtml,
           body_text: bodyText,
-          recipient_id: studentProfile?.id || null,
+          recipient_id: studentUser?.id || null,
         }),
       })
 

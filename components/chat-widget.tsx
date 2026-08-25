@@ -68,6 +68,23 @@ export function ChatWidget({ currentUserId }: ChatWidgetProps) {
     return () => clearInterval(interval)
   }, [])
 
+  // Let other pages open a conversation directly (e.g. the Message button
+  // on a teacher's student card). detail: { user, draft? } — draft pre-fills
+  // the input; nothing is sent until the sender hits Send.
+  useEffect(() => {
+    const handleOpenChat = (e: Event) => {
+      const detail = (e as CustomEvent).detail as { user?: User; draft?: string } | undefined
+      if (!detail?.user?.id) return
+      setSelectedUser(detail.user)
+      setIsOpen(true)
+      if (typeof detail.draft === 'string') {
+        setNewMessage(detail.draft)
+      }
+    }
+    window.addEventListener('va-open-chat', handleOpenChat)
+    return () => window.removeEventListener('va-open-chat', handleOpenChat)
+  }, [])
+
   // Poll for new messages when chat is open with a user
   useEffect(() => {
     if (isOpen && selectedUser) {

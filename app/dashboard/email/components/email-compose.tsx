@@ -207,15 +207,24 @@ export function EmailCompose({
           setRepProfile({ name: 'Voice Alchemy Coach', phone: '818.209.2305', email: '', title: 'Vocal Coach & Instructor' })
           return
         }
-        const { data: profile } = await supabase
-          .from('profiles')
-          .select('first_name, last_name, email, role')
-          .eq('id', user.id)
-          .single()
+        // profiles has no email column — the real email lives in the `users`
+        // mirror table.
+        const [{ data: profile }, { data: userRow }] = await Promise.all([
+          supabase
+            .from('profiles')
+            .select('first_name, last_name, role')
+            .eq('id', user.id)
+            .single(),
+          supabase
+            .from('users')
+            .select('email')
+            .eq('id', user.id)
+            .maybeSingle(),
+        ])
         setRepProfile({
           name: `${profile?.first_name || ''} ${profile?.last_name || ''}`.trim() || 'Voice Alchemy Coach',
           phone: '818.209.2305',
-          email: profile?.email || '',
+          email: userRow?.email || user.email || '',
           title: profile?.role === 'admin' ? 'Founder & Instructor' : 'Vocal Coach & Instructor',
         })
       } catch (err) {
@@ -1149,9 +1158,7 @@ export function EmailCompose({
       <div
         className="fixed bottom-4 right-4 w-80 rounded-2xl cursor-pointer overflow-hidden transition-all duration-300 hover:scale-[1.02]"
         style={{
-          background: 'linear-gradient(135deg, rgba(255, 255, 255, 0.06) 0%, rgba(255, 255, 255, 0.03) 100%)',
-          backdropFilter: 'blur(20px)',
-          WebkitBackdropFilter: 'blur(20px)',
+          background: '#1b1233',
           border: '1px solid rgba(255, 255, 255, 0.1)',
           boxShadow: '0 25px 50px -12px rgba(0, 0, 0, 0.5), inset 0 1px 0 rgba(255, 255, 255, 0.05)',
         }}
@@ -1191,9 +1198,7 @@ export function EmailCompose({
       <div
         className={`flex flex-col items-center justify-center ${isInline ? 'h-full' : isFullscreen ? 'fixed inset-4 z-50 rounded-2xl' : 'w-full max-w-2xl h-96 rounded-2xl'}`}
         style={{
-          background: 'linear-gradient(135deg, rgba(255, 255, 255, 0.04) 0%, rgba(255, 255, 255, 0.02) 100%)',
-          backdropFilter: 'blur(20px)',
-          WebkitBackdropFilter: 'blur(20px)',
+          background: '#1b1233',
           border: '1px solid rgba(255, 255, 255, 0.08)',
           boxShadow: '0 25px 50px -12px rgba(0, 0, 0, 0.4)',
         }}
@@ -1212,9 +1217,7 @@ export function EmailCompose({
     : `flex flex-col ${isFullscreen ? 'fixed inset-4 z-50' : `w-full ${maxWidthClassName}${fillHeight ? ' h-full min-h-0' : ''}`}`
 
   const containerStyle = isInline ? {} : {
-    background: 'linear-gradient(135deg, rgba(255, 255, 255, 0.04) 0%, rgba(255, 255, 255, 0.02) 100%)',
-    backdropFilter: 'blur(20px)',
-    WebkitBackdropFilter: 'blur(20px)',
+    background: '#1b1233',
     border: '1px solid rgba(255, 255, 255, 0.08)',
     boxShadow: '0 25px 50px -12px rgba(0, 0, 0, 0.4), inset 0 1px 0 rgba(255, 255, 255, 0.05)',
     borderRadius: '1rem',
@@ -1369,7 +1372,7 @@ export function EmailCompose({
 
           {/* Suggestions dropdown */}
           {showSuggestions === 'to' && contactSuggestions.length > 0 && (
-            <div className="absolute left-0 right-0 top-full mt-1 z-50 bg-[#1a1a1a] border border-white/10 rounded-xl shadow-2xl overflow-hidden">
+            <div className="absolute left-0 right-0 top-full mt-1 z-50 modal-solid border border-white/10 rounded-xl shadow-2xl overflow-hidden">
               {contactSuggestions.map((contact, index) => (
                 <button
                   key={contact.email}
@@ -1452,7 +1455,7 @@ export function EmailCompose({
 
             {/* Suggestions dropdown */}
             {showSuggestions === 'cc' && contactSuggestions.length > 0 && (
-              <div className="absolute left-0 right-0 top-full mt-1 z-50 bg-[#1a1a1a] border border-white/10 rounded-xl shadow-2xl overflow-hidden">
+              <div className="absolute left-0 right-0 top-full mt-1 z-50 modal-solid border border-white/10 rounded-xl shadow-2xl overflow-hidden">
                 {contactSuggestions.map((contact, index) => (
                   <button
                     key={contact.email}
@@ -1524,7 +1527,7 @@ export function EmailCompose({
 
             {/* Suggestions dropdown */}
             {showSuggestions === 'bcc' && contactSuggestions.length > 0 && (
-              <div className="absolute left-0 right-0 top-full mt-1 z-50 bg-[#1a1a1a] border border-white/10 rounded-xl shadow-2xl overflow-hidden">
+              <div className="absolute left-0 right-0 top-full mt-1 z-50 modal-solid border border-white/10 rounded-xl shadow-2xl overflow-hidden">
                 {contactSuggestions.map((contact, index) => (
                   <button
                     key={contact.email}
@@ -1851,9 +1854,7 @@ export function EmailCompose({
           <div
             className="w-full max-w-3xl rounded-2xl overflow-hidden"
             style={{
-              background: 'linear-gradient(135deg, rgba(255, 255, 255, 0.06) 0%, rgba(255, 255, 255, 0.02) 100%)',
-              backdropFilter: 'blur(20px)',
-              WebkitBackdropFilter: 'blur(20px)',
+              background: '#1b1233',
               border: '1px solid rgba(255, 255, 255, 0.1)',
               boxShadow: '0 25px 50px -12px rgba(0, 0, 0, 0.5), inset 0 1px 0 rgba(255, 255, 255, 0.05)',
             }}

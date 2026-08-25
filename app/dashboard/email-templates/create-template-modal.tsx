@@ -93,7 +93,7 @@ export function CreateTemplateModal({
         />
 
         {/* Modal */}
-        <div className="relative glass-card w-full max-w-6xl mx-4 max-h-[95vh] overflow-hidden flex flex-col">
+        <div className="relative glass-card modal-solid w-full max-w-6xl mx-4 max-h-[95vh] overflow-hidden flex flex-col">
           {/* Header */}
           <div className="flex items-center justify-between p-4 border-b border-white/10">
             <h2 className="text-lg font-semibold text-white uppercase tracking-wide">

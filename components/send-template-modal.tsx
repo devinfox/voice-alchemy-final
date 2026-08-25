@@ -142,7 +142,7 @@ export function SendTemplateModal({
       <div className="absolute inset-0 bg-black/70 backdrop-blur-sm" onClick={onClose} />
 
       {/* Modal */}
-      <div className="relative w-full max-w-2xl max-h-[90vh] overflow-hidden glass-card rounded-2xl">
+      <div className="relative w-full max-w-2xl max-h-[90vh] overflow-hidden glass-card modal-solid rounded-2xl">
         {/* Header */}
         <div className="flex items-center justify-between p-4 border-b border-white/10">
           <div className="flex items-center gap-3">

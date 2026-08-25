@@ -170,7 +170,7 @@ export function SignatureEditor({
             </button>
 
             {showTemplates && (
-              <div className="absolute right-0 mt-2 w-72 bg-gray-900 border border-white/10 rounded-xl shadow-xl z-50 overflow-hidden">
+              <div className="absolute right-0 mt-2 w-72 modal-solid border border-white/10 rounded-xl shadow-xl z-50 overflow-hidden">
                 <div className="p-2">
                   <p className="px-3 py-2 text-xs text-gray-500 uppercase tracking-wider font-medium">Quick Templates</p>
                   {SIGNATURE_TEMPLATES.map((template, index) => (

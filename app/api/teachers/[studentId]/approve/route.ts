@@ -1,5 +1,6 @@
 import { createClient, getCurrentUser } from '@/lib/supabase-server'
 import { NextRequest, NextResponse } from 'next/server'
+import { notifyLessonApproval } from '@/lib/lesson-notifications'
 
 // POST /api/teachers/[studentId]/approve - Approve a booking request
 // Note: studentId here refers to the booking ID for simplicity
@@ -25,7 +26,7 @@ export async function POST(
     // Get the booking
     const { data: booking, error: bookingError } = await supabase
       .from('bookings')
-      .select('id, status, instructor_id')
+      .select('id, status, instructor_id, student_id')
       .eq('id', bookingId)
       .single()
 
@@ -55,6 +56,11 @@ export async function POST(
       console.error('[Teachers API] Error approving request:', updateError)
       return NextResponse.json({ error: 'Failed to approve request' }, { status: 500 })
     }
+
+    // Best-effort: let the student know they're in
+    const teacherName =
+      profile.name || `${profile.first_name || ''} ${profile.last_name || ''}`.trim() || 'Your coach'
+    await notifyLessonApproval(booking.student_id, teacherName)
 
     return NextResponse.json({
       success: true,

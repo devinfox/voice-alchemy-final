@@ -7,19 +7,25 @@ import {
   Lock,
   PlayCircle,
   Sparkles,
-  CheckCircle2,
   Clock,
   Award,
-  Zap,
   ChevronRight,
   Plus,
   Edit3,
   Trash2,
   HelpCircle,
-  BookOpen,
+  Copy,
 } from 'lucide-react'
-import { courses as defaultCourses, getCourseLessonCount, Course, getAllCourses, deleteCustomCourse } from '@/lib/courses'
+import {
+  courses as defaultCourses,
+  getCourseLessonCount,
+  getCourseTotalMinutes,
+  Course,
+  getAllCourses,
+  deleteCustomCourse,
+} from '@/lib/courses'
 import { CourseBuilderModal } from '@/components/course-builder-modal'
+import { ConfirmDialog } from '@/components/confirm-dialog'
 import { SpotlightTour, SpotlightTriggerButton, SpotlightStep } from '@/components/spotlight-tour'
 import { createClient } from '@/lib/supabase'
 
@@ -27,10 +33,6 @@ interface CourseOutcomeMeta {
   slug: string
   outcomePromise: string
   practiceMinutesNeeded: number
-  progressPercent: number
-  checkpointCount: number
-  isTeacherRecommended?: boolean
-  transformationStory?: string
 }
 
 const COURSE_META: Record<string, CourseOutcomeMeta> = {
@@ -38,44 +40,38 @@ const COURSE_META: Record<string, CourseOutcomeMeta> = {
     slug: 'beginner-vocal-foundations',
     outcomePromise: 'Build effortless vocal coordination, eliminate throat squeeze, and center pitch with Hindustani drone discipline.',
     practiceMinutesNeeded: 120,
-    progressPercent: 45,
-    checkpointCount: 3,
-    isTeacherRecommended: true,
-    transformationStory: '“In 2 weeks, my voice stopped getting tired after high notes. The SOVT exercises changed everything.” — Elena R.',
   },
   'mix-voice-and-register-control': {
     slug: 'mix-voice-and-register-control',
     outcomePromise: 'Bridge chest and head registers seamlessly across your passaggio. Eliminate voice cracks and sing with acoustic bite above C4.',
     practiceMinutesNeeded: 180,
-    progressPercent: 0,
-    checkpointCount: 4,
-    isTeacherRecommended: true,
-    transformationStory: '“Gained 4 semitones of usable, belting head-mix range without pushing volume.” — Marcus V.',
   },
   'alt-pop-performance-and-mic-technique': {
     slug: 'alt-pop-performance-and-mic-technique',
     outcomePromise: 'Master contemporary intimacy, vocal fry onsets, breath control, and studio microphone dynamics.',
     practiceMinutesNeeded: 150,
-    progressPercent: 0,
-    checkpointCount: 4,
-    transformationStory: '“Learned how to sing with delicate emotion while maintaining sustainable cord closure.” — Sarah J.',
   },
 }
 
 const teacherCourseTourSteps: SpotlightStep[] = [
   {
     target: '[data-tour="course-builder-btn"]',
-    title: '1. Custom Course & Quiz Builder',
-    content: 'Create fully customized vocal courses for your students. Add modules, lessons, and optional interactive quizzes with multiple-choice questions and instant explanations.',
+    title: '1. Make a Course',
+    content: 'Create lessons for your students. Add a quiz if you want to check what they learned.',
     placement: 'bottom',
   },
   {
     target: '[data-tour="course-list-grid"]',
-    title: '2. Vocal Curriculum & Progress Paths',
-    content: 'View built-in academy courses and your custom published courses. Students can step through lessons, take optional quizzes, and track completion.',
+    title: '2. See Your Courses',
+    content: 'Find the academy courses and the courses you made. Students can open them and follow along.',
     placement: 'top',
   },
 ]
+
+function cloneCourse(course: Course): Course {
+  if (typeof structuredClone === 'function') return structuredClone(course)
+  return JSON.parse(JSON.stringify(course)) as Course
+}
 
 export default function CoursesPage() {
   const [courseList, setCourseList] = useState<Course[]>(defaultCourses)
@@ -83,46 +79,79 @@ export default function CoursesPage() {
   const [editingCourse, setEditingCourse] = useState<Course | null>(null)
   const [filter, setFilter] = useState<'all' | 'custom'>('all')
   const [isTeacher, setIsTeacher] = useState(false)
+  const [roleChecked, setRoleChecked] = useState(false)
 
   const refreshCourses = () => {
     setCourseList(getAllCourses())
   }
 
   useEffect(() => {
+    // One-shot post-hydration load of custom courses from localStorage.
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     refreshCourses()
 
     // Check user role
     const supabase = createClient()
-    supabase.auth.getUser().then(async ({ data: { user } }) => {
-      if (user) {
-        const { data: profile } = await supabase
+    supabase.auth
+      .getUser()
+      .then(async ({ data: { user } }) => {
+        if (!user) return
+        const { data: profile, error } = await supabase
           .from('profiles')
           .select('role')
           .eq('id', user.id)
           .single()
-
+        if (error) {
+          console.error('Failed to load profile role', error)
+          return
+        }
         const role = profile?.role
-        const teacherRole = role === 'teacher' || role === 'instructor' || role === 'admin'
-        setIsTeacher(teacherRole)
-      }
-    })
+        setIsTeacher(role === 'teacher' || role === 'instructor' || role === 'admin')
+      })
+      .catch((e) => {
+        console.error('Failed to check user role', e)
+      })
+      .finally(() => {
+        setRoleChecked(true)
+      })
   }, [])
 
   const handleCourseCreated = () => {
     refreshCourses()
   }
 
+  const [pendingDeleteSlug, setPendingDeleteSlug] = useState<string | null>(null)
+
   const handleDeleteCourse = (slug: string, e: React.MouseEvent) => {
     e.stopPropagation()
-    if (confirm('Are you sure you want to delete this custom course?')) {
-      deleteCustomCourse(slug)
+    setPendingDeleteSlug(slug)
+  }
+
+  const confirmDeleteCourse = () => {
+    if (pendingDeleteSlug) {
+      deleteCustomCourse(pendingDeleteSlug)
       refreshCourses()
     }
+    setPendingDeleteSlug(null)
   }
 
   const handleEditCourse = (course: Course, e: React.MouseEvent) => {
     e.stopPropagation()
     setEditingCourse(course)
+    setIsBuilderOpen(true)
+  }
+
+  // Built-in courses aren't directly editable; teachers customize them by
+  // duplicating into a custom course (empty slug → a fresh unique one on save).
+  const handleCustomizeCourse = (course: Course, e: React.MouseEvent) => {
+    e.stopPropagation()
+    const copy = cloneCourse(course)
+    copy.slug = ''
+    copy.title = `${course.title} (Custom)`
+    copy.isCustom = true
+    copy.isFree = true
+    copy.isUnlocked = true
+    setEditingCourse(copy)
     setIsBuilderOpen(true)
   }
 
@@ -154,23 +183,28 @@ export default function CoursesPage() {
             </p>
           </div>
 
-          {/* Teacher Action Controls */}
-          {isTeacher && (
-            <div className="flex flex-wrap items-center gap-2.5 sm:gap-3 shrink-0">
-              <SpotlightTriggerButton tourKey="teacher_course_builder_v4" label="How to" />
+          {/* Teacher Action Controls — held until the role check resolves so
+              the header doesn't pop in after first paint */}
+          {!roleChecked ? (
+            <div className="w-40 h-11 rounded-2xl bg-white/[0.04] animate-pulse shrink-0" aria-hidden="true" />
+          ) : (
+            isTeacher && (
+              <div className="flex flex-wrap items-center gap-2.5 sm:gap-3 shrink-0">
+                <SpotlightTriggerButton tourKey="teacher_course_builder_v4" label="How to" />
 
-              <button
-                data-tour="course-builder-btn"
-                onClick={() => {
-                  setEditingCourse(null)
-                  setIsBuilderOpen(true)
-                }}
-                className="w-full sm:w-auto py-2.5 sm:py-3 px-4 sm:px-5 rounded-xl sm:rounded-2xl bg-gradient-to-r from-[#CEB466] via-[#e2c974] to-[#CEB466] text-[#171229] font-bold text-xs sm:text-sm shadow-xl shadow-[#CEB466]/20 hover:brightness-110 active:scale-95 transition-all flex items-center justify-center gap-2"
-              >
-                <Plus className="w-4 h-4" />
-                <span>+ Create Course & Quizzes</span>
-              </button>
-            </div>
+                <button
+                  data-tour="course-builder-btn"
+                  onClick={() => {
+                    setEditingCourse(null)
+                    setIsBuilderOpen(true)
+                  }}
+                  className="w-full sm:w-auto py-2.5 sm:py-3 px-4 sm:px-5 rounded-xl sm:rounded-2xl bg-gradient-to-r from-[#CEB466] via-[#e2c974] to-[#CEB466] text-[#171229] font-bold text-xs sm:text-sm shadow-xl shadow-[#CEB466]/20 hover:brightness-110 active:scale-95 transition-all flex items-center justify-center gap-2"
+                >
+                  <Plus className="w-4 h-4" />
+                  <span>+ Create Course & Quizzes</span>
+                </button>
+              </div>
+            )
           )}
         </div>
 
@@ -218,17 +252,14 @@ export default function CoursesPage() {
       <section data-tour="course-list-grid" className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
         {displayedCourses.map((course) => {
           const lessonCount = getCourseLessonCount(course)
-          const meta = COURSE_META[course.slug] || {
-            slug: course.slug,
-            outcomePromise: course.description,
-            practiceMinutesNeeded: 120,
-            progressPercent: 0,
-            checkpointCount: course.sections.length,
-          }
+          const meta = COURSE_META[course.slug]
+          const outcomePromise = meta?.outcomePromise ?? course.description
+          const computedMinutes = getCourseTotalMinutes(course)
+          const totalMinutes = computedMinutes > 0 ? computedMinutes : meta?.practiceMinutesNeeded ?? 0
 
           const isUnlocked = course.isUnlocked
           const quizCount = course.sections.reduce(
-            (sum, s) => sum + (s.quiz ? 1 : 0) + s.lessons.filter((l) => l.quiz).length,
+            (sum, s) => sum + s.lessons.filter((l) => l.quiz).length,
             0
           )
 
@@ -265,22 +296,34 @@ export default function CoursesPage() {
                     )}
                   </div>
 
-                  {isTeacher && course.isCustom ? (
+                  {isTeacher ? (
                     <div className="flex items-center gap-1">
-                      <button
-                        onClick={(e) => handleEditCourse(course, e)}
-                        className="p-1.5 text-gray-400 hover:text-[#CEB466] transition-colors rounded-lg hover:bg-white/5"
-                        title="Edit course"
-                      >
-                        <Edit3 className="w-3.5 h-3.5" />
-                      </button>
-                      <button
-                        onClick={(e) => handleDeleteCourse(course.slug, e)}
-                        className="p-1.5 text-gray-400 hover:text-red-400 transition-colors rounded-lg hover:bg-white/5"
-                        title="Delete course"
-                      >
-                        <Trash2 className="w-3.5 h-3.5" />
-                      </button>
+                      {course.isCustom ? (
+                        <>
+                          <button
+                            onClick={(e) => handleEditCourse(course, e)}
+                            className="p-1.5 text-gray-400 hover:text-[#CEB466] transition-colors rounded-lg hover:bg-white/5"
+                            title="Edit course"
+                          >
+                            <Edit3 className="w-3.5 h-3.5" />
+                          </button>
+                          <button
+                            onClick={(e) => handleDeleteCourse(course.slug, e)}
+                            className="p-1.5 text-gray-400 hover:text-red-400 transition-colors rounded-lg hover:bg-white/5"
+                            title="Delete course"
+                          >
+                            <Trash2 className="w-3.5 h-3.5" />
+                          </button>
+                        </>
+                      ) : (
+                        <button
+                          onClick={(e) => handleCustomizeCourse(course, e)}
+                          className="p-1.5 text-gray-400 hover:text-[#CEB466] transition-colors rounded-lg hover:bg-white/5"
+                          title="Duplicate & customize this course"
+                        >
+                          <Copy className="w-3.5 h-3.5" />
+                        </button>
+                      )}
                     </div>
                   ) : (
                     !isUnlocked && <Lock className="w-4 h-4 text-purple-400" />
@@ -291,7 +334,7 @@ export default function CoursesPage() {
                 <div>
                   <div className="flex items-center justify-between text-xs text-gray-400 mb-1">
                     <span className="font-semibold text-[#CEB466] uppercase tracking-wider">{course.level} Level</span>
-                    <span>{lessonCount} Lessons</span>
+                    <span>{lessonCount} {lessonCount === 1 ? 'Lesson' : 'Lessons'}</span>
                   </div>
                   <h3 className="text-xl font-bold text-white font-luxury">{course.title}</h3>
                 </div>
@@ -302,7 +345,7 @@ export default function CoursesPage() {
                     Outcome Promise
                   </span>
                   <p className="text-xs text-gray-300 leading-relaxed line-clamp-3">
-                    {meta.outcomePromise}
+                    {outcomePromise}
                   </p>
                 </div>
 
@@ -312,7 +355,7 @@ export default function CoursesPage() {
                     <Clock className="w-4 h-4 text-[#CEB466]" />
                     <div>
                       <p className="text-[10px] text-gray-400 uppercase font-semibold">Total Time</p>
-                      <p className="font-bold text-white">{meta.practiceMinutesNeeded} min</p>
+                      <p className="font-bold text-white">{totalMinutes > 0 ? `${totalMinutes} min` : '—'}</p>
                     </div>
                   </div>
 
@@ -320,7 +363,7 @@ export default function CoursesPage() {
                     <Award className="w-4 h-4 text-purple-400" />
                     <div>
                       <p className="text-[10px] text-gray-400 uppercase font-semibold">Modules</p>
-                      <p className="font-bold text-white">{course.sections.length} Units</p>
+                      <p className="font-bold text-white">{course.sections.length} {course.sections.length === 1 ? 'Unit' : 'Units'}</p>
                     </div>
                   </div>
                 </div>
@@ -358,6 +401,18 @@ export default function CoursesPage() {
           onCourseCreated={handleCourseCreated}
         />
       )}
+
+      {/* Delete course confirmation */}
+      <ConfirmDialog
+        isOpen={pendingDeleteSlug !== null}
+        title="Delete this course?"
+        message="Students will lose access to it immediately. This can't be undone."
+        confirmText="Delete Course"
+        cancelText="Cancel"
+        destructive
+        onConfirm={confirmDeleteCourse}
+        onCancel={() => setPendingDeleteSlug(null)}
+      />
     </div>
   )
 }

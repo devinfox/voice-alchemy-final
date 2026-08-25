@@ -1,16 +1,21 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient as createServerClient } from '@/lib/supabase-server'
 import { getSupabaseAdmin } from '@/lib/supabase-admin'
+import { canAccessEmailTools } from '@/lib/email-access'
+import { requireEmailAccess } from '@/lib/email-access-server'
+import { getAuthUser } from '@/lib/supabase-server'
 
 // GET /api/email/accounts - List all email accounts for current user
 export async function GET(request: NextRequest) {
   try {
-    const supabase = await createServerClient()
-    const { data: { user } } = await supabase.auth.getUser()
-
-    if (!user) {
-      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+    // Only email-tools users (admins / Julia) use the email system; plain
+    // students have no business listing or creating email accounts.
+    const profile = await requireEmailAccess()
+    if (!profile) {
+      return NextResponse.json({ error: 'Email tools access required' }, { status: 403 })
     }
+
+    const supabase = await createServerClient()
 
     const { data: accounts, error } = await supabase
       .from('email_accounts')
@@ -18,7 +23,7 @@ export async function GET(request: NextRequest) {
         *,
         domain:email_domains(id, domain, verification_status)
       `)
-      .eq('user_id', user.id)
+      .eq('user_id', profile.id)
       .eq('is_deleted', false)
       .order('created_at', { ascending: false })
 
@@ -37,20 +42,13 @@ export async function GET(request: NextRequest) {
 // POST /api/email/accounts - Create a new email account
 export async function POST(request: NextRequest) {
   try {
-    const supabase = await createServerClient()
-    const { data: { user } } = await supabase.auth.getUser()
-
-    if (!user) {
-      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+    // Only email-tools users (admins / Julia) may create email accounts
+    const profile = await requireEmailAccess()
+    if (!profile) {
+      return NextResponse.json({ error: 'Email tools access required' }, { status: 403 })
     }
 
-    const { data: profile } = await supabase
-      .from('profiles')
-      .select('id, first_name, last_name, name, email')
-      .eq('id', user.id)
-      .maybeSingle()
-
-    const userDisplayName = profile?.name || `${profile?.first_name || ''} ${profile?.last_name || ''}`.trim() || user.email?.split('@')[0] || 'User'
+    const userDisplayName = profile.name || `${profile.first_name || ''} ${profile.last_name || ''}`.trim() || 'User'
 
     const body = await request.json()
     const { domain_id, email_address, display_name, is_primary } = body
@@ -74,13 +72,28 @@ export async function POST(request: NextRequest) {
     // Resolve the requested domain
     const { data: domain } = await getSupabaseAdmin()
       .from('email_domains')
-      .select('id, domain, verification_status')
+      .select('id, domain, verification_status, created_by')
       .eq('id', domain_id)
       .eq('is_deleted', false)
       .maybeSingle()
 
     if (!domain) {
       return NextResponse.json({ error: 'Domain not found' }, { status: 404 })
+    }
+
+    // Domain-spoofing guard (audit finding): an account may only be created
+    // on a domain the caller created themselves, or by an email-tools admin
+    // managing academy domains. requireEmailAccess() above already restricts
+    // this route to email-tools admins, which satisfies the second branch;
+    // the explicit ownership check stays so the invariant holds even if the
+    // route-level gate is ever relaxed.
+    const authUser = await getAuthUser()
+    const ownsDomain = domain.created_by === profile.id
+    if (!ownsDomain && !canAccessEmailTools(profile, authUser?.email)) {
+      return NextResponse.json(
+        { error: 'You do not have permission to create accounts on this domain' },
+        { status: 403 }
+      )
     }
 
     // Domain doesn't need to be verified to create accounts, but note the status
@@ -106,7 +119,7 @@ export async function POST(request: NextRequest) {
       await getSupabaseAdmin()
         .from('email_accounts')
         .update({ is_primary: false, updated_at: new Date().toISOString() })
-        .eq('user_id', user.id)
+        .eq('user_id', profile.id)
         .eq('is_primary', true)
     }
 
@@ -114,7 +127,7 @@ export async function POST(request: NextRequest) {
     const { count } = await getSupabaseAdmin()
       .from('email_accounts')
       .select('*', { count: 'exact', head: true })
-      .eq('user_id', user.id)
+      .eq('user_id', profile.id)
       .eq('is_deleted', false)
 
     const shouldBeDefault = is_primary || count === 0
@@ -124,7 +137,7 @@ export async function POST(request: NextRequest) {
       .from('email_accounts')
       .insert({
         domain_id,
-        user_id: user.id,
+        user_id: profile.id,
         email_address: fullEmailAddress,
         display_name: display_name || userDisplayName || email_address,
         is_primary: shouldBeDefault,

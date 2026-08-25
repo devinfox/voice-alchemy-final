@@ -1,6 +1,7 @@
 'use client'
 
 import { useState, useEffect, useRef, useCallback, useMemo } from 'react'
+import { createPortal } from 'react-dom'
 import { Music, X, Maximize2, Minimize2, Circle, Piano, Mic, MicOff, TrendingUp, Save } from 'lucide-react'
 import Script from 'next/script'
 import { getSharedMicStream, subscribeSharedMicStream } from '@/lib/shared-mic-stream'
@@ -10,26 +11,26 @@ import { SpotlightTour, SpotlightTriggerButton, SpotlightStep } from '@/componen
 const pitchTourSteps: SpotlightStep[] = [
   {
     target: '[data-tour="pitch-mic-btn"]',
-    title: '1. Activate Microphone',
-    content: 'Click "Start Mic" to turn on real-time pitch analysis. The engine detects your voice with millisecond precision.',
+    title: '1. Turn On Your Mic',
+    content: 'Tap "Start Mic" so the app can hear you sing.',
     placement: 'bottom',
   },
   {
     target: '[data-tour="pitch-note-display"]',
-    title: '2. Live Pitch & Hertz Display',
-    content: 'Shows your currently sung note (e.g. A4), octave, and exact frequency in Hz with cents deviation (+ sharp / - flat).',
+    title: '2. See Your Note',
+    content: 'This shows the note you are singing. If it says sharp or flat, just gently adjust your voice.',
     placement: 'bottom',
   },
   {
     target: '[data-tour="pitch-wheel-keyboard"]',
-    title: '3. Select Target Note to Match',
-    content: 'Click any note on the Wheel or Keyboard to hear its reference pitch, then sing into your mic to match it.',
+    title: '3. Pick a Note',
+    content: 'Tap a note to hear it. Then sing the same note back.',
     placement: 'top',
   },
   {
     target: '[data-tour="pitch-octave-selector"]',
-    title: '4. Vocal Octave Range',
-    content: 'Switch octaves (2 to 6) to fit your vocal type—from Bass and Tenor up to Alto and Soprano.',
+    title: '4. Choose Your Range',
+    content: 'Pick a lower or higher number so the notes feel comfortable for your voice.',
     placement: 'top',
   },
 ]
@@ -1072,17 +1073,17 @@ export default function ModernPitchTrainer({ variant = 'floating' }: ModernPitch
       ) : (
         <button
           onClick={() => setIsOpen(true)}
-          className="flex items-center gap-4 px-6 py-5 bg-gradient-to-br from-indigo-600 to-violet-600 hover:from-indigo-500 hover:to-violet-500 text-white rounded-2xl transition-all duration-300 w-full group border border-white/10"
+          className="group flex h-full min-h-[88px] w-full items-center gap-3.5 rounded-2xl border border-white/10 bg-gradient-to-br from-indigo-600 to-violet-600 hover:from-indigo-500 hover:to-violet-500 px-5 py-4 text-white transition-all duration-300"
           style={{ boxShadow: '0 8px 32px rgba(99, 102, 241, 0.3), inset 0 1px 0 rgba(255,255,255,0.1)' }}
         >
-          <div className="w-12 h-12 rounded-xl bg-white/20 flex items-center justify-center group-hover:scale-110 transition-transform duration-300">
+          <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-white/20 transition-transform duration-300 group-hover:scale-110">
             <Music className="w-6 h-6" />
           </div>
-          <div className="text-left flex-1">
-            <p className="font-semibold text-lg">Pitch Perfect</p>
-            <p className="text-sm text-white/70">Modern ear training</p>
+          <div className="min-w-0 flex-1 text-left">
+            <p className="text-[15px] font-bold leading-tight">Pitch Perfect</p>
+            <p className="mt-0.5 text-xs leading-snug text-white/75">Modern ear training</p>
           </div>
-          <div className="w-8 h-8 rounded-lg bg-white/10 flex items-center justify-center group-hover:bg-white/20 transition-colors">
+          <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-white/10 transition-colors group-hover:bg-white/20">
             <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
             </svg>
@@ -1090,10 +1091,10 @@ export default function ModernPitchTrainer({ variant = 'floating' }: ModernPitch
         </button>
       )}
 
-      {isOpen && (
-        <div className="fixed inset-0 z-[100] flex items-center justify-center">
+      {isOpen && createPortal(
+        <div className="fixed inset-0 z-[99990] flex items-center justify-center bg-black/90">
           <div
-            className="absolute inset-0 bg-black/80 backdrop-blur-sm"
+            className="absolute inset-0 bg-black/90 backdrop-blur-sm"
             onClick={() => {
               setIsOpen(false)
               setIsFullscreen(false)
@@ -1101,24 +1102,27 @@ export default function ModernPitchTrainer({ variant = 'floating' }: ModernPitch
           />
 
           <div
-            className={`relative bg-gradient-to-br from-slate-900 via-slate-900 to-slate-800 shadow-2xl border border-slate-700/50 overflow-hidden transition-all duration-300 ${
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="pitch-trainer-title"
+            className={`relative bg-gradient-to-br from-[#1b1233] via-[#171229] to-[#0f0b1e] shadow-2xl border border-[#CEB466]/30 overflow-hidden transition-all duration-300 ${
               isFullscreen
                 ? 'w-full h-full rounded-none lg:w-[95vw] lg:h-[95vh] lg:rounded-3xl'
                 : 'w-full h-full rounded-none lg:w-[90vw] lg:max-w-3xl lg:h-[85vh] lg:max-h-[750px] lg:rounded-3xl'
             }`}
           >
             {/* Header */}
-            <div className="flex items-center justify-between px-5 py-4 bg-gradient-to-r from-indigo-600/20 via-violet-600/20 to-purple-600/20 border-b border-slate-700/50">
+            <div className="flex items-center justify-between gap-3 px-4 py-3 sm:px-5 sm:py-4 bg-[#1b1233] border-b border-[#CEB466]/20">
               <div className="flex items-center gap-4">
                 <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-indigo-500 to-violet-500 flex items-center justify-center shadow-lg">
                   <Music className="w-5 h-5 text-white" />
                 </div>
-                <div>
-                  <h2 className="text-xl font-bold text-white">Pitch Perfect</h2>
-                  <p className="text-sm text-slate-400">Click a note, play it, and match your voice!</p>
+                <div className="min-w-0">
+                  <h2 id="pitch-trainer-title" className="text-base sm:text-xl font-bold text-white truncate">Pitch Perfect</h2>
+                  <p className="hidden sm:block text-sm text-purple-100/70">Click a note, play it, and match your voice!</p>
                 </div>
               </div>
-              <div className="flex items-center gap-2">
+              <div className="flex shrink-0 items-center gap-1.5 sm:gap-2">
                 <SpotlightTriggerButton tourKey="pitch_trainer_v4" label="How to" />
                 <button
                   onClick={() => setShowProgress(!showProgress)}
@@ -1131,7 +1135,7 @@ export default function ModernPitchTrainer({ variant = 'floating' }: ModernPitch
                 </button>
                 <button
                   onClick={() => setIsFullscreen(!isFullscreen)}
-                  className="p-2.5 hover:bg-white/10 rounded-xl transition-colors"
+                  className="hidden sm:block p-2.5 hover:bg-white/10 rounded-xl transition-colors"
                   title={isFullscreen ? 'Exit fullscreen' : 'Fullscreen'}
                 >
                   {isFullscreen ? (
@@ -1323,7 +1327,8 @@ export default function ModernPitchTrainer({ variant = 'floating' }: ModernPitch
               )}
             </div>
           </div>
-        </div>
+        </div>,
+        document.body
       )}
 
       <Script

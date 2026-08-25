@@ -1,4 +1,4 @@
-import { createClient } from '@/lib/supabase-server'
+import { requireEmailAccess } from '@/lib/email-access-server'
 import { createClient as createServiceClient } from '@supabase/supabase-js'
 import { NextRequest, NextResponse } from 'next/server'
 
@@ -8,19 +8,18 @@ export async function PATCH(
   { params }: { params: Promise<{ id: string }> }
 ) {
   try {
-    const supabase = await createClient()
     const { id } = await params
     const body = await request.json()
 
-    // Verify user is authenticated
-    const { data: { user }, error: authError } = await supabase.auth.getUser()
-    if (authError || !user) {
-      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+    // Only email-tools users (admins / Julia) may manage enrollments
+    const profile = await requireEmailAccess()
+    if (!profile) {
+      return NextResponse.json({ error: 'Email tools access required' }, { status: 403 })
     }
 
     const { status, action } = body
 
-    const usersTableId = user.id
+    const usersTableId = profile.id
 
     // Use service role for updates
     const serviceClient = createServiceClient(
@@ -128,21 +127,26 @@ export async function GET(
   { params }: { params: Promise<{ id: string }> }
 ) {
   try {
-    const supabase = await createClient()
     const { id } = await params
 
-    // Verify user is authenticated
-    const { data: { user }, error: authError } = await supabase.auth.getUser()
-    if (authError || !user) {
-      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+    // Only email-tools users (admins / Julia) may view enrollments
+    const profile = await requireEmailAccess()
+    if (!profile) {
+      return NextResponse.json({ error: 'Email tools access required' }, { status: 403 })
     }
 
-    const { data: enrollment, error } = await supabase
+    const serviceClient = createServiceClient(
+      process.env.NEXT_PUBLIC_SUPABASE_URL!,
+      process.env.SUPABASE_SERVICE_ROLE_KEY!
+    )
+
+    // No leads table in this app — the enrollment's lead_id/contact_id points
+    // at a profile; the email lives in the `users` mirror table.
+    const { data: enrollment, error } = await serviceClient
       .from('email_funnel_enrollments')
       .select(`
         *,
-        funnel:email_funnels(id, name, description, tags),
-        lead:leads(id, first_name, last_name, email)
+        funnel:email_funnels(id, name, description, tags)
       `)
       .eq('id', id)
       .single()
@@ -151,7 +155,34 @@ export async function GET(
       return NextResponse.json({ error: 'Enrollment not found' }, { status: 404 })
     }
 
-    return NextResponse.json({ data: enrollment })
+    // Enrich with recipient info from profiles + users
+    let lead: { id: string; first_name: string | null; last_name: string | null; email: string | null } | null = null
+    const recipientId = enrollment.contact_id || enrollment.lead_id
+    if (recipientId) {
+      const [{ data: recipientProfile }, { data: recipientUser }] = await Promise.all([
+        serviceClient
+          .from('profiles')
+          .select('id, first_name, last_name, name')
+          .eq('id', recipientId)
+          .maybeSingle(),
+        serviceClient
+          .from('users')
+          .select('id, email')
+          .eq('id', recipientId)
+          .maybeSingle(),
+      ])
+
+      if (recipientProfile || recipientUser) {
+        lead = {
+          id: recipientId,
+          first_name: recipientProfile?.first_name || recipientProfile?.name?.split(' ')[0] || null,
+          last_name: recipientProfile?.last_name || null,
+          email: recipientUser?.email || null,
+        }
+      }
+    }
+
+    return NextResponse.json({ data: { ...enrollment, lead } })
   } catch (error) {
     console.error('Error in GET /api/email-funnels/enrollments/[id]:', error)
     return NextResponse.json({ error: 'Internal server error' }, { status: 500 })

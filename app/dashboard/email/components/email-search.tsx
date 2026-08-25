@@ -181,7 +181,7 @@ export function EmailSearch({ placeholder = 'Search emails...' }: EmailSearchPro
       {isOpen && (showHistory || showSuggestions || showOperatorHints) && (
         <div
           ref={dropdownRef}
-          className="absolute top-full left-0 right-0 mt-1 bg-gray-900 border border-white/10 rounded-lg shadow-xl z-50 overflow-hidden"
+          className="absolute top-full left-0 right-0 mt-1 modal-solid border border-white/10 rounded-lg shadow-xl z-50 overflow-hidden"
         >
           {/* Suggestions */}
           {showSuggestions && (

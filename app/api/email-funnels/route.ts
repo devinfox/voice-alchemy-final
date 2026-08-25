@@ -1,17 +1,18 @@
 import { createClient } from '@/lib/supabase-server'
+import { requireEmailAccess } from '@/lib/email-access-server'
 import { createClient as createServiceClient } from '@supabase/supabase-js'
 import { NextRequest, NextResponse } from 'next/server'
 
 // GET /api/email-funnels - List all funnels
 export async function GET(request: NextRequest) {
   try {
-    const supabase = await createClient()
-
-    // Verify user is authenticated
-    const { data: { user }, error: authError } = await supabase.auth.getUser()
-    if (authError || !user) {
-      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+    // Only email-tools users (admins / Julia) may use funnels
+    const profile = await requireEmailAccess()
+    if (!profile) {
+      return NextResponse.json({ error: 'Email tools access required' }, { status: 403 })
     }
+
+    const supabase = await createClient()
 
     // Fetch funnels with phases
     const { data: funnels, error } = await supabase
@@ -47,14 +48,13 @@ export async function GET(request: NextRequest) {
 // POST /api/email-funnels - Create a new funnel
 export async function POST(request: NextRequest) {
   try {
-    const supabase = await createClient()
-    const body = await request.json()
-
-    // Verify user is authenticated
-    const { data: { user }, error: authError } = await supabase.auth.getUser()
-    if (authError || !user) {
-      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+    // Only email-tools users (admins / Julia) may use funnels
+    const profile = await requireEmailAccess()
+    if (!profile) {
+      return NextResponse.json({ error: 'Email tools access required' }, { status: 403 })
     }
+
+    const body = await request.json()
 
     const { name, description, status, phases } = body
 
@@ -75,7 +75,7 @@ export async function POST(request: NextRequest) {
         name,
         description: description || null,
         status: status || 'draft',
-        created_by: user.id,
+        created_by: profile.id,
       })
       .select()
       .single()

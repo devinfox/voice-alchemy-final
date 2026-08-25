@@ -57,7 +57,9 @@ export default async function EmailTemplatesPage({ searchParams }: PageProps) {
     )
   })) as EmailFunnel[] | undefined
 
-  // Fetch pending enrollment drafts
+  // Fetch pending enrollment drafts. There is no leads table in this app —
+  // lead_id points at a profile, and the email lives in the `users` mirror
+  // table, so recipient info is joined in code below.
   const { data: pendingEnrollments, error: pendingError } = await supabase
     .from('email_funnel_enrollments')
     .select(`
@@ -66,14 +68,41 @@ export default async function EmailTemplatesPage({ searchParams }: PageProps) {
       lead_id,
       enrolled_at,
       match_reason,
-      funnel:email_funnels(id, name, description, tags),
-      lead:leads(id, first_name, last_name, email)
+      funnel:email_funnels(id, name, description, tags)
     `)
     .eq('status', 'pending_approval')
     .order('enrolled_at', { ascending: false })
 
   if (pendingError) {
     console.error('Error fetching pending enrollments:', pendingError)
+  }
+
+  // Resolve pending-enrollment recipients from profiles + users
+  const pendingLeadIds = [...new Set(
+    (pendingEnrollments || []).map(e => e.lead_id).filter(Boolean) as string[]
+  )]
+  const pendingLeadMap = new Map<string, { id: string; first_name: string | null; last_name: string | null; email: string | null }>()
+  if (pendingLeadIds.length > 0) {
+    const [{ data: leadProfiles }, { data: leadUsers }] = await Promise.all([
+      supabase
+        .from('profiles')
+        .select('id, first_name, last_name, name')
+        .in('id', pendingLeadIds),
+      supabase
+        .from('users')
+        .select('id, email')
+        .in('id', pendingLeadIds),
+    ])
+
+    const leadEmailById = new Map((leadUsers || []).map(u => [u.id, u.email as string | null]))
+    for (const p of leadProfiles || []) {
+      pendingLeadMap.set(p.id, {
+        id: p.id,
+        first_name: p.first_name || p.name?.split(' ')[0] || null,
+        last_name: p.last_name || null,
+        email: leadEmailById.get(p.id) || null,
+      })
+    }
   }
 
   const pendingCount = pendingEnrollments?.length || 0
@@ -269,7 +298,7 @@ export default async function EmailTemplatesPage({ searchParams }: PageProps) {
       {activeTab === 'drafts' && (
         <FunnelDraftsClient
           pendingEnrollments={(pendingEnrollments || [])
-            .filter(e => e.funnel && e.lead)
+            .filter(e => e.funnel && e.lead_id && pendingLeadMap.has(e.lead_id))
             .map(e => ({
               id: e.id,
               funnel_id: e.funnel_id,
@@ -277,7 +306,7 @@ export default async function EmailTemplatesPage({ searchParams }: PageProps) {
               enrolled_at: e.enrolled_at,
               match_reason: e.match_reason || null,
               funnel: e.funnel as unknown as { id: string; name: string; description: string | null; tags: string[] },
-              lead: e.lead as unknown as { id: string; first_name: string | null; last_name: string | null; email: string | null }
+              lead: pendingLeadMap.get(e.lead_id!)!
             }))}
         />
       )}

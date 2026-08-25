@@ -114,8 +114,15 @@ export function CreateFunnelModal({
         body: JSON.stringify({
           name: name.trim(),
           description: description.trim() || null,
-          status: 'draft',
+          // Only stamp a status on create. On edit, omitting it preserves the
+          // funnel's current status instead of silently demoting active
+          // funnels back to draft.
+          ...(isEditing ? {} : { status: 'draft' }),
+          // Pass phase ids through so the API can update existing phases in
+          // place (preserving logs/stats) instead of delete-and-reinsert.
+          // Client-generated placeholder ids ("phase-...") are treated as new.
           phases: phases.map((p) => ({
+            id: p.id,
             template_id: p.template_id,
             name: p.name,
             delay_days: p.delay_days,
@@ -146,7 +153,7 @@ export function CreateFunnelModal({
       <div className="absolute inset-0 bg-black/70 backdrop-blur-sm" onClick={onClose} />
 
       {/* Modal */}
-      <div className="relative w-full max-w-3xl max-h-[90vh] overflow-hidden glass-card rounded-2xl">
+      <div className="relative w-full max-w-3xl max-h-[90vh] overflow-hidden glass-card modal-solid rounded-2xl">
         {/* Header */}
         <div className="flex items-center justify-between p-4 border-b border-white/10">
           <h2 className="text-xl font-bold text-white">

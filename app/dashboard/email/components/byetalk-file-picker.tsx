@@ -159,7 +159,7 @@ export function ByeTalkFilePicker({ isOpen, onClose, onAttach }: ByeTalkFilePick
 
   return (
     <div className="fixed inset-0 z-[120] flex items-center justify-center bg-black/70 backdrop-blur-sm">
-      <div className="w-full max-w-3xl rounded-2xl border border-white/10 bg-[#0b1220] shadow-2xl">
+      <div className="w-full max-w-3xl rounded-2xl border border-white/10 modal-solid shadow-2xl">
         <div className="flex items-center justify-between border-b border-white/10 px-5 py-4">
           <div>
             <h3 className="text-sm font-semibold text-white">Attach ByeTalk Files</h3>
