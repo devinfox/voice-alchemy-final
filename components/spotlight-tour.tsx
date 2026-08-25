@@ -48,7 +48,25 @@ export function SpotlightTour({
   const [currentStepIndex, setCurrentStepIndex] = useState(0)
   const [targetRect, setTargetRect] = useState<TargetRect | null>(null)
   const [isMounted] = useState(() => typeof document !== 'undefined')
+  const [measuredTooltipHeight, setMeasuredTooltipHeight] = useState(0)
   const tooltipRef = useRef<HTMLDivElement>(null)
+
+  // Track the rendered tooltip's real height so placement math can use it
+  // instead of a fixed guess. ResizeObserver fires on mount and whenever the
+  // step content changes the card's size.
+  useEffect(() => {
+    if (!isActive) return
+    const el = tooltipRef.current
+    if (!el || typeof ResizeObserver === 'undefined') return
+    const observer = new ResizeObserver(() => {
+      const height = el.offsetHeight
+      if (height > 0) {
+        setMeasuredTooltipHeight((prev) => (Math.abs(height - prev) > 1 ? height : prev))
+      }
+    })
+    observer.observe(el)
+    return () => observer.disconnect()
+  }, [isActive])
 
   useEffect(() => {
     return () => {
@@ -73,25 +91,34 @@ export function SpotlightTour({
 
     // Also check Supabase user metadata for cross-device persistence
     const supabase = createClient()
-    supabase.auth.getUser().then(({ data: { user } }) => {
-      const completedTours = (user?.user_metadata?.completed_tours || {}) as Record<string, boolean>
-      if (completedTours[tourKey]) {
-        localStorage.setItem(storageKey, 'completed')
-        return
-      }
-
-      // If never done or dismissed, open the welcome prompt
-      const timer = setTimeout(() => {
-        if (welcomePrompt) {
-          setIsPromptOpen(true)
-        } else {
-          setIsActive(true)
-          setCurrentStepIndex(0)
+    let timer: ReturnType<typeof setTimeout> | undefined
+    let cancelled = false
+    supabase.auth
+      .getUser()
+      .then(({ data: { user } }) => {
+        const completedTours = (user?.user_metadata?.completed_tours || {}) as Record<string, boolean>
+        if (completedTours[tourKey]) {
+          localStorage.setItem(storageKey, 'completed')
+          return
         }
-      }, 500)
+        if (cancelled) return
 
-      return () => clearTimeout(timer)
-    })
+        // If never done or dismissed, open the welcome prompt
+        timer = setTimeout(() => {
+          if (welcomePrompt) {
+            setIsPromptOpen(true)
+          } else {
+            setIsActive(true)
+            setCurrentStepIndex(0)
+          }
+        }, 500)
+      })
+      .catch(() => {})
+
+    return () => {
+      cancelled = true
+      if (timer) clearTimeout(timer)
+    }
   }, [tourKey, autoStartOnFirstVisit, welcomePrompt, isMounted])
 
   // Save completion/dismissal to both localStorage and Supabase DB
@@ -144,9 +171,11 @@ export function SpotlightTour({
     if (!isActive || !currentStep) return
 
     const el = document.querySelector(currentStep.target)
-    if (el) {
+    const rect = el?.getBoundingClientRect()
+    // A display:none/unrendered anchor still matches the selector but measures
+    // 0x0 — treat it like a missing target instead of spotlighting (0,0).
+    if (el && rect && (rect.width > 0 || rect.height > 0)) {
       el.scrollIntoView({ behavior: 'smooth', block: 'center', inline: 'center' })
-      const rect = el.getBoundingClientRect()
       setTargetRect({
         top: rect.top,
         left: rect.left,
@@ -204,6 +233,10 @@ export function SpotlightTour({
     setIsPromptOpen(false)
     setIsActive(true)
     setCurrentStepIndex(0)
+    // Notify the host page the same way the "How to" button does, so pages
+    // that reset state on tour start (e.g. switching back to the tab the
+    // anchors live on) react to prompt-accepted starts too.
+    window.dispatchEvent(new Event(`start-spotlight-${tourKey}`))
   }
 
   const handleDismissPrompt = () => {
@@ -336,34 +369,62 @@ export function SpotlightTour({
         tooltipStyle.maxWidth = 'none'
       }
     } else {
-      // Desktop Adaptive Placement
+      // Desktop Adaptive Placement. Use the real rendered height once the
+      // tooltip has painted — the old fixed 260px guess under-measured tall
+      // steps, which let 'top' placement overlap the target and clip the
+      // tooltip's bottom off-screen.
       const padding = 16
       const tooltipWidth = Math.min(420, viewport.width - 32)
-      const tooltipHeight = 260
+      const tooltipHeight = measuredTooltipHeight > 0 ? measuredTooltipHeight : 260
 
       const spaceAbove = targetRect.top
       const spaceBelow = viewport.height - targetRect.bottom
       const spaceLeft = targetRect.left
       const spaceRight = viewport.width - targetRect.right
 
-      const preferred = currentStep?.placement || 'auto'
+      const fitsAbove = spaceAbove >= tooltipHeight + padding * 2
+      const fitsBelow = spaceBelow >= tooltipHeight + padding * 2
+      const fitsLeft = spaceLeft >= tooltipWidth + padding * 2
+      const fitsRight = spaceRight >= tooltipWidth + padding * 2
 
-      if (preferred === 'bottom' || (preferred === 'auto' && spaceBelow >= tooltipHeight)) {
-        tooltipStyle.top = `${viewport.offsetTop + Math.min(viewport.height - tooltipHeight - 16, targetRect.bottom + padding)}px`
-        tooltipStyle.left = `${viewport.offsetLeft + Math.max(16, Math.min(viewport.width - tooltipWidth - 16, targetRect.left + targetRect.width / 2 - tooltipWidth / 2))}px`
-      } else if (preferred === 'top' || (preferred === 'auto' && spaceAbove >= tooltipHeight)) {
-        tooltipStyle.top = `${viewport.offsetTop + Math.max(16, targetRect.top - tooltipHeight - padding)}px`
-        tooltipStyle.left = `${viewport.offsetLeft + Math.max(16, Math.min(viewport.width - tooltipWidth - 16, targetRect.left + targetRect.width / 2 - tooltipWidth / 2))}px`
-      } else if (preferred === 'right' && spaceRight >= tooltipWidth) {
-        tooltipStyle.top = `${viewport.offsetTop + Math.max(16, Math.min(viewport.height - tooltipHeight - 16, targetRect.top + targetRect.height / 2 - tooltipHeight / 2))}px`
-        tooltipStyle.left = `${targetRect.right + padding}px`
-      } else if (preferred === 'left' && spaceLeft >= tooltipWidth) {
-        tooltipStyle.top = `${viewport.offsetTop + Math.max(16, Math.min(viewport.height - tooltipHeight - 16, targetRect.top + targetRect.height / 2 - tooltipHeight / 2))}px`
-        tooltipStyle.left = `${viewport.offsetLeft + Math.max(16, targetRect.left - tooltipWidth - padding)}px`
+      const clampLeft = (left: number) =>
+        Math.max(16, Math.min(viewport.width - tooltipWidth - 16, left))
+      const clampTop = (top: number) =>
+        Math.max(16, Math.min(viewport.height - tooltipHeight - 16, top))
+      const centeredLeft = targetRect.left + targetRect.width / 2 - tooltipWidth / 2
+      const centeredTop = targetRect.top + targetRect.height / 2 - tooltipHeight / 2
+
+      // Fall back to a side that actually fits instead of forcing the
+      // preferred side into the viewport on top of the target.
+      let placement: string = currentStep?.placement || 'auto'
+      if (placement === 'top' && !fitsAbove) placement = 'auto'
+      if (placement === 'bottom' && !fitsBelow) placement = 'auto'
+      if (placement === 'left' && !fitsLeft) placement = 'auto'
+      if (placement === 'right' && !fitsRight) placement = 'auto'
+      if (placement === 'auto') {
+        placement = fitsBelow ? 'bottom' : fitsAbove ? 'top' : fitsRight ? 'right' : fitsLeft ? 'left' : 'pinned'
+      }
+
+      if (placement === 'bottom') {
+        tooltipStyle.top = `${viewport.offsetTop + clampTop(targetRect.bottom + padding)}px`
+        tooltipStyle.left = `${viewport.offsetLeft + clampLeft(centeredLeft)}px`
+      } else if (placement === 'top') {
+        tooltipStyle.top = `${viewport.offsetTop + clampTop(targetRect.top - tooltipHeight - padding)}px`
+        tooltipStyle.left = `${viewport.offsetLeft + clampLeft(centeredLeft)}px`
+      } else if (placement === 'right') {
+        tooltipStyle.top = `${viewport.offsetTop + clampTop(centeredTop)}px`
+        tooltipStyle.left = `${viewport.offsetLeft + clampLeft(targetRect.right + padding)}px`
+      } else if (placement === 'left') {
+        tooltipStyle.top = `${viewport.offsetTop + clampTop(centeredTop)}px`
+        tooltipStyle.left = `${viewport.offsetLeft + clampLeft(targetRect.left - tooltipWidth - padding)}px`
       } else {
-        tooltipStyle.top = '50%'
-        tooltipStyle.left = '50%'
-        tooltipStyle.transform = 'translate(-50%, -50%)'
+        // Target dominates the viewport — pin the tooltip to whichever
+        // vertical edge has more breathing room, fully on-screen.
+        tooltipStyle.top =
+          spaceAbove > spaceBelow
+            ? `${viewport.offsetTop + 16}px`
+            : `${viewport.offsetTop + Math.max(16, viewport.height - tooltipHeight - 16)}px`
+        tooltipStyle.left = `${viewport.offsetLeft + clampLeft(centeredLeft)}px`
       }
     }
   } else {

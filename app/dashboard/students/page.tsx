@@ -23,13 +23,13 @@ const teacherStudentsTourSteps: SpotlightStep[] = [
   {
     target: '[data-tour="teacher-student-roster"]',
     title: '1. Your Students',
-    content: 'See your students and a quick view of how their practice is going.',
+    content: 'Every student you coach, with their latest pitch, rhythm, and scale scores and a 14-day practice trend at a glance.',
     placement: 'bottom',
   },
   {
     target: '[data-tour="teacher-open-cockpit"]',
     title: '2. Open a Lesson',
-    content: 'Tap "Open Studio" to start a live lesson, take notes, and save the session.',
+    content: '"Open Studio" drops you into the video room with that student, with shared notes that are archived when you end the class. If a student is falling behind, you\'ll see "Send Check-in" here instead — that opens a chat with them.',
     placement: 'left',
   },
 ]
@@ -343,7 +343,12 @@ export default function StudentsPage() {
 
   return (
     <div className="p-3 sm:p-6 lg:p-8 space-y-5 sm:space-y-6 max-w-7xl mx-auto">
-      <SpotlightTour tourKey="teacher_roster_v4" steps={teacherStudentsTourSteps} />
+      {/* Mount the tour only once the roster has data — both anchors live on
+          student cards, so auto-starting during load or with an empty roster
+          would spotlight nothing. */}
+      {!loading && !error && pageItems.length > 0 && (
+        <SpotlightTour tourKey="teacher_roster_v4" steps={teacherStudentsTourSteps} />
+      )}
 
       {/* Header */}
       <section className="glass-card-luxe rounded-2xl sm:rounded-3xl border border-[#CEB466]/40 p-4 sm:p-6 md:p-7 relative overflow-hidden">
@@ -360,7 +365,9 @@ export default function StudentsPage() {
           </div>
 
           <div className="flex flex-wrap items-center gap-2.5">
-            <SpotlightTriggerButton tourKey="teacher_roster_v4" label="How to" />
+            {!loading && !error && pageItems.length > 0 && (
+              <SpotlightTriggerButton tourKey="teacher_roster_v4" label="How to" />
+            )}
             <Link
               href="/dashboard/students/requests"
               className="relative flex items-center gap-2 px-3.5 py-2.5 rounded-xl bg-white/[0.06] hover:bg-white/[0.12] border border-white/10 text-gray-200 text-xs font-semibold transition-colors"

@@ -17,20 +17,20 @@ import { SpotlightTour, SpotlightTriggerButton, SpotlightStep } from '@/componen
 const classroomTourSteps: SpotlightStep[] = [
   {
     target: '[data-tour="classroom-video"]',
-    title: '1. Video Lesson',
-    content: 'This is where you and your coach see and hear each other.',
+    title: '1. Video Room',
+    content: 'Your student appears here once you start the class. You get camera, mic, screen share, and chat — and you can shrink the video into a corner while you work in the notes.',
     placement: 'bottom',
   },
   {
     target: '[data-tour="classroom-notes"]',
-    title: '2. Lesson Notes',
-    content: 'Write notes, lyrics, and practice ideas here during the lesson.',
+    title: '2. Shared Lesson Notes',
+    content: 'Type your lesson notes here — your student sees every word as you type it. The notes box unlocks when you hit Start Class, and past lessons stack up underneath.',
     placement: 'left',
   },
   {
     target: '[data-tour="classroom-controls"]',
-    title: '3. Start and Save',
-    content: 'Tap "Start Class" when the lesson begins. Your notes and recordings are saved when you finish.',
+    title: '3. Start and End Class',
+    content: 'Hit Start Class to go live — that unlocks the notes and starts recording. When you finish, hit End Class: it saves the recording, files the notes under Past Classes, and clears the board for next time.',
     placement: 'top',
   },
 ]
@@ -38,12 +38,22 @@ const classroomTourSteps: SpotlightStep[] = [
 // Students don't have the Start/End Class controls — their third step points
 // at the class status strip with student-appropriate copy.
 const classroomStudentTourSteps: SpotlightStep[] = [
-  classroomTourSteps[0],
-  classroomTourSteps[1],
+  {
+    target: '[data-tour="classroom-video"]',
+    title: '1. Video Room',
+    content: 'This box turns into your video call. When your teacher starts the class, you will see and hear each other right here.',
+    placement: 'bottom',
+  },
+  {
+    target: '[data-tour="classroom-notes"]',
+    title: '2. Shared Notepad',
+    content: 'This is a notepad you share with your teacher. Once class starts you can type in it too — your teacher sees what you write, and it is saved under "Past Classes" so you can read it again later.',
+    placement: 'left',
+  },
   {
     target: '[data-tour="classroom-status"]',
     title: '3. Class Status',
-    content: 'Your coach starts the class — when it\'s live you\'ll see it here, and saved notes appear below after each lesson.',
+    content: 'You do not have to do anything to start. This line tells you when your teacher has opened the class, and it updates by itself — no need to refresh the page.',
     placement: 'top',
   },
 ]

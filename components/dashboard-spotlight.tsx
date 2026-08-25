@@ -12,23 +12,23 @@ export function DashboardSpotlight({ isTeacher = false, userName }: DashboardSpo
   const studentSteps: SpotlightStep[] = [
     {
       target: '[data-tour="dashboard-practice-arena"]',
-      title: '1. Practice Tools',
+      title: '1. Your Daily Practice',
       content:
-        'Start here to practice pitch, rhythm, and scales. For scales, listen first, then sing.',
-      placement: 'top',
-    },
-    {
-      target: '[data-tour="dashboard-reports-link"]',
-      title: '2. See Your Progress',
-      content:
-        'Open the Training Center to see how your practice is going and get simple coaching tips.',
+        'This is your daily practice hub. The badges show your streak, days practiced this week, and your best score. The gold bars show your latest score in each trainer. Tap any of the colorful cards to start practicing.',
       placement: 'top',
     },
     {
       target: '[data-tour="dashboard-lessons-link"]',
-      title: '3. Book Your Coach',
+      title: '2. Book Your Coach',
       content:
-        'When you’re ready, find your voice coach and request a 1:1 lesson. Once you have one, your live lessons and shared notes happen right here.',
+        'No coach yet? Tap "Find Your Coach" to request a 1:1 lesson. Once you have one, this card becomes your "Go to Class" button and your live lessons happen right here.',
+      placement: 'top',
+    },
+    {
+      target: '[data-tour="dashboard-reports-link"]',
+      title: '3. See Your Progress',
+      content:
+        'This card shows how your pitch, rhythm, and scales are changing week to week. Tap "View Progress" for the full picture and simple coaching tips.',
       placement: 'top',
     },
   ]
@@ -36,23 +36,23 @@ export function DashboardSpotlight({ isTeacher = false, userName }: DashboardSpo
   const teacherSteps: SpotlightStep[] = [
     {
       target: '[data-tour="dashboard-courses-link"]',
-      title: '1. Make Courses',
+      title: '1. Build Courses',
       content:
-        'Create lessons for your students and add simple quizzes if you want.',
+        'Tap "Course Studio & Quizzes" to open your course list, then hit "+ Create Course & Quizzes" to build a course for your students — quizzes are optional.',
       placement: 'top',
     },
     {
       target: '[data-tour="dashboard-lessons-link"]',
       title: '2. Teach Live Lessons',
       content:
-        'Start a video lesson, take notes together, and review past sessions later.',
+        'Tap "My Students & Live Classes" to see your roster. Pick a student and hit "Open Studio" to jump into the video room, with shared notes that save when class ends.',
       placement: 'top',
     },
     {
       target: '[data-tour="dashboard-reports-link"]',
-      title: '3. Training Center & Reports',
+      title: '3. See How Everyone Is Doing',
       content:
-        'Explore pitch, rhythm, and scale metrics with AI insights here. Each student\'s own practice progress lives in My Students.',
+        'This opens your own pitch, rhythm, and scale metrics with AI insights. Each student\'s practice progress lives in My Students.',
       placement: 'top',
     },
   ]

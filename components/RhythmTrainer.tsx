@@ -9,19 +9,19 @@ const rhythmTourSteps: SpotlightStep[] = [
   {
     target: '[data-tour="rhythm-bpm-control"]',
     title: '1. Pick Your Speed',
-    content: 'Move the slider or tap the tempo button to choose how fast the beat goes.',
+    content: 'Move the slider to set how fast the beat goes, or tap the "Tap Tempo" button a few times and the app matches your speed. Starting slow makes it easier.',
     placement: 'bottom',
   },
   {
     target: '[data-tour="rhythm-play-btn"]',
     title: '2. Press Play',
-    content: 'Tap Play to start the beat.',
+    content: 'Tap the round Play button to start the beat. Listen for a moment first so you can feel the rhythm.',
     placement: 'top',
   },
   {
     target: '[data-tour="rhythm-tap-pad"]',
     title: '3. Tap With the Beat',
-    content: 'Tap the pad when you hear the beat. Green means right on time. Blue is early. Orange is late.',
+    content: 'Once the beat is playing, tap this big pad (or press the spacebar) every time you hear a beat. It answers instantly: on beat, a little early, a little late, or off the beat.',
     placement: 'top',
   },
 ]
@@ -1394,7 +1394,7 @@ export default function RhythmTrainer({ variant = 'floating' }: RhythmTrainerPro
                       : tapFeedback?.result === 'on-beat'
                         ? 'border-green-400 bg-green-500/30 scale-[0.98]'
                         : tapFeedback?.result === 'early'
-                          ? 'border-yellow-400 bg-yellow-500/25 scale-[0.98]'
+                          ? 'border-blue-400 bg-blue-500/25 scale-[0.98]'
                           : tapFeedback?.result === 'late'
                             ? 'border-orange-400 bg-orange-500/25 scale-[0.98]'
                             : tapFeedback?.result === 'no-match'

@@ -11,25 +11,25 @@ const scaleTourSteps: SpotlightStep[] = [
   {
     target: '[data-tour="scale-settings"]',
     title: '1. Set Your Scale',
-    content: 'Choose the kind of scale, the starting note, and a range that feels good for your voice.',
+    content: 'Pick the kind of scale, the starting note, how high or low it sits (octave), which way it goes, and how fast the app plays it back to you. Not sure? The starting settings are fine — and when you sing, you can go at your own pace.',
     placement: 'bottom',
   },
   {
     target: '[data-tour="listen-scale-btn"]',
     title: '2. Listen First',
-    content: 'Tap "1. Listen to Scale" so your ear knows what the notes should sound like.',
+    content: 'Tap "1. Listen to Scale" to hear the whole scale played for you, so your ear knows what the notes should sound like before you sing.',
     placement: 'bottom',
   },
   {
     target: '[data-tour="start-practice-btn"]',
     title: '3. Sing the Scale',
-    content: 'Tap "2. Start Practice" and sing each note one at a time.',
+    content: 'Tap "2. Start Practice" and sing each note one at a time. When you finish, you get a score for the whole scale.',
     placement: 'bottom',
   },
   {
     target: '[data-tour="scale-notes-strip"]',
     title: '4. Follow the Notes',
-    content: 'The note boxes light up as you sing. Green means you are close.',
+    content: 'These boxes are the notes of your scale — tap any box to hear its note. Once you press "2. Start Practice", the pink box is the note to sing. Hold it steady for a moment and it turns green, then the next box lights up pink.',
     placement: 'top',
   },
 ]

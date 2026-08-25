@@ -12,25 +12,25 @@ const pitchTourSteps: SpotlightStep[] = [
   {
     target: '[data-tour="pitch-mic-btn"]',
     title: '1. Turn On Your Mic',
-    content: 'Tap "Start Mic" so the app can hear you sing.',
+    content: 'Tap "Start Mic" so the app can hear you sing. The button turns green when it is listening.',
     placement: 'bottom',
   },
   {
     target: '[data-tour="pitch-note-display"]',
-    title: '2. See Your Note',
-    content: 'This shows the note you are singing. If it says sharp or flat, just gently adjust your voice.',
+    title: '2. See What You Sang',
+    content: 'When you sing, the note you are singing shows up here, and the small number under it says how close you are — orange means a tiny bit high, blue means a tiny bit low. Tap a note below first, then sing it back. When you get it right, the word "Match!" appears.',
     placement: 'bottom',
   },
   {
     target: '[data-tour="pitch-wheel-keyboard"]',
     title: '3. Pick a Note',
-    content: 'Tap a note to hear it. Then sing the same note back.',
+    content: 'Tap any note to hear it played. Then sing that same note back and try to get the "Match!"',
     placement: 'top',
   },
   {
     target: '[data-tour="pitch-octave-selector"]',
     title: '4. Choose Your Range',
-    content: 'Pick a lower or higher number so the notes feel comfortable for your voice.',
+    content: 'These numbers set how high or low the notes are. Lower number, deeper notes; higher number, higher notes. Pick whatever feels comfortable for your voice.',
     placement: 'top',
   },
 ]

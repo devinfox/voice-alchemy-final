@@ -11,19 +11,19 @@ const songTourSteps: SpotlightStep[] = [
   {
     target: '[data-tour="song-search-input"]',
     title: '1. Find a Song',
-    content: 'Type a song name or artist. The app will look up the song for you.',
+    content: 'Type a song name or artist and press Enter. Pick your song from the list that appears.',
     placement: 'bottom',
   },
   {
     target: '[data-tour="song-key-card"]',
-    title: '2. See the Song Key',
-    content: 'This shows the main notes that fit the song.',
+    title: '2. Pick Your Song',
+    content: 'Your matches show up here — tap one to pick it. A card then appears with the song\'s key (the group of notes that sound right in that song) and its speed. You do not need to memorize anything; the app checks your notes for you.',
     placement: 'bottom',
   },
   {
     target: '[data-tour="song-mic-toggle"]',
     title: '3. Sing Along',
-    content: 'Turn on the mic and sing. Green means the note fits the song. Red means try a nearby note.',
+    content: 'This side is your singing space. Once you have picked a song, tap Start and sing along. Your note turns green when it fits the song and red when it does not — slide your voice up or down a little until it goes green. Your accuracy score builds as you sing.',
     placement: 'top',
   },
 ]
@@ -410,8 +410,9 @@ export default function SongPitchTrainer({ variant = 'floating' }: SongPitchTrai
                 </div>
               </div>
 
-              {/* Search Results */}
-              <div className="flex-1 overflow-y-auto">
+              {/* Search Results — carries the tour anchor so step 2 has a target
+                  even before a song is selected (the key card below is conditional) */}
+              <div data-tour="song-key-card" className="flex-1 overflow-y-auto">
                 {searchResults.map(song => (
                   <button
                     key={song.id}
@@ -434,7 +435,7 @@ export default function SongPitchTrainer({ variant = 'floating' }: SongPitchTrai
 
                 {/* Selected Song Info */}
                 {selectedSong && searchResults.length === 0 && (
-                  <div data-tour="song-key-card" className="p-4">
+                  <div className="p-4">
                     <div className="bg-gradient-to-br from-emerald-500/20 to-teal-500/20 rounded-xl p-4 border border-emerald-500/30">
                       <p className="text-white font-bold">{selectedSong.title}</p>
                       <p className="text-slate-400 text-sm">{selectedSong.artist}</p>
@@ -548,8 +549,9 @@ export default function SongPitchTrainer({ variant = 'floating' }: SongPitchTrai
               )}
             </div>
 
-            {/* Right Panel - Pitch Display */}
-            <div className="relative flex min-h-0 flex-1 flex-col items-center justify-center bg-gradient-to-br from-[#1b1233] via-[#171229] to-[#0f0b1e]">
+            {/* Right Panel - Pitch Display — carries the tour anchor so step 3 has a
+                target even before a song is selected (the mic button is conditional) */}
+            <div data-tour="song-mic-toggle" className="relative flex min-h-0 flex-1 flex-col items-center justify-center bg-gradient-to-br from-[#1b1233] via-[#171229] to-[#0f0b1e]">
               {/* Close Button */}
               <div className="absolute top-4 right-4 flex gap-2">
                 <button onClick={() => setIsFullscreen(!isFullscreen)} className="hidden sm:block p-2 hover:bg-white/10 rounded-lg">
@@ -644,7 +646,6 @@ export default function SongPitchTrainer({ variant = 'floating' }: SongPitchTrai
                       />
                     </div>
                     <button
-                      data-tour="song-mic-toggle"
                       onClick={isListening ? stopListening : startListening}
                       className={`flex items-center gap-2 px-6 py-3 rounded-xl font-semibold transition-all ${
                         isListening

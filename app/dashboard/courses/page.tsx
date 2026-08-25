@@ -57,13 +57,13 @@ const teacherCourseTourSteps: SpotlightStep[] = [
   {
     target: '[data-tour="course-builder-btn"]',
     title: '1. Make a Course',
-    content: 'Create lessons for your students. Add a quiz if you want to check what they learned.',
+    content: 'Tap "+ Create Course & Quizzes" to build your own course — add lessons, then attach a quiz to any lesson to check what stuck.',
     placement: 'bottom',
   },
   {
     target: '[data-tour="course-list-grid"]',
     title: '2. See Your Courses',
-    content: 'Find the academy courses and the courses you made. Students can open them and follow along.',
+    content: 'Every academy course plus the ones you\'ve built. Tap the copy icon on an academy course to make your own version, or use the pencil and trash icons on your own. Locked courses need a membership.',
     placement: 'top',
   },
 ]

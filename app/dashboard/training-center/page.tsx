@@ -274,37 +274,37 @@ const trainingCenterTourSteps: SpotlightStep[] = [
   {
     target: '[data-tour="training-start-practicing"]',
     title: '1. Start Practicing',
-    content: 'Launch the pitch, rhythm, or scale trainer right here — sessions save to your progress automatically.',
+    content: 'These three cards are your practice tools. Tap one to open it and start singing or tapping along. When you finish, tap Save Session inside the tool and your results show up in your progress here.',
     placement: 'bottom',
   },
   {
     target: '[data-tour="training-tabs"]',
-    title: '2. Pick a Practice Area',
-    content: 'Use these tabs to choose what you want to practice: pitch, rhythm, or scales.',
+    title: '2. Dig Into One Skill',
+    content: 'You are on Overview right now, which shows everything in one place. Tap Pitch Trainer, Rhythm Trainer, or Scales to see more detail about just that skill — your scores, charts, and past sessions.',
     placement: 'bottom',
   },
   {
     target: '[data-tour="training-summary"]',
-    title: '3. See Your Scores',
-    content: 'This shows simple practice scores, like how close your notes were and whether you tend to sing high or low.',
+    title: '3. Your Report Card',
+    content: 'Think of this as your report card. It sums up how your pitch, scales, and rhythm are doing, and the numbers update every time you practice.',
     placement: 'bottom',
   },
   {
     target: '[data-tour="training-pitch-widget"]',
-    title: '4. Practice Pitch',
-    content: 'Use this to hold notes and see if you are close.',
+    title: '4. Your Pitch Scores',
+    content: 'This box shows how your pitch practice is going. Once you have a few sessions saved, it can also tell you whether you tend to sing a little high (sharp) or a little low (flat). Tap Details for the full picture.',
     placement: 'bottom',
   },
   {
     target: '[data-tour="training-rhythm-widget"]',
-    title: '5. Practice Rhythm',
-    content: 'Use this to tap or sing with the beat and build better timing.',
+    title: '5. Your Rhythm Scores',
+    content: 'This box shows your timing — how often you land right on the beat, and whether you tend to be a bit early or a bit late. Tap Details to see more.',
     placement: 'top',
   },
   {
     target: '[data-tour="training-ai-panel"]',
-    title: '6. Get Practice Tips',
-    content: 'Tap Analyze Notes to get ideas for what to practice next.',
+    title: '6. Get Coaching Tips',
+    content: 'Tap Analyze Notes to open your AI coach, then press Generate Analysis. It reads your lesson notes and recent practice and tells you in plain words what is going well and what to work on next.',
     placement: 'bottom',
   },
 ]
@@ -563,7 +563,7 @@ export default function TrainingCenterPage() {
                 <Music className="w-5 h-5 text-[#CEB466]" />
                 <span>Start Practicing</span>
               </h2>
-              <span className="text-xs text-slate-400">Sessions save automatically to your progress below</span>
+              <span className="text-xs text-slate-400">Tap Save Session when you finish — your results show up in your progress below</span>
             </div>
             <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
               <div className="h-full transition-transform duration-300 hover:-translate-y-1">
@@ -2073,7 +2073,7 @@ export default function TrainingCenterPage() {
         steps={trainingCenterTourSteps}
         welcomePrompt={{
           title: 'Training Center Guided Tour',
-          message: 'Welcome to your Vocal Training Center! Would you like a brief interactive walkthrough of your pitch analytics, scale intonation suites, and rhythm metronomes?',
+          message: 'Welcome to your Training Center! Want a quick walkthrough of where to practice and where to see your scores?',
           confirmText: 'Yes, Show Me Around',
           cancelText: 'Maybe Later',
         }}

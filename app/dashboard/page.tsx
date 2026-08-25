@@ -122,12 +122,6 @@ function getSessionTimestamp(session: TrainingSessionSummary): number {
   return rawDate ? new Date(rawDate).getTime() : 0
 }
 
-function formatSessionMinutes(seconds: number | null): string | null {
-  if (!seconds || seconds <= 0) return null
-  const minutes = Math.max(1, Math.round(seconds / 60))
-  return `${minutes} min`
-}
-
 function formatSignedPercent(value: unknown): string | null {
   const numeric = typeof value === 'number' ? value : Number(value)
   if (!Number.isFinite(numeric)) return null
@@ -186,7 +180,6 @@ export default async function DashboardPage() {
     profile?.role === 'admin'
 
   let activeLessons: ActiveLesson[] = []
-  let latestTrainingSession: TrainingSessionSummary | null = null
   let practiceStreak = 0
   let bestRecentScore: number | null = null
   let weeklyTrainingDays = 0
@@ -577,8 +570,6 @@ export default async function DashboardPage() {
   const allTrainingSessions = [...pitchSessions, ...rhythmSessions, ...scaleSessions]
     .sort((a, b) => getSessionTimestamp(b) - getSessionTimestamp(a))
 
-  latestTrainingSession = allTrainingSessions[0] || null
-
   const weeklyDays = new Set<string>()
   allTrainingSessions.forEach((session) => {
     if (session.sessionDate && session.sessionDate >= weekStart) {
@@ -595,6 +586,24 @@ export default async function DashboardPage() {
     .map((s) => s.overallScore)
     .filter((s): s is number => typeof s === 'number' && Number.isFinite(s))
   bestRecentScore = recentScores.length > 0 ? Math.round(Math.max(...recentScores)) : null
+
+  // Per-tool latest score for the practice hub: sessions arrive newest-first,
+  // but re-sort by timestamp since started_at is more precise than session_date.
+  const nowMs = Date.now()
+  const toolScores = [
+    { tool: 'Pitch' as const, sessions: pitchSessions },
+    { tool: 'Rhythm' as const, sessions: rhythmSessions },
+    { tool: 'Scales' as const, sessions: scaleSessions },
+  ].map(({ tool, sessions }) => {
+    const latest = [...sessions].sort((a, b) => getSessionTimestamp(b) - getSessionTimestamp(a))[0]
+    const timestamp = latest ? getSessionTimestamp(latest) : 0
+    const daysAgo = timestamp > 0 ? Math.max(0, Math.floor((nowMs - timestamp) / 86_400_000)) : null
+    const score =
+      latest && typeof latest.overallScore === 'number' && Number.isFinite(latest.overallScore)
+        ? Math.max(0, Math.min(100, Math.round(latest.overallScore)))
+        : null
+    return { tool, score, daysAgo }
+  })
 
   const pitchProgress = (pitchProgressResult.data || {}) as DataRow
   const rhythmProgress = (rhythmProgressResult.data || {}) as DataRow
@@ -647,16 +656,6 @@ export default async function DashboardPage() {
     : isTeacher
       ? '/dashboard/students'
       : '/dashboard/my-lessons'
-  const trainingMeta = latestTrainingSession
-    ? [latestTrainingSession.tool, formatSessionMinutes(latestTrainingSession.durationSeconds)]
-        .filter(Boolean)
-        .join(' · ')
-    : 'No training sessions yet'
-  const latestTrainingScore = latestTrainingSession?.overallScore
-  const trainingScorePercent =
-    typeof latestTrainingScore === 'number' && Number.isFinite(latestTrainingScore)
-      ? Math.max(0, Math.min(100, Math.round(latestTrainingScore)))
-      : null
   const nextLessonName = nextLesson ? getDisplayName(lessonPerson) : null
 
   return (
@@ -734,27 +733,43 @@ export default async function DashboardPage() {
               )}
             </div>
 
-            <div className="space-y-2">
-              <div className="flex flex-wrap items-center gap-x-2 gap-y-1 text-sm font-semibold text-gray-200">
-                <span>{trainingMeta}</span>
-              </div>
-              {trainingScorePercent !== null ? (
-                <>
-                  <div className="h-3 w-full overflow-hidden rounded-full bg-white/10">
-                    <div
-                      className="h-full rounded-full bg-gradient-to-r from-[#CEB466] to-[#f2dc8d]"
-                      style={{ width: `${trainingScorePercent}%` }}
-                    />
+            <div className="space-y-2.5">
+              <p className="text-[10px] font-bold uppercase tracking-[0.14em] text-[#CEB466]">
+                Latest scores
+              </p>
+              {toolScores.map(({ tool, score, daysAgo }) => {
+                const isNever = daysAgo === null
+                const isStale = daysAgo !== null && daysAgo > 7
+                const barPercent = isNever || isStale ? 0 : score ?? 0
+                const when =
+                  daysAgo === 0 ? 'today' : daysAgo === 1 ? 'yesterday' : `${daysAgo} days ago`
+                return (
+                  <div key={tool} className="space-y-1">
+                    <div className="flex items-center justify-between gap-2 text-xs">
+                      <span className="font-semibold text-gray-200">{tool}</span>
+                      {isNever ? (
+                        <span className="font-semibold text-[#CEB466]">
+                          Try out the {tool} trainer!
+                        </span>
+                      ) : isStale ? (
+                        <span className="text-gray-400">
+                          0% · not done in {daysAgo} days
+                        </span>
+                      ) : (
+                        <span className="text-gray-300">
+                          <span className="font-bold text-white">{score ?? 0}%</span> · {when}
+                        </span>
+                      )}
+                    </div>
+                    <div className="h-2.5 w-full overflow-hidden rounded-full bg-white/10">
+                      <div
+                        className="h-full rounded-full bg-gradient-to-r from-[#CEB466] to-[#f2dc8d]"
+                        style={{ width: `${barPercent}%` }}
+                      />
+                    </div>
                   </div>
-                  <p className="text-xs text-gray-400">
-                    Latest score: {trainingScorePercent}%
-                  </p>
-                </>
-              ) : (
-                <p className="text-xs text-gray-400">
-                  Pick a tool below and sing your first note — your stats start tracking immediately.
-                </p>
-              )}
+                )
+              })}
             </div>
           </div>
 
