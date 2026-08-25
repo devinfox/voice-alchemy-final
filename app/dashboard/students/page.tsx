@@ -621,7 +621,7 @@ export default function StudentsPage() {
                 )}
 
                 {/* Actions */}
-                <div className="flex items-center gap-2 pt-3 border-t border-white/[0.07] mt-auto">
+                <div data-tour={idx === 0 ? 'teacher-open-cockpit' : undefined} className="flex items-center gap-2 pt-3 border-t border-white/[0.07] mt-auto">
                   {risk && student ? (
                     <button
                       onClick={() => handleCheckIn(student)}
@@ -632,7 +632,6 @@ export default function StudentsPage() {
                   ) : hasBooking ? (
                     <Link
                       href={`/dashboard/students/${entry.id}`}
-                      data-tour={idx === 0 ? 'teacher-open-cockpit' : undefined}
                       className="flex-1 py-2.5 rounded-xl bg-gradient-to-r from-[#CEB466] to-[#e2c974] text-[#171229] text-[11.5px] font-extrabold text-center hover:brightness-110 transition-all flex items-center justify-center gap-1.5"
                     >
                       <PlayCircle className="w-3.5 h-3.5" />
@@ -646,7 +645,6 @@ export default function StudentsPage() {
                   {risk && hasBooking && (
                     <Link
                       href={`/dashboard/students/${entry.id}`}
-                      data-tour={idx === 0 ? 'teacher-open-cockpit' : undefined}
                       className="px-3.5 py-2.5 rounded-xl bg-white/[0.05] border border-white/10 text-gray-300 text-[11.5px] font-semibold hover:bg-white/[0.1] transition-colors"
                     >
                       Open Studio

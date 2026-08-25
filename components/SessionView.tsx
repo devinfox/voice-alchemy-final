@@ -35,6 +35,19 @@ const classroomTourSteps: SpotlightStep[] = [
   },
 ]
 
+// Students don't have the Start/End Class controls — their third step points
+// at the class status strip with student-appropriate copy.
+const classroomStudentTourSteps: SpotlightStep[] = [
+  classroomTourSteps[0],
+  classroomTourSteps[1],
+  {
+    target: '[data-tour="classroom-status"]',
+    title: '3. Class Status',
+    content: 'Your coach starts the class — when it\'s live you\'ll see it here, and saved notes appear below after each lesson.',
+    placement: 'top',
+  },
+]
+
 type Props = {
   studentId: string
   bookingId: string
@@ -413,7 +426,7 @@ export default function SessionView({ studentId, bookingId, isAdmin = false, cur
       `}</style>
       <div className="grid gap-6">
         {/* Real On-Page Spotlight Tour */}
-        <SpotlightTour tourKey="classroom_v4" steps={classroomTourSteps} />
+        <SpotlightTour tourKey="classroom_v4" steps={isAdmin ? classroomTourSteps : classroomStudentTourSteps} />
 
         {/* Video Section */}
         <VideoSection
@@ -698,7 +711,7 @@ const VideoSection = React.memo(function VideoSection({
             <button onClick={onEndClass} className="flex items-center gap-2 px-4 py-2 rounded-lg bg-red-600 hover:bg-red-700 text-white font-medium transition-colors"><StopCircle className="w-5 h-5" />End Class</button>
           )}
         </div>
-      ) : (<p className="p-4 text-sm text-gray-400 border-t border-white/10">{active ? 'Class in session.' : 'Class not in session yet. You can view past notes below.'}</p>)}
+      ) : (<p data-tour="classroom-status" className="p-4 text-sm text-gray-400 border-t border-white/10">{active ? 'Class in session.' : 'Class not in session yet. You can view past notes below.'}</p>)}
     </section>
   )
 })

@@ -530,10 +530,10 @@ export function SpotlightTriggerButton({
   return (
     <button
       onClick={() => window.dispatchEvent(new CustomEvent(`start-spotlight-${tourKey}`))}
-      className={`inline-flex w-fit shrink-0 items-center gap-1.5 px-2.5 py-2 sm:px-3 sm:py-1.5 rounded-xl bg-[#CEB466]/10 hover:bg-[#CEB466]/20 text-[#CEB466] border border-[#CEB466]/30 text-xs font-semibold transition-all hover:scale-105 active:scale-95 shadow-sm ${className}`}
+      className={`inline-flex w-fit shrink-0 items-center gap-2 px-4 py-2.5 sm:px-5 rounded-xl bg-[#CEB466]/10 hover:bg-[#CEB466]/20 text-[#CEB466] border border-[#CEB466]/30 text-sm font-bold transition-all hover:scale-105 active:scale-95 shadow-sm ${className}`}
       title={`How to use this tool`}
     >
-      <HelpCircle className="w-3.5 h-3.5" />
+      <HelpCircle className="w-[18px] h-[18px]" />
       <span>{label}</span>
     </button>
   )

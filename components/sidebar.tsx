@@ -67,6 +67,16 @@ interface SidebarProps {
   unreadEmailCount?: number
 }
 
+
+// The tour that belongs to the current page, or null when the page has none
+function getPageTourKey(pathname: string, isTeacher: boolean): string | null {
+  if (pathname === '/dashboard') return isTeacher ? 'teacher_dashboard_v4' : 'student_dashboard_v4'
+  if (pathname === '/dashboard/students') return isTeacher ? 'teacher_roster_v4' : null
+  if (pathname === '/dashboard/courses') return isTeacher ? 'teacher_course_builder_v4' : null
+  if (pathname === '/dashboard/training-center') return 'training_center_v4'
+  return null
+}
+
 export function Sidebar({ user, userEmail }: SidebarProps) {
   const pathname = usePathname()
   const router = useRouter()
@@ -80,6 +90,7 @@ export function Sidebar({ user, userEmail }: SidebarProps) {
 
   // Determine which navigation to show based on role
   const isTeacher = user?.role === 'teacher' || user?.role === 'instructor' || user?.role === 'admin'
+  const pageTourKey = getPageTourKey(pathname, isTeacher)
   const isAdmin = user?.role === 'admin'
   const hasEmailAccess = canAccessEmailTools(user, userEmail)
   const visibleTeacherNavigation = teacherNavigation.filter((item) => {
@@ -163,18 +174,19 @@ export function Sidebar({ user, userEmail }: SidebarProps) {
           )
         })}
 
-        <button
-          onClick={() => {
-            const dashboardTourKey = isTeacher ? 'teacher_dashboard_v4' : 'student_dashboard_v4'
-            window.dispatchEvent(new CustomEvent(`start-spotlight-${dashboardTourKey}`))
-          }}
-          className="w-full flex items-center gap-3 px-3.5 py-3 rounded-2xl text-xs sm:text-sm font-semibold text-[#CEB466] hover:bg-[#CEB466]/10 transition-all duration-300 border border-transparent hover:border-[#CEB466]/20 text-left"
-        >
-          <div className="w-8 h-8 rounded-xl bg-[#CEB466]/20 flex items-center justify-center text-[#CEB466]">
-            <Sparkles className="w-4 h-4" />
-          </div>
-          Page Tour
-        </button>
+        {pageTourKey && (
+          <button
+            onClick={() => {
+              window.dispatchEvent(new CustomEvent(`start-spotlight-${pageTourKey}`))
+            }}
+            className="w-full flex items-center gap-3 px-3.5 py-3 rounded-2xl text-xs sm:text-sm font-semibold text-[#CEB466] hover:bg-[#CEB466]/10 transition-all duration-300 border border-transparent hover:border-[#CEB466]/20 text-left"
+          >
+            <div className="w-8 h-8 rounded-xl bg-[#CEB466]/20 flex items-center justify-center text-[#CEB466]">
+              <Sparkles className="w-4 h-4" />
+            </div>
+            Page Tour
+          </button>
+        )}
 
         <button
           onClick={handleSignOut}

@@ -272,32 +272,38 @@ function formatPracticeTime(seconds: number | null): string {
 
 const trainingCenterTourSteps: SpotlightStep[] = [
   {
+    target: '[data-tour="training-start-practicing"]',
+    title: '1. Start Practicing',
+    content: 'Launch the pitch, rhythm, or scale trainer right here — sessions save to your progress automatically.',
+    placement: 'bottom',
+  },
+  {
     target: '[data-tour="training-tabs"]',
-    title: '1. Pick a Practice Area',
+    title: '2. Pick a Practice Area',
     content: 'Use these tabs to choose what you want to practice: pitch, rhythm, or scales.',
     placement: 'bottom',
   },
   {
     target: '[data-tour="training-summary"]',
-    title: '2. See Your Scores',
+    title: '3. See Your Scores',
     content: 'This shows simple practice scores, like how close your notes were and whether you tend to sing high or low.',
     placement: 'bottom',
   },
   {
     target: '[data-tour="training-pitch-widget"]',
-    title: '3. Practice Pitch',
+    title: '4. Practice Pitch',
     content: 'Use this to hold notes and see if you are close.',
     placement: 'bottom',
   },
   {
     target: '[data-tour="training-rhythm-widget"]',
-    title: '4. Practice Rhythm',
+    title: '5. Practice Rhythm',
     content: 'Use this to tap or sing with the beat and build better timing.',
     placement: 'top',
   },
   {
     target: '[data-tour="training-ai-panel"]',
-    title: '5. Get Practice Tips',
+    title: '6. Get Practice Tips',
     content: 'Tap Analyze Notes to get ideas for what to practice next.',
     placement: 'bottom',
   },
@@ -417,6 +423,13 @@ export default function TrainingCenterPage() {
       setGeneratingFeedback(false)
     }
   }
+
+  useEffect(() => {
+    // The tour's anchors live on the Overview tab — jump there when it starts
+    const handleTourStart = () => setActiveTab('overview')
+    window.addEventListener('start-spotlight-training_center_v4', handleTourStart)
+    return () => window.removeEventListener('start-spotlight-training_center_v4', handleTourStart)
+  }, [])
 
   useEffect(() => {
     fetchProgress()
@@ -544,7 +557,7 @@ export default function TrainingCenterPage() {
       {activeTab === 'overview' && (
         <>
           {/* Practice tools — launch a session right from here */}
-          <div className="space-y-3">
+          <div data-tour="training-start-practicing" className="space-y-3">
             <div className="flex items-center justify-between">
               <h2 className="text-lg font-bold text-white font-luxury flex items-center gap-2">
                 <Music className="w-5 h-5 text-[#CEB466]" />

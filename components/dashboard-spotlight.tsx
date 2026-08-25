@@ -50,9 +50,9 @@ export function DashboardSpotlight({ isTeacher = false, userName }: DashboardSpo
     },
     {
       target: '[data-tour="dashboard-reports-link"]',
-      title: '3. Check Student Progress',
+      title: '3. Training Center & Reports',
       content:
-        'See your students, their bookings, and how their practice is going.',
+        'Explore pitch, rhythm, and scale metrics with AI insights here. Each student\'s own practice progress lives in My Students.',
       placement: 'top',
     },
   ]

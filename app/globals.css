@@ -365,6 +365,12 @@ h1, h2, h3, .font-luxury {
 }
 
 /* Scrollbar styling */
+/* Firefox (ignores ::-webkit-scrollbar) — keep it visually consistent */
+* {
+  scrollbar-width: thin;
+  scrollbar-color: rgba(255, 255, 255, 0.12) rgba(255, 255, 255, 0.02);
+}
+
 ::-webkit-scrollbar {
   width: 8px;
   height: 8px;
@@ -770,4 +776,13 @@ select.glass-input option {
   background: #1b1233 !important;
   backdrop-filter: none !important;
   -webkit-backdrop-filter: none !important;
+}
+
+/* Hide scrollbars on horizontal pill/tab strips (all engines) */
+.scrollbar-none {
+  -ms-overflow-style: none;
+  scrollbar-width: none;
+}
+.scrollbar-none::-webkit-scrollbar {
+  display: none;
 }

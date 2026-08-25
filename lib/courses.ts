@@ -354,8 +354,139 @@ const beginnerVocalCourse: Course = {
   ],
 }
 
+// Demo course for teacher walkthroughs — real structure, placeholder body copy.
+const celineDemoCourse: Course = {
+  slug: 'signature-voice-with-celine',
+  title: 'Signature Voice',
+  subtitle: 'Find the sound only you can make — a 3-part masterclass with Celine Dion',
+  description:
+    'A guided journey from breath to ballad: build a reliable technical foundation, shape a tone that is unmistakably yours, and deliver songs with the emotional control of a headliner.',
+  level: 'Intermediate',
+  isFree: true,
+  isUnlocked: true,
+  instructor: 'Celine Dion',
+  updatedAt: 'August 2026',
+  whatYouWillLearn: [
+    'Anchor every phrase with effortless breath support',
+    'Develop a personal tone signature across your full range',
+    'Deliver ballads and belts with dynamic emotional control',
+  ],
+  requirements: ['Some singing experience recommended', 'Quiet practice space and headphones'],
+  isCustom: false,
+  sections: [
+    {
+      id: 'celine-part-1',
+      title: 'Part 1: The Foundation',
+      lessons: [
+        {
+          id: 'celine-1-1',
+          title: 'Breath Is the Instrument',
+          duration: '14 min',
+          summary: 'Why every great voice starts below the ribcage.',
+          body: [
+            'Lorem ipsum dolor sit amet, consectetur adipiscing elit. Sed do eiusmod tempor incididunt ut labore et dolore magna aliqua, vocal support in every phrase.',
+            'Ut enim ad minim veniam, quis nostrud exercitation ullamco laboris nisi ut aliquip ex ea commodo consequat — steady airflow before volume.',
+          ],
+          keyPoints: ['Support before sound', 'Low, silent inhale', 'Consistent exhale pressure'],
+          practice: ['3 rounds of 10-second hiss holds', 'One verse sung at half volume with full support'],
+        },
+        {
+          id: 'celine-1-2',
+          title: 'The Warmup That Never Fails',
+          duration: '11 min',
+          summary: 'A 7-minute daily sequence to make the voice available on demand.',
+          body: [
+            'Duis aute irure dolor in reprehenderit in voluptate velit esse cillum dolore eu fugiat nulla pariatur — gentle sirens before intensity.',
+          ],
+          keyPoints: ['Same sequence, every day', 'Never skip the gentle start'],
+          practice: ['Run the full 7-minute sequence', 'Note how your voice feels before and after'],
+          quiz: {
+            id: 'celine-quiz-1',
+            title: 'Checkpoint: Foundation',
+            description: 'A quick check before Part 2.',
+            isOptional: true,
+            passingScorePercent: 70,
+            questions: [
+              {
+                id: 'cq1',
+                question: 'What should always come before volume and intensity?',
+                options: [
+                  'Steady breath support',
+                  'Singing your highest note',
+                  'A full performance run',
+                  'Skipping straight to repertoire',
+                ],
+                correctAnswerIndex: 0,
+                explanation: 'Support and coordination come first — power is built on top of them, never instead of them.',
+              },
+            ],
+          },
+        },
+      ],
+    },
+    {
+      id: 'celine-part-2',
+      title: 'Part 2: Your Tone Signature',
+      lessons: [
+        {
+          id: 'celine-2-1',
+          title: 'Color, Not Copy',
+          duration: '16 min',
+          summary: 'Stop imitating your influences and find the color of your own voice.',
+          body: [
+            'Excepteur sint occaecat cupidatat non proident, sunt in culpa qui officia deserunt mollit anim id est laborum — your tone is a fingerprint.',
+            'Sed ut perspiciatis unde omnis iste natus error sit voluptatem accusantium doloremque laudantium, vowel shaping as your steering wheel.',
+          ],
+          keyPoints: ['Vowels shape tone', 'Resonance over force', 'Your accent is an asset'],
+          practice: ['Record the same line three ways and pick the truest one'],
+        },
+        {
+          id: 'celine-2-2',
+          title: 'The Passaggio, Tamed',
+          duration: '18 min',
+          summary: 'Smooth the break between registers without losing power.',
+          body: [
+            'Nemo enim ipsam voluptatem quia voluptas sit aspernatur aut odit aut fugit — lighten the onset as you ascend.',
+          ],
+          keyPoints: ['Thin, don’t push', 'Ng-glides through the bridge'],
+          practice: ['5 ng-glides across your break, descending after each'],
+        },
+      ],
+    },
+    {
+      id: 'celine-part-3',
+      title: 'Part 3: The Performance',
+      lessons: [
+        {
+          id: 'celine-3-1',
+          title: 'Building the Emotional Arc',
+          duration: '15 min',
+          summary: 'Map a song’s dynamics so the audience feels the story, not the technique.',
+          body: [
+            'Neque porro quisquam est, qui dolorem ipsum quia dolor sit amet, consectetur, adipisci velit — plan your loudest moment and earn it.',
+          ],
+          keyPoints: ['One peak per song', 'Silence is a dynamic too'],
+          practice: ['Mark the emotional peak of your current song and rehearse into it'],
+        },
+        {
+          id: 'celine-3-2',
+          title: 'Owning the Big Note',
+          duration: '13 min',
+          summary: 'The checklist for the note everyone remembers.',
+          body: [
+            'At vero eos et accusamus et iusto odio dignissimos ducimus qui blanditiis praesentium voluptatum — set the body before the note, not during it.',
+          ],
+          keyPoints: ['Prepare two beats early', 'Land it, then leave it'],
+          practice: ['Three approaches to your big note at three volumes'],
+        },
+      ],
+    },
+  ],
+}
+
 export const courses: Course[] = [
   beginnerVocalCourse,
+  celineDemoCourse,
   {
     slug: 'mix-voice-and-register-control',
     title: 'Mix Voice and Register Control',
