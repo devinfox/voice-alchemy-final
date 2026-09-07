@@ -8,7 +8,7 @@ import { Check, X, User, GitBranch, Clock, Sparkles, ArrowRight } from 'lucide-r
 interface PendingEnrollment {
   id: string
   funnel_id: string
-  lead_id: string
+  student_id: string
   enrolled_at: string
   match_reason: string | null
   funnel: {
@@ -17,7 +17,7 @@ interface PendingEnrollment {
     description: string | null
     tags: string[]
   }
-  lead: {
+  student: {
     id: string
     first_name: string | null
     last_name: string | null
@@ -106,7 +106,7 @@ export function FunnelDraftsClient({ pendingEnrollments: initialEnrollments }: F
         </div>
         <h3 className="text-xl font-semibold text-white mb-2">All caught up!</h3>
         <p className="text-gray-400">
-          No pending funnel enrollments to review. When calls match your funnels, they&apos;ll appear here for approval.
+          Nothing to review. When an inbound email matches one of your funnels, the suggested enrollment appears here for approval.
         </p>
       </div>
     )
@@ -117,7 +117,7 @@ export function FunnelDraftsClient({ pendingEnrollments: initialEnrollments }: F
       {/* Header with bulk action */}
       <div className="flex items-center justify-between">
         <p className="text-gray-400">
-          {enrollments.length} pending {enrollments.length === 1 ? 'enrollment' : 'enrollments'} to review
+          {enrollments.length} suggested {enrollments.length === 1 ? 'enrollment' : 'enrollments'} to review
         </p>
         {enrollments.length > 1 && (
           <button
@@ -133,9 +133,9 @@ export function FunnelDraftsClient({ pendingEnrollments: initialEnrollments }: F
       {/* Enrollment cards */}
       <div className="grid gap-4">
         {enrollments.map((enrollment) => {
-          const leadName = enrollment.lead
-            ? `${enrollment.lead.first_name || ''} ${enrollment.lead.last_name || ''}`.trim() || enrollment.lead.email || 'Unknown Lead'
-            : 'Unknown Lead'
+          const studentName = enrollment.student
+            ? `${enrollment.student.first_name || ''} ${enrollment.student.last_name || ''}`.trim() || enrollment.student.email || 'Unknown student'
+            : 'Unknown student'
 
           const isProcessing = processingIds.has(enrollment.id)
           const enrolledDate = new Date(enrollment.enrolled_at)
@@ -149,13 +149,18 @@ export function FunnelDraftsClient({ pendingEnrollments: initialEnrollments }: F
               <div className="flex items-start justify-between gap-4">
                 {/* Left side - Info */}
                 <div className="flex-1 space-y-3">
-                  {/* Lead and Funnel */}
+                  {/* Student and Funnel */}
                   <div className="flex items-center gap-3 flex-wrap">
                     <div className="flex items-center gap-2">
                       <div className="w-8 h-8 rounded-full bg-blue-500/20 flex items-center justify-center">
                         <User className="w-4 h-4 text-blue-400" />
                       </div>
-                      <span className="font-medium text-white">{leadName}</span>
+                      <div>
+                        <span className="font-medium text-white">{studentName}</span>
+                        {enrollment.student?.email && (
+                          <p className="text-xs text-gray-500">{enrollment.student.email}</p>
+                        )}
+                      </div>
                     </div>
                     <ArrowRight className="w-4 h-4 text-gray-500" />
                     <div className="flex items-center gap-2">

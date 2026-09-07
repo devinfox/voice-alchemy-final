@@ -2,6 +2,7 @@ import { createClient } from '@/lib/supabase-server'
 import { requireEmailAccess } from '@/lib/email-access-server'
 import { createClient as createServiceClient } from '@supabase/supabase-js'
 import { NextRequest, NextResponse } from 'next/server'
+import { isTriggerKey } from '@/lib/email-leads'
 
 // GET /api/email-funnels/[id] - Get a single funnel with details
 export async function GET(
@@ -72,7 +73,10 @@ export async function PATCH(
       return NextResponse.json({ error: 'Email tools access required' }, { status: 403 })
     }
 
-    const { name, description, status, phases, tags, auto_enroll_enabled } = body
+    const { name, description, status, phases, tags, auto_enroll_enabled, trigger_key, audience_id } = body
+    if (trigger_key !== undefined && trigger_key !== null && trigger_key !== '' && !isTriggerKey(trigger_key)) {
+      return NextResponse.json({ error: 'Unknown trigger' }, { status: 400 })
+    }
 
     // Use service role for complex transactions
     const serviceClient = createServiceClient(
@@ -87,6 +91,8 @@ export async function PATCH(
     if (status !== undefined) updateData.status = status
     if (tags !== undefined) updateData.tags = tags
     if (auto_enroll_enabled !== undefined) updateData.auto_enroll_enabled = auto_enroll_enabled
+    if (trigger_key !== undefined) updateData.trigger_key = trigger_key || null
+    if (audience_id !== undefined) updateData.audience_id = audience_id || null
 
     console.log('[Email Funnels API] Updating funnel:', { id, updateData })
 
@@ -98,6 +104,9 @@ export async function PATCH(
 
     if (updateError) {
       console.error('[Email Funnels API] Error updating funnel:', updateError)
+      if (updateError.code === '23505') {
+        return NextResponse.json({ error: 'Another funnel already uses that trigger. Each trigger can only start one funnel.' }, { status: 409 })
+      }
       return NextResponse.json({
         error: updateError.message,
         details: updateError,

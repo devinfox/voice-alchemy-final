@@ -16,7 +16,7 @@ interface SignatureEditorProps {
 const SIGNATURE_TEMPLATES: { name: string; description: string; config: SignatureConfig }[] = [
   {
     name: 'Devin Fox - Director',
-    description: 'Director of Technologies with full branding',
+    description: 'Founder signature with academy branding',
     config: DEVIN_FOX_SIGNATURE,
   },
   {
@@ -27,8 +27,6 @@ const SIGNATURE_TEMPLATES: { name: string; description: string; config: Signatur
       title: 'Vocal Coach & Instructor',
       phone: '818.209.2305',
       email: 'your.email@voicealchemyacademy.com',
-      includeTrustBadges: true,
-      includeAsSeenOn: true,
     },
   },
   {
@@ -39,8 +37,6 @@ const SIGNATURE_TEMPLATES: { name: string; description: string; config: Signatur
       title: 'Student Success Coordinator',
       phone: '818.209.2305',
       email: 'your.email@voicealchemyacademy.com',
-      includeTrustBadges: true,
-      includeAsSeenOn: false,
     },
   },
 ]
@@ -62,8 +58,6 @@ export function SignatureEditor({
     title: '',
     phone: '',
     email: accountEmail,
-    includeTrustBadges: true,
-    includeAsSeenOn: true,
   })
   const editorRef = useRef<HTMLDivElement>(null)
   const templateRef = useRef<HTMLDivElement>(null)
@@ -271,26 +265,6 @@ export function SignatureEditor({
                 className="w-full px-3 py-2 bg-white/5 border border-white/10 rounded-lg text-white text-sm placeholder-gray-500 focus:outline-none focus:border-yellow-500/50"
               />
             </div>
-          </div>
-          <div className="flex items-center gap-4 mt-3">
-            <label className="flex items-center gap-2 text-sm text-gray-300">
-              <input
-                type="checkbox"
-                checked={customConfig.includeTrustBadges}
-                onChange={(e) => setCustomConfig({ ...customConfig, includeTrustBadges: e.target.checked })}
-                className="w-4 h-4 rounded border-white/20 bg-white/5 text-yellow-500 focus:ring-yellow-500/50"
-              />
-              Include Trust Badges
-            </label>
-            <label className="flex items-center gap-2 text-sm text-gray-300">
-              <input
-                type="checkbox"
-                checked={customConfig.includeAsSeenOn}
-                onChange={(e) => setCustomConfig({ ...customConfig, includeAsSeenOn: e.target.checked })}
-                className="w-4 h-4 rounded border-white/20 bg-white/5 text-yellow-500 focus:ring-yellow-500/50"
-              />
-              Include "As Seen On"
-            </label>
           </div>
           <button
             onClick={applyCustomSignature}

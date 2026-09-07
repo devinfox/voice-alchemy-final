@@ -204,13 +204,12 @@ export interface Database {
 
 export type EmailTemplateCategory =
   | 'welcome'
-  | 'follow_up'
-  | 'paperwork'
-  | 'funding'
-  | 'closing'
-  | 'general'
+  | 'onboarding'
   | 'lesson'
-  | 'onboarding';
+  | 'follow_up'
+  | 'course'
+  | 'announcement'
+  | 'general';
 
 export type FunnelStatus = 'draft' | 'active' | 'paused' | 'archived'
 
@@ -226,10 +225,12 @@ export interface EmailTemplate {
   id: string
   name: string
   subject: string
+  preheader?: string | null
   body: string
   body_html: string | null
   description: string | null
   category: EmailTemplateCategory | null
+  starter_key?: string | null
   is_active: boolean
   created_by: string | null
   is_deleted: boolean
@@ -245,6 +246,10 @@ export interface EmailFunnel {
   status: FunnelStatus
   tags: string[]
   auto_enroll_enabled: boolean
+  /** Website/app event that auto-enrolls into this funnel (see lib/email-leads.ts) */
+  trigger_key?: string | null
+  /** User type this funnel is filed under (email_audiences.id, see lib/email-audiences.ts) */
+  audience_id?: string | null
   total_enrolled: number
   total_completed: number
   total_emails_sent: number
@@ -291,9 +296,26 @@ export interface EmailFunnelEnrollment {
   cancelled_at: string | null
   cancel_reason: string | null
   match_reason: string | null
+  enrolled_via?: string | null
   created_at: string
   updated_at: string
   funnel?: EmailFunnel
+}
+
+/** A website visitor who left an email but has no account (email_leads) */
+export interface EmailLead {
+  id: string
+  email: string
+  first_name: string | null
+  last_name: string | null
+  persona: string
+  source: string | null
+  last_type: string | null
+  metadata: Record<string, unknown>
+  profile_id: string | null
+  is_unsubscribed: boolean
+  created_at: string
+  updated_at: string
 }
 
 export interface EmailFunnelLog {

@@ -1,8 +1,12 @@
 'use client'
 
 import { useState, useEffect } from 'react'
-import { X, Plus, Trash2, GripVertical, Mail, Clock, ChevronDown, Sparkles } from 'lucide-react'
+import { X, Plus, Trash2, GripVertical, Mail, Clock, ChevronDown, Sparkles, Eye } from 'lucide-react'
+import { TemplateThumbnail } from './template-thumbnail'
+import { TemplatePreviewModal } from './template-preview-modal'
 import { EmailTemplate } from '@/types/database.types'
+import { FUNNEL_TRIGGERS } from '@/lib/email-leads'
+import type { EmailAudience } from '@/lib/email-audiences'
 
 interface FunnelPhase {
   id: string
@@ -16,11 +20,17 @@ interface CreateFunnelModalProps {
   onClose: () => void
   onSuccess: () => void
   templates: EmailTemplate[]
+  /** User types to file the funnel under (empty when the audiences migration is not applied) */
+  audiences?: EmailAudience[]
+  /** Preselected user type when creating from a section header */
+  defaultAudienceId?: string | null
   editingFunnel?: {
     id: string
     name: string
     description: string | null
     status: string
+    trigger_key?: string | null
+    audience_id?: string | null
     phases?: Array<{
       id: string
       name: string | null
@@ -36,9 +46,13 @@ export function CreateFunnelModal({
   onSuccess,
   templates,
   editingFunnel,
+  audiences = [],
+  defaultAudienceId = null,
 }: CreateFunnelModalProps) {
   const [name, setName] = useState(editingFunnel?.name || '')
   const [description, setDescription] = useState(editingFunnel?.description || '')
+  const [triggerKey, setTriggerKey] = useState<string>(editingFunnel?.trigger_key || '')
+  const [audienceId, setAudienceId] = useState<string>(editingFunnel?.audience_id || defaultAudienceId || '')
   const [phases, setPhases] = useState<FunnelPhase[]>(() => {
     if (editingFunnel?.phases && editingFunnel.phases.length > 0) {
       return editingFunnel.phases.map((p, i) => ({
@@ -52,6 +66,9 @@ export function CreateFunnelModal({
     return [{ id: 'phase-1', name: 'Phase 1', template_id: null, delay_days: 0, delay_hours: 0 }]
   })
   const [saving, setSaving] = useState(false)
+  // Full-size preview of a step's email, opened from the snapshot beside it
+  const [previewTemplate, setPreviewTemplate] = useState<EmailTemplate | null>(null)
+  const templateById = new Map(templates.map((t) => [t.id, t]))
   const [error, setError] = useState<string | null>(null)
 
   const isEditing = !!editingFunnel
@@ -83,7 +100,7 @@ export function CreateFunnelModal({
     }
 
     if (!description.trim()) {
-      setError('Please describe what this funnel is for - this helps AI match leads automatically')
+      setError('Describe who this funnel is for. It appears on the funnel list and lets the inbox assistant suggest enrollments.')
       return
     }
 
@@ -95,7 +112,7 @@ export function CreateFunnelModal({
     // Check if all phases have templates
     const hasEmptyTemplates = phases.some((p) => !p.template_id)
     if (hasEmptyTemplates) {
-      setError('All phases must have a template assigned')
+      setError('Every phase needs a template')
       return
     }
 
@@ -114,6 +131,8 @@ export function CreateFunnelModal({
         body: JSON.stringify({
           name: name.trim(),
           description: description.trim() || null,
+          trigger_key: triggerKey || null,
+          audience_id: audienceId || null,
           // Only stamp a status on create. On edit, omitting it preserves the
           // funnel's current status instead of silently demoting active
           // funnels back to draft.
@@ -153,7 +172,7 @@ export function CreateFunnelModal({
       <div className="absolute inset-0 bg-black/70 backdrop-blur-sm" onClick={onClose} />
 
       {/* Modal */}
-      <div className="relative w-full max-w-3xl max-h-[90vh] overflow-hidden glass-card modal-solid rounded-2xl">
+      <div className="relative w-full max-w-4xl max-h-[90vh] overflow-hidden glass-card modal-solid rounded-2xl">
         {/* Header */}
         <div className="flex items-center justify-between p-4 border-b border-white/10">
           <h2 className="text-xl font-bold text-white">
@@ -185,7 +204,7 @@ export function CreateFunnelModal({
               type="text"
               value={name}
               onChange={(e) => setName(e.target.value)}
-              placeholder="e.g., New Lead Welcome Sequence"
+              placeholder="e.g., New Student Welcome Sequence"
               className="glass-input w-full px-4 py-2"
             />
           </div>
@@ -198,17 +217,67 @@ export function CreateFunnelModal({
             <div className="flex items-start gap-2 p-3 bg-purple-500/10 border border-purple-500/30 rounded-lg mb-2">
               <Sparkles className="w-4 h-4 text-purple-400 flex-shrink-0 mt-0.5" />
               <p className="text-purple-300 text-xs">
-                Describe who should receive this funnel. Our AI will automatically match calls to this funnel based on your description.
+                Describe who should receive this sequence. With auto-enrollment on, inbound emails that match this description are suggested for enrollment on the Suggested tab.
               </p>
             </div>
             <textarea
               value={description}
               onChange={(e) => setDescription(e.target.value)}
-              placeholder="e.g., This is for when someone finds us through Google Ads and calls us as a new lead interested in gold investment"
+              placeholder="e.g., A new student who just created an account and has not booked a first lesson yet"
               className="glass-input w-full px-4 py-3 h-24 resize-none"
             />
             <p className="text-gray-500 text-xs">
-              Be specific! Include details like: how they found you, whether they&apos;re new or existing, their interest level, what they&apos;re looking for.
+              Be specific: new or returning student, what they asked about, and what you want this sequence to lead to.
+            </p>
+          </div>
+
+          {/* User type */}
+          {audiences.length > 0 && (
+            <div>
+              <label className="block text-sm font-medium text-gray-300 mb-2">
+                User type
+              </label>
+              <div className="relative">
+                <select
+                  value={audienceId}
+                  onChange={(e) => setAudienceId(e.target.value)}
+                  className="glass-select w-full px-4 pr-8 py-2 text-sm appearance-none"
+                >
+                  <option value="">Not filed under a user type</option>
+                  {audiences.map((a) => (
+                    <option key={a.id} value={a.id}>{a.name}</option>
+                  ))}
+                </select>
+                <ChevronDown className="absolute right-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400 pointer-events-none" />
+              </div>
+              <p className="text-gray-500 text-xs mt-1">
+                Groups this funnel on the Funnels page with the others for the same kind of person.
+              </p>
+            </div>
+          )}
+
+          {/* Trigger */}
+          <div>
+            <label className="block text-sm font-medium text-gray-300 mb-2">
+              Starts automatically when
+            </label>
+            <div className="relative">
+              <select
+                value={triggerKey}
+                onChange={(e) => setTriggerKey(e.target.value)}
+                className="glass-select w-full px-4 pr-8 py-2 text-sm appearance-none"
+              >
+                <option value="">Nobody is enrolled automatically (enroll by hand)</option>
+                {FUNNEL_TRIGGERS.map((t) => (
+                  <option key={t.key} value={t.key}>
+                    {t.label} — {t.description}
+                  </option>
+                ))}
+              </select>
+              <ChevronDown className="absolute right-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400 pointer-events-none" />
+            </div>
+            <p className="text-gray-500 text-xs mt-1">
+              Website form submissions and new student accounts enroll people here while the funnel is active. Each trigger can start only one funnel.
             </p>
           </div>
 
@@ -228,7 +297,9 @@ export function CreateFunnelModal({
             </div>
 
             <div className="space-y-3">
-              {phases.map((phase, index) => (
+              {phases.map((phase, index) => {
+                const selected = phase.template_id ? templateById.get(phase.template_id) : undefined
+                return (
                 <div
                   key={phase.id}
                   className="glass-card p-4 border border-white/10 rounded-xl"
@@ -309,6 +380,31 @@ export function CreateFunnelModal({
                       </div>
                     </div>
 
+                    {/* Snapshot of the chosen email: header, copy and image, scaled */}
+                    {selected && (
+                      <div className="w-44 flex-shrink-0 space-y-2">
+                        <button
+                          type="button"
+                          onClick={() => setPreviewTemplate(selected)}
+                          title="Open full preview"
+                          className="block w-full rounded-lg overflow-hidden border border-white/10 hover:border-yellow-500/40 transition-colors"
+                        >
+                          <TemplateThumbnail template={selected} className="w-full aspect-[3/4]" />
+                        </button>
+                        <p className="text-[11px] text-gray-400 leading-snug line-clamp-2" title={selected.subject}>
+                          {selected.subject}
+                        </p>
+                        <button
+                          type="button"
+                          onClick={() => setPreviewTemplate(selected)}
+                          className="flex items-center gap-1.5 text-xs text-yellow-400 hover:text-yellow-300"
+                        >
+                          <Eye className="w-3.5 h-3.5" />
+                          Full preview
+                        </button>
+                      </div>
+                    )}
+
                     {/* Delete Button */}
                     {phases.length > 1 && (
                       <button
@@ -320,7 +416,7 @@ export function CreateFunnelModal({
                     )}
                   </div>
                 </div>
-              ))}
+              )})}
             </div>
           </div>
         </div>
@@ -342,6 +438,10 @@ export function CreateFunnelModal({
           </button>
         </div>
       </div>
+
+      {previewTemplate && (
+        <TemplatePreviewModal template={previewTemplate} onClose={() => setPreviewTemplate(null)} />
+      )}
     </div>
   )
 }

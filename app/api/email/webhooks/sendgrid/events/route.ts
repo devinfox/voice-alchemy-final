@@ -55,7 +55,7 @@ export async function POST(request: NextRequest) {
       // Find the email by SendGrid message ID
       const { data: email } = await getSupabaseAdmin()
         .from('emails')
-        .select('id, email_account_id, status')
+        .select('id, email_account_id, status, open_count, click_count')
         .or(`sendgrid_message_id.eq.${cleanMessageId},sendgrid_message_id.eq.${sgMessageId}`)
         .limit(1)
         .single()
@@ -94,11 +94,11 @@ export async function POST(request: NextRequest) {
             newStatus = 'opened'
           }
           updates.opened_at = new Date(event.timestamp * 1000).toISOString()
-          updates.open_count = getSupabaseAdmin().rpc('increment', { x: 1 })
+          updates.open_count = (email.open_count || 0) + 1
           break
         case 'click':
           newStatus = 'clicked'
-          updates.click_count = getSupabaseAdmin().rpc('increment', { x: 1 })
+          updates.click_count = (email.click_count || 0) + 1
           break
         case 'bounce':
           newStatus = 'bounced'
@@ -133,6 +133,12 @@ export async function POST(request: NextRequest) {
           .eq('id', email.id)
       }
 
+      // Funnel analytics: first open/click/bounce per funnel email rolls up
+      // to the phase and funnel counters shown on the funnel pages.
+      if (event.event === 'open' || event.event === 'click' || event.event === 'bounce') {
+        await recordFunnelEvent(email.id, event.event, new Date(event.timestamp * 1000).toISOString())
+      }
+
       console.log(`Processed ${event.event} event for email ${email.id}`)
     }
 
@@ -141,4 +147,49 @@ export async function POST(request: NextRequest) {
     console.error('Events webhook error:', error)
     return NextResponse.json({ error: 'Processing error' }, { status: 500 })
   }
+}
+
+async function recordFunnelEvent(emailId: string, kind: 'open' | 'click' | 'bounce', atIso: string) {
+  const admin = getSupabaseAdmin()
+  const { data: log } = await admin
+    .from('email_funnel_logs')
+    .select('id, phase_id, enrollment_id, opened_at, clicked_at, bounced_at')
+    .eq('email_id', emailId)
+    .limit(1)
+    .maybeSingle()
+  if (!log) return
+
+  const column = kind === 'open' ? 'opened_at' : kind === 'click' ? 'clicked_at' : 'bounced_at'
+  if (log[column]) return // already counted
+
+  await admin.from('email_funnel_logs').update({ [column]: atIso }).eq('id', log.id)
+  if (kind === 'bounce') return
+
+  const phaseColumn = kind === 'open' ? 'emails_opened' : 'emails_clicked'
+  const funnelColumn = kind === 'open' ? 'total_opens' : 'total_clicks'
+
+  const { data: phase } = await admin
+    .from('email_funnel_phases')
+    .select(`id, funnel_id, ${phaseColumn}`)
+    .eq('id', log.phase_id)
+    .maybeSingle()
+  if (!phase) return
+
+  const phaseRow = phase as unknown as Record<string, unknown> & { funnel_id: string }
+  await admin
+    .from('email_funnel_phases')
+    .update({ [phaseColumn]: (Number(phaseRow[phaseColumn]) || 0) + 1 })
+    .eq('id', log.phase_id)
+
+  const { data: funnel } = await admin
+    .from('email_funnels')
+    .select(`id, ${funnelColumn}`)
+    .eq('id', phaseRow.funnel_id)
+    .maybeSingle()
+  if (!funnel) return
+  const funnelRow = funnel as unknown as Record<string, unknown>
+  await admin
+    .from('email_funnels')
+    .update({ [funnelColumn]: (Number(funnelRow[funnelColumn]) || 0) + 1 })
+    .eq('id', phaseRow.funnel_id)
 }

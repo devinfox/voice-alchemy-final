@@ -1,6 +1,7 @@
 import { getCurrentUser, createClient } from '@/lib/supabase-server'
 import { redirect } from 'next/navigation'
 import { SignatureEditor } from '../components/signature-editor'
+import { EmailHealthPanel } from './email-health-panel'
 import Link from 'next/link'
 import { Mail, Globe, ArrowRight } from 'lucide-react'
 
@@ -39,6 +40,9 @@ export default async function EmailSettingsPage() {
             Configure your email preferences, signatures, and connected accounts.
           </p>
         </div>
+
+        {/* Send/receive diagnostics */}
+        <EmailHealthPanel />
 
         {/* Quick Links */}
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-8">

@@ -1,4 +1,4 @@
-import { BlockType, EmailBlock, generateBlockId } from '@/lib/email-builder-context'
+import { BlockType, EmailBlock, generateBlockId } from '@/lib/email-builder-types'
 
 // Dark-mode friendly default colors
 // Using slightly off-white and off-black for better dark mode compatibility

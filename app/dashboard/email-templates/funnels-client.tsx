@@ -1,425 +1,482 @@
 'use client'
 
-import { useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import Link from 'next/link'
 import {
-  Search,
-  Plus,
-  Pencil,
-  Trash2,
-  Play,
-  Pause,
-  Users,
-  Mail,
-  MousePointerClick,
-  Eye,
-  Calendar,
-  ChevronRight,
-  Filter,
+  Search, Plus, Pencil, Trash2, Users, GitBranch, UserPlus, ChevronRight, ChevronDown, Zap, FolderInput, Info,
 } from 'lucide-react'
-import { EmailFunnel, EmailTemplate, User, FunnelStatus } from '@/types/database.types'
+import { EmailFunnel, EmailTemplate, Profile, FunnelStatus } from '@/types/database.types'
+import { Switch } from '@/components/ui/switch'
+import { OverflowMenu } from '@/components/ui/overflow-menu'
+import { EnrollStudentsModal } from '@/components/enroll-students-modal'
 import { CreateFunnelModal } from './create-funnel-modal'
+import { FunnelSteps } from './funnel-steps'
+import { UserTypeModal } from './user-type-modal'
+import { triggerLabel } from '@/lib/email-leads'
+import { resolveAudienceId, type EmailAudience } from '@/lib/email-audiences'
 
 interface FunnelsClientProps {
   funnels: EmailFunnel[]
   templates: EmailTemplate[]
-  currentUser: User | null
+  currentUser: Profile | null
+  /** User types; empty (with audiencesError) until the audiences migration is applied */
+  audiences: EmailAudience[]
+  audiencesError?: string | null
+  /** Open the edit modal for this funnel on load (from ?edit=<id>) */
+  initialEditId?: string | null
+}
+
+const SEARCH_THRESHOLD = 6
+const UNASSIGNED = '__unassigned__'
+const COLLAPSE_KEY = 'vaa.funnels.collapsed'
+
+function readCollapsed(): Record<string, boolean> {
+  try {
+    return JSON.parse(localStorage.getItem(COLLAPSE_KEY) || '{}')
+  } catch {
+    return {}
+  }
 }
 
 export function FunnelsClient({
   funnels: initialFunnels,
   templates,
   currentUser,
+  audiences: initialAudiences,
+  audiencesError = null,
+  initialEditId = null,
 }: FunnelsClientProps) {
   const router = useRouter()
   const [funnels, setFunnels] = useState(initialFunnels)
+  const [audiences, setAudiences] = useState(initialAudiences)
   const [searchQuery, setSearchQuery] = useState('')
-  const [statusFilter, setStatusFilter] = useState<string>('all')
-  const [showCreateModal, setShowCreateModal] = useState(false)
+  const [createFor, setCreateFor] = useState<string | null | false>(false) // false = closed; null = no type preselected
   const [editingFunnel, setEditingFunnel] = useState<EmailFunnel | null>(null)
-  const [deletingId, setDeletingId] = useState<string | null>(null)
-  const [updatingStatusId, setUpdatingStatusId] = useState<string | null>(null)
-  const [activeSubTab, setActiveSubTab] = useState<'all' | 'active'>('all')
+  const [enrollingFunnel, setEnrollingFunnel] = useState<EmailFunnel | null>(null)
+  const [movingFunnel, setMovingFunnel] = useState<EmailFunnel | null>(null)
+  const [togglingId, setTogglingId] = useState<string | null>(null)
+  const [typeModal, setTypeModal] = useState<{ open: boolean; audience: EmailAudience | null }>({ open: false, audience: null })
+  const [collapsed, setCollapsed] = useState<Record<string, boolean>>({})
 
-  // Filter funnels
-  const filteredFunnels = funnels.filter((funnel) => {
-    const matchesSearch = funnel.name.toLowerCase().includes(searchQuery.toLowerCase())
-    const matchesStatus = statusFilter === 'all' || funnel.status === statusFilter
-    const matchesTab = activeSubTab === 'all' || funnel.status === 'active'
-    return matchesSearch && matchesStatus && matchesTab
-  })
+  useEffect(() => {
+    // Restore collapsed sections after hydration (deferred so server and
+    // client render the same initial markup).
+    const frame = requestAnimationFrame(() => setCollapsed(readCollapsed()))
+    return () => cancelAnimationFrame(frame)
+  }, [])
 
-  // Delete funnel
-  const handleDelete = async (id: string) => {
-    if (!confirm('Are you sure you want to delete this funnel?')) return
+  useEffect(() => {
+    if (!initialEditId) return
+    const target = initialFunnels.find((f) => f.id === initialEditId)
+    if (target) setEditingFunnel(target)
+    router.replace('/dashboard/email-templates?tab=funnels')
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [initialEditId])
 
-    setDeletingId(id)
-    try {
-      const response = await fetch(`/api/email-funnels/${id}`, { method: 'DELETE' })
-      if (response.ok) {
-        setFunnels(funnels.filter((f) => f.id !== id))
-      } else {
-        const result = await response.json()
-        alert(`Failed to delete funnel: ${result.error}`)
-      }
-    } catch (error) {
-      console.error('Error deleting funnel:', error)
-      alert('Failed to delete funnel')
+  const canManage = !!currentUser
+  const hasAudiences = audiences.length > 0
+  const activeTemplates = templates.filter((t) => t.is_active)
+  const showSearch = funnels.length > SEARCH_THRESHOLD
+
+  const visible = funnels.filter((f) => !f.is_deleted && f.status !== 'archived')
+  const filtered = searchQuery
+    ? visible.filter((f) => f.name.toLowerCase().includes(searchQuery.toLowerCase()))
+    : visible
+
+  // Group by user type. Funnels with a trigger but no explicit type fall
+  // under the built-in type for that trigger.
+  const sections = useMemo(() => {
+    const byAudience = new Map<string, EmailFunnel[]>()
+    for (const f of filtered) {
+      const key = resolveAudienceId(f, audiences) || UNASSIGNED
+      byAudience.set(key, [...(byAudience.get(key) || []), f])
     }
-    setDeletingId(null)
+    const list = audiences.map((a) => ({ id: a.id, audience: a as EmailAudience | null, funnels: byAudience.get(a.id) || [] }))
+    const unassigned = byAudience.get(UNASSIGNED) || []
+    if (unassigned.length > 0 || !hasAudiences) list.push({ id: UNASSIGNED, audience: null, funnels: unassigned })
+    return list
+  }, [filtered, audiences, hasAudiences])
+
+  const toggleCollapsed = (id: string) => {
+    setCollapsed((prev) => {
+      const next = { ...prev, [id]: !prev[id] }
+      try {
+        localStorage.setItem(COLLAPSE_KEY, JSON.stringify(next))
+      } catch {
+        /* ignore */
+      }
+      return next
+    })
   }
 
-  // Toggle funnel status
-  const toggleStatus = async (funnel: EmailFunnel) => {
-    const newStatus: FunnelStatus = funnel.status === 'active' ? 'paused' : 'active'
-    setUpdatingStatusId(funnel.id)
-
+  const setStatus = async (funnel: EmailFunnel, on: boolean) => {
+    const newStatus: FunnelStatus = on ? 'active' : 'paused'
+    if (on && (funnel.phases || []).some((p) => !p.template_id)) {
+      alert('Every step needs an email before the funnel can be turned on. Open Edit to finish it.')
+      return
+    }
+    setTogglingId(funnel.id)
     try {
       const response = await fetch(`/api/email-funnels/${funnel.id}`, {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ status: newStatus }),
       })
-
       if (response.ok) {
-        setFunnels(funnels.map((f) => (f.id === funnel.id ? { ...f, status: newStatus } : f)))
+        setFunnels((prev) => prev.map((f) => (f.id === funnel.id ? { ...f, status: newStatus } : f)))
       } else {
         const result = await response.json()
-        alert(`Failed to update status: ${result.error}`)
+        alert(`Could not update: ${result.error}`)
       }
     } catch (error) {
       console.error('Error updating status:', error)
-      alert('Failed to update status')
+      alert('Could not update the funnel. Please try again.')
     }
-    setUpdatingStatusId(null)
+    setTogglingId(null)
   }
 
-  // Format date
-  const formatDate = (dateString: string) => {
-    return new Date(dateString).toLocaleDateString('en-US', {
-      month: 'short',
-      day: 'numeric',
-      year: 'numeric',
-    })
+  const moveFunnel = async (funnel: EmailFunnel, audienceId: string | null) => {
+    try {
+      const response = await fetch(`/api/email-funnels/${funnel.id}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ audience_id: audienceId }),
+      })
+      if (response.ok) {
+        setFunnels((prev) => prev.map((f) => (f.id === funnel.id ? { ...f, audience_id: audienceId } : f)))
+        setMovingFunnel(null)
+      } else {
+        const result = await response.json()
+        alert(`Could not move: ${result.hint || result.error}`)
+      }
+    } catch {
+      alert('Could not move the funnel. Please try again.')
+    }
   }
 
-  // Get status badge
-  const getStatusBadge = (status: FunnelStatus) => {
-    const badges: Record<FunnelStatus, { bg: string; text: string; label: string }> = {
-      draft: { bg: 'bg-gray-500/20', text: 'text-gray-300', label: 'Draft' },
-      active: { bg: 'bg-green-500/20', text: 'text-green-400', label: 'Active' },
-      paused: { bg: 'bg-yellow-500/20', text: 'text-yellow-400', label: 'Paused' },
-      archived: { bg: 'bg-red-500/20', text: 'text-red-400', label: 'Archived' },
+  const handleDelete = async (funnel: EmailFunnel) => {
+    if (!confirm(`Delete "${funnel.name}"? People in it will stop receiving its emails.`)) return
+    try {
+      const response = await fetch(`/api/email-funnels/${funnel.id}`, { method: 'DELETE' })
+      if (response.ok) {
+        setFunnels((prev) => prev.filter((f) => f.id !== funnel.id))
+      } else {
+        const result = await response.json()
+        alert(`Could not delete: ${result.error}`)
+      }
+    } catch (error) {
+      console.error('Error deleting funnel:', error)
+      alert('Could not delete the funnel. Please try again.')
     }
-    const badge = badges[status] || badges.draft
+  }
+
+  const deleteAudience = async (audience: EmailAudience) => {
+    const count = funnels.filter((f) => resolveAudienceId(f, audiences) === audience.id).length
+    const note = count > 0 ? ` Its ${count} ${count === 1 ? 'funnel keeps' : 'funnels keep'} running and move to "Other".` : ''
+    if (!confirm(`Remove the user type "${audience.name}"?${note}`)) return
+    try {
+      const response = await fetch(`/api/email-audiences/${audience.id}`, { method: 'DELETE' })
+      if (!response.ok) {
+        const result = await response.json()
+        alert(`Could not remove: ${result.error}`)
+        return
+      }
+      setAudiences((prev) => prev.filter((a) => a.id !== audience.id))
+      setFunnels((prev) => prev.map((f) => (f.audience_id === audience.id ? { ...f, audience_id: null } : f)))
+    } catch {
+      alert('Could not remove the user type. Please try again.')
+    }
+  }
+
+  const renderFunnel = (funnel: EmailFunnel) => {
+    const isOn = funnel.status === 'active'
+    const enrolled = funnel.total_enrolled || 0
+    const trigger = triggerLabel(funnel.trigger_key)
     return (
-      <span className={`px-2 py-0.5 text-xs rounded-full ${badge.bg} ${badge.text}`}>
-        {badge.label}
-      </span>
+      <div key={funnel.id} className="glass-card-subtle rounded-xl p-4">
+        <div className="flex items-start gap-4">
+          <div className="flex flex-col items-center gap-1 pt-1 flex-shrink-0 w-12">
+            <Switch
+              checked={isOn}
+              disabled={togglingId === funnel.id || !canManage}
+              onCheckedChange={(on) => setStatus(funnel, on)}
+              aria-label={isOn ? 'Turn funnel off' : 'Turn funnel on'}
+            />
+            <span className={`text-[11px] ${isOn ? 'text-green-400' : 'text-gray-500'}`}>{isOn ? 'On' : 'Off'}</span>
+          </div>
+
+          <div className="flex-1 min-w-0">
+            <div className="flex items-start justify-between gap-3">
+              <div className="min-w-0">
+                <Link
+                  href={`/dashboard/email-templates/funnels/${funnel.id}`}
+                  className="font-semibold text-white hover:text-yellow-400 transition-colors inline-flex items-center gap-1"
+                >
+                  {funnel.name}
+                  <ChevronRight className="w-4 h-4 text-gray-600" />
+                </Link>
+                {funnel.description && <p className="text-sm text-gray-400 mt-0.5 line-clamp-1">{funnel.description}</p>}
+              </div>
+              <div className="flex items-center gap-1 flex-shrink-0">
+                <button
+                  onClick={() => setEnrollingFunnel(funnel)}
+                  disabled={!isOn || !canManage}
+                  title={isOn ? undefined : 'Turn the funnel on to add students'}
+                  className="flex items-center gap-1.5 px-3 py-1.5 glass-button-gold rounded-lg text-sm font-medium disabled:opacity-40 disabled:cursor-not-allowed"
+                >
+                  <UserPlus className="w-3.5 h-3.5" />
+                  Add students
+                </button>
+                {canManage && (
+                  <OverflowMenu
+                    items={[
+                      { label: 'View people', icon: <Users className="w-4 h-4" />, onSelect: () => router.push(`/dashboard/email-templates/funnels/${funnel.id}`) },
+                      { label: 'Edit steps', icon: <Pencil className="w-4 h-4" />, onSelect: () => setEditingFunnel(funnel) },
+                      ...(hasAudiences ? [{ label: 'Change user type', icon: <FolderInput className="w-4 h-4" />, onSelect: () => setMovingFunnel(funnel) }] : []),
+                      { label: 'Delete', icon: <Trash2 className="w-4 h-4" />, danger: true, onSelect: () => handleDelete(funnel) },
+                    ]}
+                  />
+                )}
+              </div>
+            </div>
+
+            <div className="mt-3">
+              <FunnelSteps steps={funnel.phases || []} compact />
+            </div>
+
+            <div className="text-xs text-gray-500 mt-3 flex flex-wrap items-center gap-x-4 gap-y-1">
+              <span className="flex items-center gap-1.5">
+                <Users className="w-3.5 h-3.5" />
+                {enrolled === 0 ? 'No one in it yet' : `${enrolled} ${enrolled === 1 ? 'person' : 'people'}`}
+                {funnel.total_emails_sent > 0 && <span> · {funnel.total_emails_sent} emails sent</span>}
+              </span>
+              {trigger && (
+                <span className="flex items-center gap-1.5 text-violet-300/90">
+                  <Zap className="w-3.5 h-3.5" />
+                  Starts automatically: {trigger}
+                </span>
+              )}
+            </div>
+          </div>
+        </div>
+      </div>
     )
   }
 
-  // Calculate open rate
-  const getOpenRate = (funnel: EmailFunnel) => {
-    if (!funnel.total_emails_sent || funnel.total_emails_sent === 0) return '—'
-    const rate = ((funnel.total_opens / funnel.total_emails_sent) * 100).toFixed(1)
-    return `${rate}%`
-  }
-
-  // Calculate click rate
-  const getClickRate = (funnel: EmailFunnel) => {
-    if (!funnel.total_emails_sent || funnel.total_emails_sent === 0) return '—'
-    const rate = ((funnel.total_clicks / funnel.total_emails_sent) * 100).toFixed(1)
-    return `${rate}%`
-  }
-
-  const canManageFunnels = !!currentUser
-
   return (
     <div className="space-y-4">
-      {/* Sub-tabs: All Funnels / Active Funnels */}
-      <div className="flex items-center gap-1 p-1 glass-card rounded-lg w-fit">
-        <button
-          onClick={() => setActiveSubTab('all')}
-          className={`px-4 py-2 text-sm font-medium rounded-lg transition-all ${
-            activeSubTab === 'all'
-              ? 'bg-yellow-500/20 text-yellow-400'
-              : 'text-gray-400 hover:text-white hover:bg-white/10'
-          }`}
-        >
-          All Funnels
-        </button>
-        <button
-          onClick={() => setActiveSubTab('active')}
-          className={`px-4 py-2 text-sm font-medium rounded-lg transition-all ${
-            activeSubTab === 'active'
-              ? 'bg-green-500/20 text-green-400'
-              : 'text-gray-400 hover:text-white hover:bg-white/10'
-          }`}
-        >
-          Active Funnels
-        </button>
-      </div>
-
-      {/* Search and Filters */}
-      <div className="flex flex-col sm:flex-row gap-3 items-start sm:items-center justify-between">
-        <div className="flex flex-1 gap-3 w-full sm:w-auto">
-          {/* Search */}
-          <div className="relative flex-1 max-w-md">
-            <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
-            <input
-              type="text"
-              placeholder="Search funnels..."
-              value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
-              className="glass-input w-full pl-10 pr-4 py-2 text-sm"
-            />
-          </div>
-
-          {/* Status Filter (only show in All Funnels view) */}
-          {activeSubTab === 'all' && (
-            <div className="relative">
-              <Filter className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
-              <select
-                value={statusFilter}
-                onChange={(e) => setStatusFilter(e.target.value)}
-                className="glass-select pl-10 pr-8 py-2 text-sm appearance-none"
-              >
-                <option value="all">All Statuses</option>
-                <option value="draft">Draft</option>
-                <option value="active">Active</option>
-                <option value="paused">Paused</option>
-              </select>
+      {/* Toolbar */}
+      <div className="flex flex-col sm:flex-row gap-3 sm:items-center justify-between">
+        <div className="flex-1">
+          {showSearch && (
+            <div className="relative max-w-sm">
+              <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
+              <input
+                type="text"
+                placeholder="Search funnels"
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                className="glass-input w-full pl-10 pr-4 py-2 text-sm"
+              />
             </div>
           )}
         </div>
-
-        {/* Create Button */}
-        {canManageFunnels && (
-          <button
-            onClick={() => setShowCreateModal(true)}
-            className="flex items-center gap-2 px-4 py-2 glass-button-gold rounded-xl text-sm font-medium whitespace-nowrap"
-          >
-            <Plus className="w-4 h-4" />
-            Create Funnel
-          </button>
+        {canManage && (
+          <div className="flex items-center gap-2">
+            {!audiencesError && (
+              <button
+                onClick={() => setTypeModal({ open: true, audience: null })}
+                className="flex items-center gap-2 px-3 py-2 glass-button rounded-xl text-sm"
+              >
+                <Plus className="w-4 h-4" />
+                New user type
+              </button>
+            )}
+            <button
+              onClick={() => setCreateFor(null)}
+              className="flex items-center gap-2 px-4 py-2 glass-button-gold rounded-xl text-sm font-medium whitespace-nowrap"
+            >
+              <Plus className="w-4 h-4" />
+              New funnel
+            </button>
+          </div>
         )}
       </div>
 
-      {/* Funnels List */}
-      {filteredFunnels.length === 0 ? (
+      {audiencesError && (
+        <p className="flex items-center gap-2 text-xs text-amber-300/90">
+          <Info className="w-3.5 h-3.5" />
+          User types are not set up yet: {audiencesError}
+        </p>
+      )}
+
+      {/* Empty state (only when there are no user types to show either) */}
+      {visible.length === 0 && !hasAudiences && (
         <div className="glass-card p-12 text-center">
-          <Mail className="w-12 h-12 text-gray-500 mx-auto mb-4" />
-          <h3 className="text-lg font-medium text-white mb-2">
-            {funnels.length === 0
-              ? 'No funnels yet'
-              : activeSubTab === 'active'
-              ? 'No active funnels'
-              : 'No funnels found'}
-          </h3>
+          <GitBranch className="w-10 h-10 text-gray-500 mx-auto mb-3" />
+          <h3 className="text-lg font-medium text-white mb-1">No funnels yet</h3>
           <p className="text-gray-400 text-sm mb-4">
-            {funnels.length === 0
-              ? 'Create your first email funnel to automate drip campaigns.'
-              : 'Try adjusting your search or filter criteria.'}
+            {activeTemplates.length === 0
+              ? 'Add at least one email first, then build a funnel from it.'
+              : 'Chain a few emails together and let them send on a schedule.'}
           </p>
-          {funnels.length === 0 && canManageFunnels && (
+          {canManage && activeTemplates.length > 0 && (
             <button
-              onClick={() => setShowCreateModal(true)}
+              onClick={() => setCreateFor(null)}
               className="inline-flex items-center gap-2 px-4 py-2 glass-button-gold rounded-xl text-sm font-medium"
             >
               <Plus className="w-4 h-4" />
-              Create Funnel
+              Create your first funnel
             </button>
           )}
         </div>
-      ) : activeSubTab === 'active' ? (
-        // Active Funnels - Card Grid View
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-          {filteredFunnels.map((funnel) => (
-            <Link
-              key={funnel.id}
-              href={`/dashboard/email-templates/funnels/${funnel.id}`}
-              className="glass-card p-5 hover:border-yellow-500/30 border border-transparent transition-all group"
-            >
-              {/* Header */}
-              <div className="flex items-start justify-between mb-4">
-                <div className="flex-1">
-                  <h3 className="font-semibold text-white group-hover:text-yellow-400 transition-colors">
-                    {funnel.name}
-                  </h3>
-                  {funnel.description && (
-                    <p className="text-xs text-gray-500 mt-1 line-clamp-1">
-                      {funnel.description}
-                    </p>
+      )}
+
+      {/* Sections by user type */}
+      {(visible.length > 0 || hasAudiences) && (
+        <div className="space-y-3">
+          {sections.map(({ id, audience, funnels: group }) => {
+            const isCollapsed = !!collapsed[id]
+            const onCount = group.filter((f) => f.status === 'active').length
+            const isUnassigned = id === UNASSIGNED
+            return (
+              <section key={id} className="glass-card overflow-hidden">
+                <div className="flex items-center gap-3 px-4 py-3">
+                  <button
+                    onClick={() => toggleCollapsed(id)}
+                    aria-expanded={!isCollapsed}
+                    className="flex items-center gap-3 flex-1 min-w-0 text-left"
+                  >
+                    <ChevronDown className={`w-4 h-4 text-gray-400 transition-transform flex-shrink-0 ${isCollapsed ? '-rotate-90' : ''}`} />
+                    <div className="min-w-0">
+                      <h2 className="font-semibold text-white flex items-center gap-2 flex-wrap">
+                        {isUnassigned ? (hasAudiences ? 'Other' : 'All funnels') : audience!.name}
+                        <span className="text-xs font-normal font-sans text-gray-500">
+                          {group.length} {group.length === 1 ? 'funnel' : 'funnels'}
+                          {group.length > 0 && ` · ${onCount} on`}
+                        </span>
+                      </h2>
+                      {audience?.description && <p className="text-xs text-gray-500 truncate">{audience.description}</p>}
+                      {isUnassigned && hasAudiences && <p className="text-xs text-gray-500">Funnels not filed under a user type.</p>}
+                    </div>
+                  </button>
+                  {canManage && (
+                    <div className="flex items-center gap-1 flex-shrink-0">
+                      <button
+                        onClick={() => setCreateFor(isUnassigned ? null : audience!.id)}
+                        className="flex items-center gap-1.5 px-2.5 py-1.5 text-sm text-gray-300 hover:text-white hover:bg-white/10 rounded-lg transition-colors"
+                      >
+                        <Plus className="w-3.5 h-3.5" />
+                        New funnel
+                      </button>
+                      {audience && (
+                        <OverflowMenu
+                          label={`Options for ${audience.name}`}
+                          items={[
+                            { label: 'Rename', icon: <Pencil className="w-4 h-4" />, onSelect: () => setTypeModal({ open: true, audience }) },
+                            { label: 'Remove user type', icon: <Trash2 className="w-4 h-4" />, danger: true, disabled: !!audience.key, onSelect: () => deleteAudience(audience) },
+                          ]}
+                        />
+                      )}
+                    </div>
                   )}
                 </div>
-                {getStatusBadge(funnel.status)}
-              </div>
 
-              {/* Stats */}
-              <div className="grid grid-cols-2 gap-3 mb-4">
-                <div className="bg-white/5 rounded-lg p-3">
-                  <div className="flex items-center gap-2 text-gray-400 mb-1">
-                    <Users className="w-3.5 h-3.5" />
-                    <span className="text-xs">Enrolled</span>
+                {!isCollapsed && (
+                  <div className="px-4 pb-4 space-y-3">
+                    {group.length === 0 ? (
+                      <p className="text-sm text-gray-500 py-2">
+                        {activeTemplates.length === 0
+                          ? 'No funnels yet. Add emails first, then build one here.'
+                          : 'No funnels for this user type yet.'}
+                      </p>
+                    ) : (
+                      group.map(renderFunnel)
+                    )}
                   </div>
-                  <p className="text-xl font-bold text-white">{funnel.total_enrolled}</p>
-                </div>
-                <div className="bg-white/5 rounded-lg p-3">
-                  <div className="flex items-center gap-2 text-gray-400 mb-1">
-                    <Eye className="w-3.5 h-3.5" />
-                    <span className="text-xs">Open Rate</span>
-                  </div>
-                  <p className="text-xl font-bold text-white">{getOpenRate(funnel)}</p>
-                </div>
-              </div>
-
-              {/* Phases */}
-              <div className="flex items-center gap-2 text-sm text-gray-400 mb-3">
-                <Mail className="w-4 h-4" />
-                <span>{funnel.phases?.length || 0} phases</span>
-                <span className="text-gray-600">|</span>
-                <span>{funnel.total_emails_sent} emails sent</span>
-              </div>
-
-              {/* View Details Arrow */}
-              <div className="flex items-center justify-end text-gray-500 group-hover:text-yellow-400 transition-colors">
-                <span className="text-xs mr-1">View Details</span>
-                <ChevronRight className="w-4 h-4" />
-              </div>
-            </Link>
-          ))}
-        </div>
-      ) : (
-        // All Funnels - Table/List View
-        <div className="glass-card overflow-hidden">
-          <table className="w-full">
-            <thead>
-              <tr className="border-b border-white/10">
-                <th className="text-left p-4 text-xs font-medium text-gray-400 uppercase tracking-wider">
-                  Funnel
-                </th>
-                <th className="text-left p-4 text-xs font-medium text-gray-400 uppercase tracking-wider">
-                  Status
-                </th>
-                <th className="text-center p-4 text-xs font-medium text-gray-400 uppercase tracking-wider">
-                  Phases
-                </th>
-                <th className="text-center p-4 text-xs font-medium text-gray-400 uppercase tracking-wider">
-                  Enrolled
-                </th>
-                <th className="text-center p-4 text-xs font-medium text-gray-400 uppercase tracking-wider">
-                  Open Rate
-                </th>
-                <th className="text-center p-4 text-xs font-medium text-gray-400 uppercase tracking-wider">
-                  Click Rate
-                </th>
-                <th className="text-right p-4 text-xs font-medium text-gray-400 uppercase tracking-wider">
-                  Actions
-                </th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-white/5">
-              {filteredFunnels.map((funnel) => (
-                <tr key={funnel.id} className="hover:bg-white/5 transition-colors">
-                  <td className="p-4">
-                    <Link
-                      href={`/dashboard/email-templates/funnels/${funnel.id}`}
-                      className="hover:text-yellow-400 transition-colors"
-                    >
-                      <p className="font-medium text-white">{funnel.name}</p>
-                      {funnel.description && (
-                        <p className="text-xs text-gray-500 mt-0.5 line-clamp-1">
-                          {funnel.description}
-                        </p>
-                      )}
-                    </Link>
-                  </td>
-                  <td className="p-4">{getStatusBadge(funnel.status)}</td>
-                  <td className="p-4 text-center text-gray-300">
-                    {funnel.phases?.length || 0}
-                  </td>
-                  <td className="p-4 text-center text-gray-300">{funnel.total_enrolled}</td>
-                  <td className="p-4 text-center text-gray-300">{getOpenRate(funnel)}</td>
-                  <td className="p-4 text-center text-gray-300">{getClickRate(funnel)}</td>
-                  <td className="p-4">
-                    <div className="flex items-center justify-end gap-1">
-                      {/* Play/Pause Button */}
-                      {funnel.status !== 'archived' && (
-                        <button
-                          onClick={() => toggleStatus(funnel)}
-                          disabled={updatingStatusId === funnel.id}
-                          className={`p-2 rounded-lg transition-all ${
-                            funnel.status === 'active'
-                              ? 'text-yellow-400 hover:bg-yellow-500/10'
-                              : 'text-green-400 hover:bg-green-500/10'
-                          } disabled:opacity-50`}
-                          title={funnel.status === 'active' ? 'Pause funnel' : 'Activate funnel'}
-                        >
-                          {funnel.status === 'active' ? (
-                            <Pause className="w-4 h-4" />
-                          ) : (
-                            <Play className="w-4 h-4" />
-                          )}
-                        </button>
-                      )}
-
-                      {/* Edit */}
-                      {canManageFunnels && (
-                        <button
-                          onClick={() => setEditingFunnel(funnel)}
-                          className="p-2 text-gray-400 hover:text-white hover:bg-white/10 rounded-lg transition-all"
-                          title="Edit funnel"
-                        >
-                          <Pencil className="w-4 h-4" />
-                        </button>
-                      )}
-
-                      {/* Delete */}
-                      {canManageFunnels && (
-                        <button
-                          onClick={() => handleDelete(funnel.id)}
-                          disabled={deletingId === funnel.id}
-                          className="p-2 text-gray-400 hover:text-red-400 hover:bg-red-500/10 rounded-lg transition-all disabled:opacity-50"
-                          title="Delete funnel"
-                        >
-                          <Trash2 className="w-4 h-4" />
-                        </button>
-                      )}
-
-                      {/* View */}
-                      <Link
-                        href={`/dashboard/email-templates/funnels/${funnel.id}`}
-                        className="p-2 text-gray-400 hover:text-yellow-400 hover:bg-yellow-500/10 rounded-lg transition-all"
-                        title="View details"
-                      >
-                        <ChevronRight className="w-4 h-4" />
-                      </Link>
-                    </div>
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
+                )}
+              </section>
+            )
+          })}
         </div>
       )}
 
       {/* Modals */}
-      {(showCreateModal || editingFunnel) && (
+      {(createFor !== false || editingFunnel) && (
         <CreateFunnelModal
           onClose={() => {
-            setShowCreateModal(false)
+            setCreateFor(false)
             setEditingFunnel(null)
           }}
           onSuccess={() => {
-            setShowCreateModal(false)
+            setCreateFor(false)
             setEditingFunnel(null)
             router.refresh()
           }}
-          templates={templates}
+          templates={activeTemplates}
+          audiences={audiences}
+          defaultAudienceId={createFor === false ? null : createFor}
           editingFunnel={editingFunnel}
         />
+      )}
+
+      {enrollingFunnel && (
+        <EnrollStudentsModal
+          funnelId={enrollingFunnel.id}
+          funnelName={enrollingFunnel.name}
+          onClose={() => setEnrollingFunnel(null)}
+          onSuccess={() => {
+            setEnrollingFunnel(null)
+            router.refresh()
+          }}
+        />
+      )}
+
+      {typeModal.open && (
+        <UserTypeModal
+          audience={typeModal.audience}
+          onClose={() => setTypeModal({ open: false, audience: null })}
+          onSaved={(saved) => {
+            setAudiences((prev) => {
+              const exists = prev.some((a) => a.id === saved.id)
+              const next = exists ? prev.map((a) => (a.id === saved.id ? saved : a)) : [...prev, saved]
+              return next.sort((a, b) => a.sort_order - b.sort_order || a.name.localeCompare(b.name))
+            })
+            setTypeModal({ open: false, audience: null })
+          }}
+        />
+      )}
+
+      {movingFunnel && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+          <div className="absolute inset-0 bg-black/70 backdrop-blur-sm" onClick={() => setMovingFunnel(null)} />
+          <div className="relative w-full max-w-sm glass-card modal-solid rounded-2xl p-5 space-y-4">
+            <h2 className="text-lg font-bold text-white">Change user type</h2>
+            <p className="text-sm text-gray-400">Where should “{movingFunnel.name}” be filed?</p>
+            <div className="space-y-1.5">
+              {[...audiences.map((a) => ({ id: a.id as string | null, name: a.name })), { id: null, name: 'Other (no user type)' }].map((opt) => {
+                const current = resolveAudienceId(movingFunnel, audiences) === opt.id
+                return (
+                  <button
+                    key={opt.id || 'none'}
+                    onClick={() => moveFunnel(movingFunnel, opt.id)}
+                    className={`w-full text-left px-3 py-2 rounded-lg border text-sm transition-colors ${
+                      current ? 'border-yellow-500/50 bg-yellow-500/10 text-yellow-300' : 'border-white/10 text-gray-200 hover:bg-white/10'
+                    }`}
+                  >
+                    {opt.name}
+                  </button>
+                )
+              })}
+            </div>
+            <div className="flex justify-end">
+              <button onClick={() => setMovingFunnel(null)} className="px-4 py-2 text-gray-400 hover:text-white hover:bg-white/10 rounded-lg transition-all">
+                Cancel
+              </button>
+            </div>
+          </div>
+        </div>
       )}
     </div>
   )

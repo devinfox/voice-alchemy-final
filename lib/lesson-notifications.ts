@@ -7,7 +7,9 @@ import { createClient } from '@supabase/supabase-js'
 import { sendEmail } from '@/lib/sendgrid'
 
 const APP_URL = process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000'
-const FROM_EMAIL = process.env.SENDGRID_FROM_EMAIL
+// Fall back to the academy domain so notifications still go out when the env
+// var is unset; a sender on an unauthenticated domain would be rejected anyway.
+const FROM_EMAIL = process.env.SENDGRID_FROM_EMAIL || `noreply@${process.env.NEXT_PUBLIC_EMAIL_DOMAIN || 'voicealchemyacademy.com'}`
 
 function getAdminClient() {
   const url = process.env.NEXT_PUBLIC_SUPABASE_URL

@@ -51,3 +51,7 @@ screenshots/
 capture_all_flows.py
 generate_flow_pdfs.py
 supabase/.temp/
+.env*.local
+
+# local capture scratch
+scripts/.tmp/

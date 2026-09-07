@@ -2,39 +2,16 @@
 
 import React, { createContext, useContext, useState, useCallback, ReactNode } from 'react'
 
-// Block types
-export type BlockType =
-  | 'text'
-  | 'image'
-  | 'button'
-  | 'divider'
-  | 'spacer'
-  | 'columns'
-  | 'social'
-  | 'video'
-  | 'header'
-  | 'footer'
+import {
+  type BlockType,
+  type EmailBlock,
+  type EmailSettings,
+  defaultEmailSettings,
+  generateBlockId,
+} from '@/lib/email-builder-types'
 
-// Block interface
-export interface EmailBlock {
-  id: string
-  type: BlockType
-  properties: Record<string, any>
-  children?: EmailBlock[] // For columns
-}
-
-// Email settings
-export interface EmailSettings {
-  backgroundColor: string
-  contentBackgroundColor: string
-  previewMode: 'light' | 'dark'
-}
-
-export const defaultEmailSettings: EmailSettings = {
-  backgroundColor: '#F5F5F5',  // Slightly off-white for better dark mode compatibility
-  contentBackgroundColor: '#FAFAFA',  // Slightly off-white
-  previewMode: 'light',
-}
+export type { BlockType, EmailBlock, EmailSettings }
+export { defaultEmailSettings, generateBlockId }
 
 // Context state
 interface EmailBuilderState {
@@ -62,9 +39,6 @@ interface EmailBuilderActions {
 type EmailBuilderContextType = EmailBuilderState & EmailBuilderActions
 
 const EmailBuilderContext = createContext<EmailBuilderContextType | null>(null)
-
-// Generate unique ID
-export const generateBlockId = () => `block-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`
 
 // Provider component
 export function EmailBuilderProvider({ children }: { children: ReactNode }) {

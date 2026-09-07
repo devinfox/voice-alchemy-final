@@ -1,134 +1,137 @@
 import { requireEmailAccess } from '@/lib/email-access-server'
-import { createClient as createServiceClient } from '@supabase/supabase-js'
+import { getSupabaseAdmin } from '@/lib/supabase-admin'
 import { NextRequest, NextResponse } from 'next/server'
 
-// POST /api/email-funnels/enroll - Enroll leads in a funnel
+// Recipient columns on email_funnel_enrollments are named lead_id/contact_id
+// (schema ported from the CRM). In this app lead_id always holds a
+// profiles.id; the person's email lives in the `users` mirror table.
+
+function phaseDelayMs(phase: { delay_days?: number | null; delay_hours?: number | null }): number {
+  return (((phase.delay_days || 0) * 24 + (phase.delay_hours || 0)) * 60) * 60 * 1000
+}
+
+// POST /api/email-funnels/enroll  { funnel_id, student_ids: [] }
+// Enrolls students in an active funnel. The first phase is scheduled from
+// now using that phase's delay; the email-queue cron does the sending.
 export async function POST(request: NextRequest) {
   try {
-    // Only email-tools users (admins / Julia) may use funnels
     const profile = await requireEmailAccess()
     if (!profile) {
       return NextResponse.json({ error: 'Email tools access required' }, { status: 403 })
     }
 
     const body = await request.json()
-    const { funnel_id, lead_ids } = body
+    const funnelId: string | undefined = body.funnel_id
+    const studentIds: string[] = body.student_ids || body.lead_ids || []
 
-    if (!funnel_id) {
+    if (!funnelId) {
       return NextResponse.json({ error: 'funnel_id is required' }, { status: 400 })
     }
-
-    if (!lead_ids || lead_ids.length === 0) {
-      return NextResponse.json({ error: 'At least one lead_id is required' }, { status: 400 })
+    if (!Array.isArray(studentIds) || studentIds.length === 0) {
+      return NextResponse.json({ error: 'Select at least one student' }, { status: 400 })
     }
 
-    // Use service role for complex transactions
-    const serviceClient = createServiceClient(
-      process.env.NEXT_PUBLIC_SUPABASE_URL!,
-      process.env.SUPABASE_SERVICE_ROLE_KEY!
-    )
+    const admin = getSupabaseAdmin()
 
-    // Verify funnel exists and is active
-    const { data: funnel, error: funnelError } = await serviceClient
+    const { data: funnel, error: funnelError } = await admin
       .from('email_funnels')
-      .select('id, status, total_enrolled, phases:email_funnel_phases(id, phase_order, delay_days, delay_hours)')
-      .eq('id', funnel_id)
+      .select('id, status, total_enrolled, phases:email_funnel_phases(id, phase_order, delay_days, delay_hours, template_id)')
+      .eq('id', funnelId)
       .eq('is_deleted', false)
       .single()
 
     if (funnelError || !funnel) {
       return NextResponse.json({ error: 'Funnel not found' }, { status: 404 })
     }
-
     if (funnel.status !== 'active') {
-      return NextResponse.json({ error: 'Funnel must be active to enroll leads' }, { status: 400 })
+      return NextResponse.json({ error: 'Activate the funnel before enrolling students' }, { status: 400 })
     }
 
-    // Sort phases by order
-    const phases = (funnel.phases || []).sort((a: { phase_order: number }, b: { phase_order: number }) => a.phase_order - b.phase_order)
-
+    const phases = (funnel.phases || []).sort(
+      (a: { phase_order: number }, b: { phase_order: number }) => a.phase_order - b.phase_order
+    )
     if (phases.length === 0) {
-      return NextResponse.json({ error: 'Funnel has no phases configured' }, { status: 400 })
+      return NextResponse.json({ error: 'This funnel has no phases yet' }, { status: 400 })
+    }
+    if (phases.some((p: { template_id: string | null }) => !p.template_id)) {
+      return NextResponse.json({ error: 'Every phase needs a template before students can be enrolled' }, { status: 400 })
     }
 
-    const now = new Date()
-    const enrolledAt = now.toISOString()
+    // Only people with an email address can be enrolled
+    const { data: userRows } = await admin.from('users').select('id, email').in('id', studentIds)
+    const withEmail = new Set((userRows || []).filter(u => !!u.email).map(u => u.id))
+    const noEmailIds = studentIds.filter(id => !withEmail.has(id))
 
-    // Calculate next email scheduled time based on first phase delay
-    const firstPhase = phases[0]
-    const delayMs = ((firstPhase.delay_days || 0) * 24 * 60 + (firstPhase.delay_hours || 0) * 60) * 60 * 1000
-    const nextEmailAt = new Date(now.getTime() + delayMs).toISOString()
-
-    // Check for existing enrollments to avoid duplicates
-    const { data: existingEnrollments } = await serviceClient
+    // Skip anyone already in the funnel (active, paused, or awaiting approval)
+    const { data: existing } = await admin
       .from('email_funnel_enrollments')
       .select('lead_id')
-      .eq('funnel_id', funnel_id)
-      .in('lead_id', lead_ids)
-      .in('status', ['active', 'paused'])
+      .eq('funnel_id', funnelId)
+      .in('lead_id', studentIds)
+      .in('status', ['active', 'paused', 'pending_approval'])
+    const alreadyEnrolled = new Set((existing || []).map(e => e.lead_id))
 
-    const existingLeadIds = (existingEnrollments || []).map(e => e.lead_id)
+    const newIds = studentIds.filter(id => withEmail.has(id) && !alreadyEnrolled.has(id))
 
-    // Filter out already enrolled
-    const newLeadIds = lead_ids.filter((id: string) => !existingLeadIds.includes(id))
-
-    if (newLeadIds.length === 0) {
+    if (newIds.length === 0) {
       return NextResponse.json({
         success: true,
         enrolled: 0,
-        skipped: lead_ids.length,
-        message: 'All selected leads are already enrolled in this funnel'
+        skipped_already_enrolled: alreadyEnrolled.size,
+        skipped_no_email: noEmailIds.length,
+        message: alreadyEnrolled.size > 0
+          ? 'Everyone selected is already in this funnel'
+          : 'None of the selected students have an email address on file',
       })
     }
 
-    // Create enrollment records
-    const enrollments = newLeadIds.map((lead_id: string) => ({
-      funnel_id,
-      lead_id,
+    const now = new Date()
+    const firstSendAt = new Date(now.getTime() + phaseDelayMs(phases[0])).toISOString()
+
+    const rows = newIds.map(id => ({
+      funnel_id: funnelId,
+      lead_id: id,
       status: 'active',
       current_phase: 1,
-      enrolled_at: enrolledAt,
+      enrolled_at: now.toISOString(),
       enrolled_by: profile.id,
-      next_email_scheduled_at: nextEmailAt,
+      next_email_scheduled_at: firstSendAt,
     }))
 
-    const { data: insertedEnrollments, error: enrollError } = await serviceClient
+    const { data: inserted, error: insertError } = await admin
       .from('email_funnel_enrollments')
-      .insert(enrollments)
+      .insert(rows)
       .select()
 
-    if (enrollError) {
-      console.error('Error creating enrollments:', enrollError)
-      return NextResponse.json({ error: enrollError.message }, { status: 500 })
+    if (insertError) {
+      console.error('[email-funnels/enroll] insert failed:', insertError)
+      return NextResponse.json({ error: insertError.message }, { status: 500 })
     }
 
-    // Update funnel stats
-    await serviceClient
+    await admin
       .from('email_funnels')
-      .update({
-        total_enrolled: funnel.total_enrolled + enrollments.length,
-        updated_at: new Date().toISOString(),
-      })
-      .eq('id', funnel_id)
+      .update({ total_enrolled: (funnel.total_enrolled || 0) + rows.length, updated_at: now.toISOString() })
+      .eq('id', funnelId)
 
     return NextResponse.json({
       success: true,
-      enrolled: enrollments.length,
-      skipped: existingLeadIds.length,
-      enrollments: insertedEnrollments,
+      enrolled: rows.length,
+      skipped_already_enrolled: alreadyEnrolled.size,
+      skipped_no_email: noEmailIds.length,
+      first_send_at: firstSendAt,
+      enrollments: inserted,
     })
   } catch (error) {
-    console.error('Error in POST /api/email-funnels/enroll:', error)
+    console.error('[email-funnels/enroll] unexpected error:', error)
     return NextResponse.json({ error: 'Internal server error' }, { status: 500 })
   }
 }
 
-// GET /api/email-funnels/enroll - Get enrollable recipients for preview
-// VAAA has no leads table (and no ai_tags data): candidates are profiles,
-// with emails joined in from the `users` mirror table.
+// GET /api/email-funnels/enroll?funnel_id=...&include_staff=true
+// Candidate list for the enroll modal: students (plus staff on request) with
+// an email address, flagged when they are already in the funnel.
 export async function GET(request: NextRequest) {
   try {
-    // Only email-tools users (admins / Julia) may use funnels
     const profile = await requireEmailAccess()
     if (!profile) {
       return NextResponse.json({ error: 'Email tools access required' }, { status: 403 })
@@ -136,67 +139,52 @@ export async function GET(request: NextRequest) {
 
     const { searchParams } = new URL(request.url)
     const funnelId = searchParams.get('funnel_id')
+    const includeStaff = searchParams.get('include_staff') === 'true'
 
-    // Use service role to fetch candidate recipients
-    const serviceClient = createServiceClient(
-      process.env.NEXT_PUBLIC_SUPABASE_URL!,
-      process.env.SUPABASE_SERVICE_ROLE_KEY!
-    )
+    const admin = getSupabaseAdmin()
 
-    const { data: candidates, error: candidatesError } = await serviceClient
+    let query = admin
       .from('profiles')
-      .select('id, first_name, last_name, name')
+      .select('id, first_name, last_name, name, role')
       .order('first_name', { ascending: true })
+      .limit(1000)
+    if (!includeStaff) query = query.eq('role', 'student')
 
+    const { data: candidates, error: candidatesError } = await query
     if (candidatesError) {
-      console.error('Error fetching candidates:', candidatesError)
       return NextResponse.json({ error: candidatesError.message }, { status: 500 })
     }
 
-    const candidateIds = (candidates || []).map(c => c.id)
+    const ids = (candidates || []).map(c => c.id)
     const emailById = new Map<string, string>()
-    if (candidateIds.length > 0) {
-      const { data: userRows } = await serviceClient
-        .from('users')
-        .select('id, email')
-        .in('id', candidateIds)
-
-      for (const row of userRows || []) {
-        if (row.email) emailById.set(row.id, row.email)
-      }
+    if (ids.length > 0) {
+      const { data: userRows } = await admin.from('users').select('id, email').in('id', ids)
+      for (const row of userRows || []) if (row.email) emailById.set(row.id, row.email)
     }
 
-    // Only people with an email address can be enrolled
-    const matchingLeads = (candidates || [])
-      .map(c => ({ ...c, email: emailById.get(c.id) || null }))
-      .filter(c => !!c.email)
-
-    // If funnel_id provided, check which recipients are already enrolled
-    let enrolledLeadIds: string[] = []
+    const enrolledIds = new Set<string>()
     if (funnelId) {
-      const { data: enrollments } = await serviceClient
+      const { data: enrollments } = await admin
         .from('email_funnel_enrollments')
         .select('lead_id')
         .eq('funnel_id', funnelId)
-        .in('status', ['active', 'paused'])
+        .in('status', ['active', 'paused', 'pending_approval'])
         .not('lead_id', 'is', null)
-
-      enrolledLeadIds = (enrollments || []).map(e => e.lead_id)
+      for (const e of enrollments || []) enrolledIds.add(e.lead_id)
     }
 
-    // Add enrollment status
-    const leadsWithStatus = matchingLeads.map(lead => ({
-      ...lead,
-      already_enrolled: enrolledLeadIds.includes(lead.id),
-    }))
+    const data = (candidates || [])
+      .map(c => ({ ...c, email: emailById.get(c.id) || null }))
+      .filter(c => !!c.email)
+      .map(c => ({ ...c, already_enrolled: enrolledIds.has(c.id) }))
 
     return NextResponse.json({
-      data: leadsWithStatus,
-      total: leadsWithStatus.length,
-      already_enrolled: leadsWithStatus.filter(l => l.already_enrolled).length,
+      data,
+      total: data.length,
+      already_enrolled: data.filter(c => c.already_enrolled).length,
     })
   } catch (error) {
-    console.error('Error in GET /api/email-funnels/enroll:', error)
+    console.error('[email-funnels/enroll] GET failed:', error)
     return NextResponse.json({ error: 'Internal server error' }, { status: 500 })
   }
 }

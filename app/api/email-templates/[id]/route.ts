@@ -9,6 +9,7 @@ import { NextRequest, NextResponse } from 'next/server'
 const UPDATABLE_TEMPLATE_COLUMNS = [
   'name',
   'subject',
+  'preheader',
   'body',
   'body_html',
   'description',

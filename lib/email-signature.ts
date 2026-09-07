@@ -1,13 +1,17 @@
 // Email Signature Generation Utilities
 
-const EMAIL_IMAGES = {
-  sigLogo: 'https://ohpjilsntlmlusgbpest.supabase.co/storage/v1/object/public/email-images/citadel-logo-no-shadow-small.png',
-  sigBbb: 'https://ohpjilsntlmlusgbpest.supabase.co/storage/v1/object/public/email-images/bb-rating.png',
-  sigGoogle: 'https://ohpjilsntlmlusgbpest.supabase.co/storage/v1/object/public/email-images/google-G-logo.png',
-  sigCheckmark: 'https://ohpjilsntlmlusgbpest.supabase.co/storage/v1/object/public/email-images/green-checkmark.png',
-  sigFox: 'https://ohpjilsntlmlusgbpest.supabase.co/storage/v1/object/public/email-images/fox-news-logo.png',
-  sigCnbc: 'https://ohpjilsntlmlusgbpest.supabase.co/storage/v1/object/public/email-images/cnbc-logo.png',
-  sigForbes: 'https://ohpjilsntlmlusgbpest.supabase.co/storage/v1/object/public/email-images/forbes-logo.png',
+/**
+ * Optional hosted logo for signatures. Set NEXT_PUBLIC_EMAIL_LOGO_URL to a
+ * public PNG (for example one uploaded through the template image uploader).
+ * Without it the signature renders a text wordmark instead of an image, so
+ * nothing broken ever ships in an email.
+ */
+function signatureLogoHtml(): string {
+  const url = (process.env.NEXT_PUBLIC_EMAIL_LOGO_URL || '').trim()
+  if (url) {
+    return `<img src="${url}" alt="Voice Alchemy Academy" style="height: 80px; width: auto;">`
+  }
+  return `<div style="font-family: Georgia, 'Times New Roman', serif; font-size: 18px; font-weight: bold; color: #171229; line-height: 1.2;">Voice<br>Alchemy<br><span style="color: #CEB466;">Academy</span></div>`
 }
 
 // Format phone for display
@@ -27,7 +31,9 @@ export interface SignatureConfig {
   title: string
   phone: string
   email: string
+  /** @deprecated Citadel-era badges; ignored. Kept so stored configs still type-check. */
   includeTrustBadges?: boolean
+  /** @deprecated Citadel-era press logos; ignored. */
   includeAsSeenOn?: boolean
 }
 
@@ -37,18 +43,16 @@ export const DEVIN_FOX_SIGNATURE: SignatureConfig = {
   title: 'Founder & Vocal Instructor',
   phone: '818.209.2305',
   email: 'devin@voicealchemyacademy.com',
-  includeTrustBadges: true,
-  includeAsSeenOn: true,
 }
 
 /**
  * Generate a professional email signature HTML
  */
 export function generateSignatureHtml(config: SignatureConfig): string {
-  const { name, title, phone, email, includeTrustBadges = true, includeAsSeenOn = true } = config
+  const { name, title, phone, email } = config
   const formattedPhone = formatPhoneDisplay(phone)
 
-  let html = `
+  return `
     <!-- Email Signature -->
     <table cellpadding="0" cellspacing="0" border="0" style="margin-top: 30px; border-collapse: collapse;">
       <tr>
@@ -84,113 +88,13 @@ export function generateSignatureHtml(config: SignatureConfig): string {
         </td>
         <td style="vertical-align: top; padding-left: 20px;">
           <!-- Right Column - Logo -->
-          <img src="${EMAIL_IMAGES.sigLogo}" alt="Voice Alchemy Academy" style="height: 80px; width: auto;">
+          ${signatureLogoHtml()}
         </td>
       </tr>
     </table>
 
     <!-- Divider -->
     <div style="border-top: 2px solid #c9a227; margin: 25px 0 20px 0; max-width: 500px;"></div>`
-
-  if (includeTrustBadges || includeAsSeenOn) {
-    html += `
-    <!-- Trust Badges Section -->
-    <table cellpadding="0" cellspacing="0" border="0" style="border-collapse: collapse;">
-      <tr>`
-
-    if (includeTrustBadges) {
-      html += `
-        <td style="vertical-align: top; padding-right: 60px;">
-          <!-- Trusted by Investors -->
-          <table cellpadding="0" cellspacing="0" border="0">
-            <tr>
-              <td style="font-family: Arial, sans-serif; font-size: 14px; font-weight: bold; color: #000; padding-bottom: 15px;">
-                Trusted by Investors Nationwide:
-              </td>
-            </tr>
-            <tr>
-              <td style="padding-bottom: 10px;">
-                <table cellpadding="0" cellspacing="0" border="0">
-                  <tr>
-                    <td style="vertical-align: middle; padding-right: 10px;">
-                      <img src="${EMAIL_IMAGES.sigBbb}" alt="BBB A Rating" style="height: 36px; width: auto;">
-                    </td>
-                    <td style="vertical-align: middle; font-family: Arial, sans-serif; font-size: 13px; color: #333;">
-                      <strong>A</strong> Grade with BBB
-                    </td>
-                  </tr>
-                </table>
-              </td>
-            </tr>
-            <tr>
-              <td style="padding-bottom: 10px;">
-                <table cellpadding="0" cellspacing="0" border="0">
-                  <tr>
-                    <td style="vertical-align: middle; padding-right: 10px;">
-                      <img src="${EMAIL_IMAGES.sigGoogle}" alt="Google Reviews" style="height: 28px; width: auto;">
-                    </td>
-                    <td style="vertical-align: middle; font-family: Arial, sans-serif; font-size: 13px; color: #333;">
-                      5-Star Google Reviews
-                    </td>
-                  </tr>
-                </table>
-              </td>
-            </tr>
-            <tr>
-              <td>
-                <table cellpadding="0" cellspacing="0" border="0">
-                  <tr>
-                    <td style="vertical-align: middle; padding-right: 10px;">
-                      <img src="${EMAIL_IMAGES.sigCheckmark}" alt="NCBA Member" style="height: 28px; width: auto;">
-                    </td>
-                    <td style="vertical-align: middle; font-family: Arial, sans-serif; font-size: 13px; color: #333;">
-                      Members - National Coin<br>& Bullion Association
-                    </td>
-                  </tr>
-                </table>
-              </td>
-            </tr>
-          </table>
-        </td>`
-    }
-
-    if (includeAsSeenOn) {
-      html += `
-        <td style="vertical-align: top;">
-          <!-- As Seen On -->
-          <table cellpadding="0" cellspacing="0" border="0">
-            <tr>
-              <td style="font-family: Arial, sans-serif; font-size: 14px; font-weight: bold; color: #000; padding-bottom: 15px;">
-                As Seen On
-              </td>
-            </tr>
-            <tr>
-              <td>
-                <table cellpadding="0" cellspacing="0" border="0">
-                  <tr>
-                    <td style="padding-right: 15px;">
-                      <img src="${EMAIL_IMAGES.sigFox}" alt="Fox News" style="height: 30px; width: auto;">
-                    </td>
-                    <td style="padding-right: 15px;">
-                      <img src="${EMAIL_IMAGES.sigCnbc}" alt="CNBC" style="height: 30px; width: auto;">
-                    </td>
-                    <td>
-                      <img src="${EMAIL_IMAGES.sigForbes}" alt="Forbes" style="height: 30px; width: auto;">
-                    </td>
-                  </tr>
-                </table>
-              </td>
-            </tr>
-          </table>
-        </td>`
-    }
-
-    html += `
-      </tr>
-    </table>`
-  }
-
-  return html
 }
 
 /**
@@ -288,7 +192,7 @@ export function generateStandardSignatureHtml(config: StandardSignatureConfig): 
         </td>
         <td style="vertical-align: top; padding-left: 20px;">
           <!-- Right Column - Logo -->
-          <img src="${EMAIL_IMAGES.sigLogo}" alt="Voice Alchemy Academy" style="height: 80px; width: auto;">
+          ${signatureLogoHtml()}
         </td>
       </tr>
     </table>

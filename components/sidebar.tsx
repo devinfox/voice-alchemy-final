@@ -29,6 +29,8 @@ interface NavItem {
   href: string
   icon: React.ComponentType<{ className?: string }>
   badge?: number
+  /** Sub-pages shown indented while this section is open */
+  children?: NavItem[]
 }
 
 // Teacher navigation
@@ -37,8 +39,12 @@ const teacherNavigation: NavItem[] = [
   { name: 'My Students', href: '/dashboard/students', icon: Users },
   { name: 'Training Center', href: '/dashboard/training-center', icon: Music },
   { name: 'Courses', href: '/dashboard/courses', icon: GraduationCap },
-  { name: 'Email', href: '/dashboard/email', icon: Mail },
-  { name: 'Email Templates', href: '/dashboard/email-templates', icon: FileText },
+  {
+    name: 'Email',
+    href: '/dashboard/email',
+    icon: Mail,
+    children: [{ name: 'Templates & Funnels', href: '/dashboard/email-templates', icon: FileText }],
+  },
   { name: 'Calendar', href: '/dashboard/calendar', icon: Calendar },
 ]
 
@@ -101,9 +107,28 @@ export function Sidebar({ user, userEmail }: SidebarProps) {
     ? (isAdmin ? [...visibleTeacherNavigation, ...adminNavigation] : visibleTeacherNavigation)
     : studentNavigation
 
-  const renderNavItem = (item: NavItem) => {
+  const renderNavItem = (item: NavItem, depth = 0) => {
     const isActive = pathname === item.href || (item.href !== '/dashboard' && pathname.startsWith(item.href + '/'))
+    // A parent stays open while any of its sub-pages is showing
+    const childActive = (item.children || []).some((c) => pathname === c.href || pathname.startsWith(c.href + '/'))
+    const isOpen = isActive || childActive
 
+    if (depth === 0 && item.children && item.children.length > 0) {
+      return (
+        <div key={item.name} className="space-y-1">
+          {renderNavLink(item, isActive, depth)}
+          {isOpen && (
+            <div className="ml-6 pl-3 border-l border-white/[0.08] space-y-1">
+              {item.children.map((child) => renderNavItem(child, depth + 1))}
+            </div>
+          )}
+        </div>
+      )
+    }
+    return renderNavLink(item, isActive, depth)
+  }
+
+  const renderNavLink = (item: NavItem, isActive: boolean, depth: number) => {
     return (
       <Link
         key={item.name}
@@ -114,12 +139,12 @@ export function Sidebar({ user, userEmail }: SidebarProps) {
             : 'text-gray-300 hover:bg-white/[0.06] hover:text-white border border-transparent'
         }`}
       >
-        <div className={`w-8 h-8 rounded-xl flex items-center justify-center transition-colors ${
+        <div className={`${depth > 0 ? 'w-6 h-6 rounded-lg' : 'w-8 h-8 rounded-xl'} flex items-center justify-center transition-colors ${
           isActive ? 'bg-[#CEB466]/20 text-[#CEB466]' : 'bg-white/5 text-gray-400'
         }`}>
-          <item.icon className="w-4 h-4" />
+          <item.icon className={depth > 0 ? 'w-3.5 h-3.5' : 'w-4 h-4'} />
         </div>
-        <span className="flex-1">{item.name}</span>
+        <span className={`flex-1 ${depth > 0 ? 'text-xs' : ''}`}>{item.name}</span>
         {item.badge !== undefined && item.badge > 0 && (
           <span className="min-w-[20px] h-5 px-1.5 flex items-center justify-center bg-gradient-to-r from-[#CEB466] to-[#9c8644] text-[#171229] text-[10px] font-bold rounded-full shadow-lg shadow-[#CEB466]/30">
             {item.badge > 99 ? '99+' : item.badge}

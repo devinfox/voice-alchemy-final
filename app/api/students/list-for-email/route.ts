@@ -3,11 +3,15 @@ import { requireEmailAccess } from '@/lib/email-access-server'
 import { getSupabaseAdmin } from '@/lib/supabase-admin'
 
 /**
- * List users (students/teachers) with email addresses for template sending.
- * GET /api/students/list-for-email?hasEmail=true
+ * List people with email addresses for template sending.
+ * GET /api/students/list-for-email?hasEmail=true&role=student
+ * GET /api/students/list-for-email?audience=leads
  *
+ * `role` filters profiles.role (e.g. student); omit it for everyone.
  * profiles has no email column — emails come from the `users` mirror table
- * and are joined in code.
+ * and are joined in code. `audience=leads` returns website leads
+ * (email_leads: people who left an email but have no account) instead,
+ * each flagged with `kind: 'lead'`.
  */
 export async function GET(request: NextRequest) {
   try {
@@ -19,13 +23,43 @@ export async function GET(request: NextRequest) {
 
     const { searchParams } = new URL(request.url)
     const hasEmailOnly = searchParams.get('hasEmail') === 'true'
+    const roleFilter = searchParams.get('role')
+    const audience = searchParams.get('audience')
 
     const admin = getSupabaseAdmin()
-    const { data: profiles, error: profileError } = await admin
+
+    if (audience === 'leads') {
+      const { data: leads, error: leadsError } = await admin
+        .from('email_leads')
+        .select('id, first_name, last_name, email, persona, source, last_type, is_unsubscribed, created_at')
+        .eq('is_unsubscribed', false)
+        .order('created_at', { ascending: false })
+        .limit(1000)
+      if (leadsError) {
+        return NextResponse.json({ error: leadsError.message }, { status: 500 })
+      }
+      return NextResponse.json({
+        data: (leads || []).map(l => ({
+          id: l.id,
+          first_name: l.first_name,
+          last_name: l.last_name,
+          name: null,
+          role: l.persona === 'coach' ? 'coach lead' : 'lead',
+          email: l.email,
+          kind: 'lead' as const,
+          source: l.source,
+          last_type: l.last_type,
+        })),
+      })
+    }
+    let query = admin
       .from('profiles')
       .select('id, first_name, last_name, name, role')
       .order('first_name', { ascending: true })
-      .limit(500)
+      .limit(1000)
+    if (roleFilter) query = query.eq('role', roleFilter)
+
+    const { data: profiles, error: profileError } = await query
 
     if (profileError) {
       return NextResponse.json({ error: profileError.message }, { status: 500 })

@@ -1,219 +1,258 @@
 /**
- * Email Template Variables
- * These variables can be inserted into email templates and will be
- * replaced with actual values when sending emails.
+ * Email template variables and rendering for Voice Alchemy Academy.
+ *
+ * Templates (built in the block builder) and funnel phases are rendered
+ * through `renderEmailTemplate` so the one-off "Send" action, the funnel
+ * worker, and the preview modal all substitute the same variables.
  */
 
+import { stripHtml } from '@/lib/email-utils'
+import { unsubscribeUrl } from '@/lib/email-unsubscribe'
+
 export interface EmailVariable {
-  key: string;
-  label: string;
-  description?: string;
+  key: string
+  label: string
+  description?: string
 }
 
 export interface EmailVariableGroup {
-  name: string;
-  variables: EmailVariable[];
+  name: string
+  variables: EmailVariable[]
 }
+
+export const ACADEMY_NAME = 'Voice Alchemy Academy'
+export const ACADEMY_WEBSITE = 'https://www.voicealchemyacademy.com'
 
 export const EMAIL_VARIABLES: EmailVariableGroup[] = [
   {
-    name: 'Lead',
+    name: 'Student',
     variables: [
-      { key: '{{lead_first_name}}', label: 'First Name', description: 'Lead\'s first name' },
-      { key: '{{lead_last_name}}', label: 'Last Name', description: 'Lead\'s last name' },
-      { key: '{{lead_full_name}}', label: 'Full Name', description: 'Lead\'s full name' },
-      { key: '{{lead_email}}', label: 'Email', description: 'Lead\'s email address' },
-      { key: '{{lead_phone}}', label: 'Phone', description: 'Lead\'s phone number' },
+      { key: '{{first_name}}', label: 'First Name', description: "Student's first name" },
+      { key: '{{last_name}}', label: 'Last Name', description: "Student's last name" },
+      { key: '{{full_name}}', label: 'Full Name', description: "Student's full name" },
+      { key: '{{email}}', label: 'Email', description: "Student's email address" },
     ],
   },
   {
-    name: 'Contact',
+    name: 'Teacher',
     variables: [
-      { key: '{{contact_first_name}}', label: 'First Name', description: 'Contact\'s first name' },
-      { key: '{{contact_last_name}}', label: 'Last Name', description: 'Contact\'s last name' },
-      { key: '{{contact_full_name}}', label: 'Full Name', description: 'Contact\'s full name' },
-      { key: '{{contact_email}}', label: 'Email', description: 'Contact\'s email address' },
-      { key: '{{contact_phone}}', label: 'Phone', description: 'Contact\'s phone number' },
+      { key: '{{teacher_name}}', label: 'Teacher Name', description: 'Full name of the teacher sending the email' },
+      { key: '{{teacher_first_name}}', label: 'Teacher First Name', description: "Teacher's first name" },
+      { key: '{{teacher_email}}', label: 'Teacher Email', description: 'Reply-to address for the teacher' },
     ],
   },
   {
-    name: 'Deal',
+    name: 'Academy',
     variables: [
-      { key: '{{deal_name}}', label: 'Deal Name', description: 'Name of the deal' },
-      { key: '{{deal_amount}}', label: 'Amount', description: 'Deal amount (formatted)' },
-      { key: '{{deal_stage}}', label: 'Stage', description: 'Current deal stage' },
-      { key: '{{deal_type}}', label: 'Type', description: 'Type of deal (IRA, Rollover, etc.)' },
+      { key: '{{academy_name}}', label: 'Academy Name', description: ACADEMY_NAME },
+      { key: '{{academy_website}}', label: 'Website', description: ACADEMY_WEBSITE },
+      { key: '{{login_url}}', label: 'Login Link', description: 'Link to the student dashboard login' },
+      { key: '{{unsubscribe_url}}', label: 'Unsubscribe Link', description: 'Signed one-click unsubscribe link for this recipient' },
     ],
   },
-  {
-    name: 'Rep',
-    variables: [
-      { key: '{{rep_first_name}}', label: 'First Name', description: 'Sales rep\'s first name' },
-      { key: '{{rep_last_name}}', label: 'Last Name', description: 'Sales rep\'s last name' },
-      { key: '{{rep_full_name}}', label: 'Full Name', description: 'Sales rep\'s full name' },
-      { key: '{{rep_email}}', label: 'Email', description: 'Sales rep\'s email address' },
-      { key: '{{rep_phone}}', label: 'Phone', description: 'Sales rep\'s phone number' },
-    ],
-  },
-];
+]
 
-// Flat list of all variables for easy lookup
-export const ALL_VARIABLES = EMAIL_VARIABLES.flatMap(group => group.variables);
-
-// Get all variable keys for validation
-export const VARIABLE_KEYS = ALL_VARIABLES.map(v => v.key);
+export const ALL_VARIABLES = EMAIL_VARIABLES.flatMap(group => group.variables)
+export const VARIABLE_KEYS = ALL_VARIABLES.map(v => v.key)
 
 /**
- * Replace variables in a template string with actual values
+ * Replace `{{key}}` placeholders. Keys are matched without braces so callers
+ * pass `{ first_name: 'Ava' }`. Unknown placeholders are left untouched so a
+ * typo is visible in the preview instead of silently vanishing.
  */
 export function replaceVariables(
   template: string,
   values: Record<string, string | number | null | undefined>
 ): string {
-  let result = template;
-
+  let result = template
   for (const [key, value] of Object.entries(values)) {
-    const variableKey = `{{${key}}}`;
-    result = result.replace(new RegExp(variableKey.replace(/[{}]/g, '\\$&'), 'g'), String(value ?? ''));
+    const pattern = new RegExp(`\\{\\{\\s*${key}\\s*\\}\\}`, 'g')
+    result = result.replace(pattern, String(value ?? ''))
   }
+  return result
+}
 
-  return result;
+export interface RecipientContext {
+  first_name?: string | null
+  last_name?: string | null
+  name?: string | null
+  email?: string | null
+}
+
+export interface SenderContext {
+  name?: string | null
+  first_name?: string | null
+  email?: string | null
+}
+
+/** Split a display name into first/last when the profile only stores `name`. */
+export function splitName(r: RecipientContext): { first: string; last: string; full: string } {
+  const first = (r.first_name || r.name?.trim().split(/\s+/)[0] || '').trim()
+  const last = (r.last_name || r.name?.trim().split(/\s+/).slice(1).join(' ') || '').trim()
+  const full = (r.name?.trim() || `${first} ${last}`.trim())
+  return { first, last, full }
+}
+
+function loginUrl(): string {
+  const base = (process.env.NEXT_PUBLIC_APP_URL || '').replace(/\/$/, '')
+  return base ? `${base}/login` : `${ACADEMY_WEBSITE}/login`
 }
 
 /**
- * Build values object from lead, contact, deal, and rep data
+ * Build the full variable map for one recipient + sender pair.
  */
 export function buildVariableValues(data: {
-  lead?: {
-    first_name?: string | null;
-    last_name?: string | null;
-    email?: string | null;
-    phone?: string | null;
-  } | null;
-  contact?: {
-    first_name?: string | null;
-    last_name?: string | null;
-    email?: string | null;
-    phone?: string | null;
-  } | null;
-  deal?: {
-    name?: string | null;
-    estimated_value?: number | null;
-    stage?: string | null;
-    deal_type?: string | null;
-  } | null;
-  rep?: {
-    first_name?: string | null;
-    last_name?: string | null;
-    email?: string | null;
-    phone?: string | null;
-  } | null;
+  recipient?: RecipientContext | null
+  sender?: SenderContext | null
 }): Record<string, string> {
-  const values: Record<string, string> = {};
-
-  // Lead variables
-  if (data.lead) {
-    values['lead_first_name'] = data.lead.first_name || '';
-    values['lead_last_name'] = data.lead.last_name || '';
-    values['lead_full_name'] = [data.lead.first_name, data.lead.last_name].filter(Boolean).join(' ');
-    values['lead_email'] = data.lead.email || '';
-    values['lead_phone'] = data.lead.phone || '';
+  const values: Record<string, string> = {
+    academy_name: ACADEMY_NAME,
+    academy_website: ACADEMY_WEBSITE,
+    login_url: loginUrl(),
   }
 
-  // Contact variables
-  if (data.contact) {
-    values['contact_first_name'] = data.contact.first_name || '';
-    values['contact_last_name'] = data.contact.last_name || '';
-    values['contact_full_name'] = [data.contact.first_name, data.contact.last_name].filter(Boolean).join(' ');
-    values['contact_email'] = data.contact.email || '';
-    values['contact_phone'] = data.contact.phone || '';
+  if (data.recipient) {
+    const { first, last, full } = splitName(data.recipient)
+    values.first_name = first
+    values.last_name = last
+    values.full_name = full
+    values.email = data.recipient.email || ''
+    values.unsubscribe_url = data.recipient.email ? unsubscribeUrl(data.recipient.email) : ''
   }
+  if (!values.unsubscribe_url) values.unsubscribe_url = ''
 
-  // Deal variables
-  if (data.deal) {
-    values['deal_name'] = data.deal.name || '';
-    values['deal_amount'] = data.deal.estimated_value
-      ? new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' }).format(data.deal.estimated_value)
-      : '';
-    values['deal_stage'] = formatDealStage(data.deal.stage || '');
-    values['deal_type'] = formatDealType(data.deal.deal_type || '');
-  }
+  const sender = data.sender
+  const senderName = (sender?.name || '').trim()
+  values.teacher_name = senderName || ACADEMY_NAME
+  values.teacher_first_name = (sender?.first_name || senderName.split(/\s+/)[0] || ACADEMY_NAME).trim()
+  values.teacher_email = sender?.email || ''
 
-  // Rep variables
-  if (data.rep) {
-    values['rep_first_name'] = data.rep.first_name || '';
-    values['rep_last_name'] = data.rep.last_name || '';
-    values['rep_full_name'] = [data.rep.first_name, data.rep.last_name].filter(Boolean).join(' ');
-    values['rep_email'] = data.rep.email || '';
-    values['rep_phone'] = data.rep.phone || '';
-  }
+  return values
+}
 
-  return values;
+export interface RenderableTemplate {
+  subject: string | null
+  body: string | null
+  body_html?: string | null
+  /** Inbox preview text shown after the subject. Hidden inside the email body. */
+  preheader?: string | null
 }
 
 /**
- * Format deal stage for display
+ * Inject preheader text as a hidden span right after <body>. Mail clients
+ * show it next to the subject in the inbox list; readers never see it.
  */
-function formatDealStage(stage: string): string {
-  const stageMap: Record<string, string> = {
-    'deal_opened': 'Deal Opened',
-    'proposal_education': 'Proposal/Education',
-    'paperwork_sent': 'Paperwork Sent',
-    'paperwork_complete': 'Paperwork Complete',
-    'funding_in_progress': 'Funding In Progress',
-    'closed_won': 'Closed Won',
-    'closed_lost': 'Closed Lost',
-  };
-  return stageMap[stage] || stage;
+export function injectPreheader(html: string, preheader: string | null | undefined): string {
+  const text = (preheader || '').trim()
+  if (!text) return html
+  const escaped = text.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+  // Trailing whitespace stops clients from pulling body copy into the preview.
+  const filler = '&nbsp;&zwnj;'.repeat(60)
+  const span = `<div class="preheader" style="display:none;font-size:1px;line-height:1px;max-height:0;max-width:0;opacity:0;overflow:hidden;mso-hide:all;color:transparent;">${escaped}${filler}</div>`
+  const bodyTag = /<body[^>]*>/i.exec(html)
+  if (bodyTag) {
+    const at = bodyTag.index + bodyTag[0].length
+    return html.slice(0, at) + span + html.slice(at)
+  }
+  return span + html
+}
+
+export interface RenderedEmail {
+  subject: string
+  html: string
+  text: string
 }
 
 /**
- * Format deal type for display
+ * Resolve the HTML for a template row.
+ *
+ * `body` holds the block-builder JSON (or legacy raw HTML for hand-written
+ * templates); `body_html` holds the rendered HTML. Prefer `body_html`, fall
+ * back to `body` only when it is not JSON.
  */
-function formatDealType(dealType: string): string {
-  const typeMap: Record<string, string> = {
-    'new_ira': 'New IRA',
-    'ira_rollover': 'IRA Rollover',
-    'ira_transfer': 'IRA Transfer',
-    'cash_purchase': 'Cash Purchase',
-    'additional_investment': 'Additional Investment',
-    'liquidation': 'Liquidation',
-  };
-  return typeMap[dealType] || dealType;
+export function templateHtml(template: RenderableTemplate): string {
+  if (template.body_html && template.body_html.trim()) return template.body_html
+  const body = template.body || ''
+  const trimmed = body.trim()
+  if (!trimmed) return ''
+  if (trimmed.startsWith('[') || trimmed.startsWith('{')) {
+    try {
+      JSON.parse(trimmed)
+      return '' // block JSON without rendered HTML; nothing sendable
+    } catch {
+      /* not JSON, treat as HTML */
+    }
+  }
+  return body
+}
+
+/**
+ * Render subject/html/text for a recipient. Used by the send route, the
+ * funnel worker, and the preview modal (with sample values).
+ */
+export function renderEmailTemplate(
+  template: RenderableTemplate,
+  context: { recipient?: RecipientContext | null; sender?: SenderContext | null }
+): RenderedEmail {
+  const values = buildVariableValues(context)
+  const subject = replaceVariables(template.subject || '', values)
+  const bodyHtml = replaceVariables(templateHtml(template), values)
+  const text = stripHtml(bodyHtml).replace(/\s+\n/g, '\n').trim()
+  const html = injectPreheader(bodyHtml, replaceVariables(template.preheader || '', values))
+  return { subject, html, text }
 }
 
 /**
  * Sample values for template preview
  */
-export const SAMPLE_VALUES: Record<string, string> = {
-  lead_first_name: 'John',
-  lead_last_name: 'Smith',
-  lead_full_name: 'John Smith',
-  lead_email: 'john.smith@example.com',
-  lead_phone: '(555) 123-4567',
-  contact_first_name: 'John',
-  contact_last_name: 'Smith',
-  contact_full_name: 'John Smith',
-  contact_email: 'john.smith@example.com',
-  deal_name: 'Vocal Alchemy Masterclass',
-  deal_amount: '$1,200.00',
-  deal_stage: 'Enrolled',
-  deal_type: 'Private Vocal Coaching',
-  rep_first_name: 'Julia',
-  rep_last_name: 'Coach',
-  rep_full_name: 'Julia Coach',
-  rep_email: 'julia@voicealchemyacademy.com',
-  rep_phone: '(818) 209-2305',
-};
+export const SAMPLE_RECIPIENT: RecipientContext = {
+  first_name: 'Ava',
+  last_name: 'Reyes',
+  name: 'Ava Reyes',
+  email: 'ava.reyes@example.com',
+}
+
+export const SAMPLE_SENDER: SenderContext = {
+  name: 'Julia',
+  first_name: 'Julia',
+  email: 'hello@voicealchemyacademy.com',
+}
+
+export const SAMPLE_VALUES: Record<string, string> = buildVariableValues({
+  recipient: SAMPLE_RECIPIENT,
+  sender: SAMPLE_SENDER,
+})
 
 /**
- * Template categories with labels
+ * Template categories with labels and badge styling
  */
 export const TEMPLATE_CATEGORIES = [
   { value: 'welcome', label: 'Welcome' },
+  { value: 'onboarding', label: 'Onboarding' },
+  { value: 'lesson', label: 'Lessons' },
   { value: 'follow_up', label: 'Follow Up' },
-  { value: 'paperwork', label: 'Paperwork' },
-  { value: 'funding', label: 'Funding' },
-  { value: 'closing', label: 'Closing' },
+  { value: 'course', label: 'Courses' },
+  { value: 'announcement', label: 'Announcement' },
   { value: 'general', label: 'General' },
-] as const;
+] as const
+
+export type TemplateCategoryValue = (typeof TEMPLATE_CATEGORIES)[number]['value']
+
+const CATEGORY_STYLES: Record<string, string> = {
+  welcome: 'bg-green-500/20 text-green-300 border-green-500/30',
+  onboarding: 'bg-teal-500/20 text-teal-300 border-teal-500/30',
+  lesson: 'bg-blue-500/20 text-blue-300 border-blue-500/30',
+  follow_up: 'bg-sky-500/20 text-sky-300 border-sky-500/30',
+  course: 'bg-purple-500/20 text-purple-300 border-purple-500/30',
+  announcement: 'bg-yellow-500/20 text-yellow-300 border-yellow-500/30',
+  general: 'bg-gray-500/20 text-gray-300 border-gray-500/30',
+}
+
+export function getCategoryStyle(category: string | null | undefined): string {
+  return CATEGORY_STYLES[category || 'general'] || CATEGORY_STYLES.general
+}
+
+export function getCategoryLabel(category: string | null | undefined): string {
+  const found = TEMPLATE_CATEGORIES.find(c => c.value === category)
+  return found?.label || 'General'
+}

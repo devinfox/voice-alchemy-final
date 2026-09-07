@@ -2,6 +2,7 @@ import { createClient } from '@/lib/supabase-server'
 import { requireEmailAccess } from '@/lib/email-access-server'
 import { createClient as createServiceClient } from '@supabase/supabase-js'
 import { NextRequest, NextResponse } from 'next/server'
+import { isTriggerKey } from '@/lib/email-leads'
 
 // GET /api/email-funnels - List all funnels
 export async function GET(request: NextRequest) {
@@ -56,7 +57,10 @@ export async function POST(request: NextRequest) {
 
     const body = await request.json()
 
-    const { name, description, status, phases } = body
+    const { name, description, status, phases, trigger_key, audience_id } = body
+    if (trigger_key != null && trigger_key !== '' && !isTriggerKey(trigger_key)) {
+      return NextResponse.json({ error: 'Unknown trigger' }, { status: 400 })
+    }
 
     if (!name) {
       return NextResponse.json({ error: 'Name is required' }, { status: 400 })
@@ -75,6 +79,8 @@ export async function POST(request: NextRequest) {
         name,
         description: description || null,
         status: status || 'draft',
+        trigger_key: trigger_key || null,
+        audience_id: audience_id || null,
         created_by: profile.id,
       })
       .select()
@@ -82,6 +88,9 @@ export async function POST(request: NextRequest) {
 
     if (funnelError) {
       console.error('Error creating funnel:', funnelError)
+      if (funnelError.code === '23505') {
+        return NextResponse.json({ error: 'Another funnel already uses that trigger. Each trigger can only start one funnel.' }, { status: 409 })
+      }
       return NextResponse.json({ error: funnelError.message }, { status: 500 })
     }
 

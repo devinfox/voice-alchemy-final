@@ -8,7 +8,17 @@ interface Recipient {
   id: string
   first_name: string | null
   last_name: string | null
+  name: string | null
+  role: string | null
   email: string | null
+  /** 'lead' for website leads (email_leads); undefined for accounts */
+  kind?: 'lead'
+}
+
+const selectionKey = (r: Recipient) => `${r.kind === 'lead' ? 'lead' : 'student'}:${r.id}`
+
+function recipientName(r: Recipient): string {
+  return `${r.first_name || ''} ${r.last_name || ''}`.trim() || r.name || r.email || 'Unnamed'
 }
 
 interface SendTemplateModalProps {
@@ -22,66 +32,70 @@ export function SendTemplateModal({
   onClose,
   onSuccess,
 }: SendTemplateModalProps) {
-  const [leads, setLeads] = useState<Recipient[]>([])
+  const [recipients, setRecipients] = useState<Recipient[]>([])
+  const [includeStaff, setIncludeStaff] = useState(false)
+  const [includeLeads, setIncludeLeads] = useState(false)
   const [loading, setLoading] = useState(true)
   const [sending, setSending] = useState(false)
   const [searchQuery, setSearchQuery] = useState('')
-  const [selectedLeadIds, setSelectedLeadIds] = useState<string[]>([])
+  const [selectedIds, setSelectedIds] = useState<string[]>([])
   const [sendMode, setSendMode] = useState<'now' | 'schedule'>('now')
   const [scheduledDate, setScheduledDate] = useState('')
   const [scheduledTime, setScheduledTime] = useState('')
   const [error, setError] = useState<string | null>(null)
   const [successMessage, setSuccessMessage] = useState<string | null>(null)
 
-  // Fetch students/users with email addresses (VAAA has no CRM leads table)
+  // Students (or everyone) with an email address on file
   useEffect(() => {
-    async function fetchLeads() {
+    let cancelled = false
+    async function fetchRecipients() {
+      setLoading(true)
       try {
-        const response = await fetch('/api/students/list-for-email?hasEmail=true')
-        const result = await response.json()
-
-        if (response.ok && result.data) {
-          setLeads(result.data)
+        const params = new URLSearchParams({ hasEmail: 'true' })
+        if (!includeStaff) params.set('role', 'student')
+        const requests = [fetch(`/api/students/list-for-email?${params.toString()}`)]
+        // Website leads: people who left an email on the site but have no account
+        if (includeLeads) requests.push(fetch('/api/students/list-for-email?audience=leads'))
+        const responses = await Promise.all(requests)
+        const results = await Promise.all(responses.map((r) => r.json()))
+        if (!cancelled && responses.every((r) => r.ok)) {
+          setRecipients(results.flatMap((r) => (r.data as Recipient[]) || []))
         }
       } catch (err) {
         console.error('Error fetching recipients:', err)
-        setError('Failed to load recipients')
+        if (!cancelled) setError('Failed to load recipients')
       } finally {
-        setLoading(false)
+        if (!cancelled) setLoading(false)
       }
     }
+    fetchRecipients()
+    return () => {
+      cancelled = true
+    }
+  }, [includeStaff, includeLeads])
 
-    fetchLeads()
-  }, [])
-
-  const filteredLeads = searchQuery
-    ? leads.filter((l) => {
-        const name = `${l.first_name || ''} ${l.last_name || ''}`.toLowerCase()
-        const email = (l.email || '').toLowerCase()
+  const filteredRecipients = searchQuery
+    ? recipients.filter((r) => {
         const query = searchQuery.toLowerCase()
-        return name.includes(query) || email.includes(query)
+        return recipientName(r).toLowerCase().includes(query) || (r.email || '').toLowerCase().includes(query)
       })
-    : leads
+    : recipients
 
-  const toggleLead = (leadId: string) => {
-    setSelectedLeadIds((prev) =>
-      prev.includes(leadId)
-        ? prev.filter((id) => id !== leadId)
-        : [...prev, leadId]
-    )
+  const toggleRecipient = (key: string) => {
+    setSelectedIds((prev) => (prev.includes(key) ? prev.filter((x) => x !== key) : [...prev, key]))
   }
 
   const selectAll = () => {
-    setSelectedLeadIds(filteredLeads.map((l) => l.id))
+    setSelectedIds(filteredRecipients.map(selectionKey))
   }
 
   const deselectAll = () => {
-    setSelectedLeadIds([])
+    setSelectedIds([])
   }
 
   const handleSend = async () => {
-    if (selectedLeadIds.length === 0) {
-      setError('Please select at least one recipient')
+    if (selectedIds.length === 0) {
+      setError('Please select at least one student')
       return
     }
 
@@ -104,7 +118,8 @@ export function SendTemplateModal({
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           template_id: template.id,
-          lead_ids: selectedLeadIds,
+          student_ids: selectedIds.filter((k) => k.startsWith('student:')).map((k) => k.slice('student:'.length)),
+          website_lead_ids: selectedIds.filter((k) => k.startsWith('lead:')).map((k) => k.slice('lead:'.length)),
           scheduled_at: scheduledAt,
         }),
       })
@@ -116,10 +131,12 @@ export function SendTemplateModal({
         return
       }
 
-      const action = sendMode === 'schedule' ? 'scheduled' : 'sent'
-      setSuccessMessage(
-        `Successfully ${action} ${result.sent} email${result.sent > 1 ? 's' : ''}!`
-      )
+      const action = sendMode === 'schedule' ? 'Scheduled' : 'Sent'
+      const parts = [`${action} ${result.sent} email${result.sent === 1 ? '' : 's'}`]
+      if (result.failed) parts.push(`${result.failed} failed`)
+      if (result.skipped_no_email) parts.push(`${result.skipped_no_email} skipped (no email on file)`)
+      if (result.skipped_unsubscribed) parts.push(`${result.skipped_unsubscribed} skipped (unsubscribed)`)
+      setSuccessMessage(parts.join(' · '))
       setTimeout(() => {
         onSuccess()
       }, 1500)
@@ -255,11 +272,11 @@ export function SendTemplateModal({
                 </div>
               )}
 
-              {/* Lead Selection */}
+              {/* Recipient Selection */}
               <div>
                 <div className="flex items-center justify-between mb-3">
                   <label className="block text-sm font-medium text-gray-300">
-                    Select Recipients
+                    Select Students
                   </label>
                   <div className="flex items-center gap-2">
                     <button
@@ -278,37 +295,58 @@ export function SendTemplateModal({
                   </div>
                 </div>
 
-                {/* Search */}
-                <div className="relative mb-3">
-                  <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
-                  <input
-                    type="text"
-                    value={searchQuery}
-                    onChange={(e) => setSearchQuery(e.target.value)}
-                    placeholder="Search leads..."
-                    className="glass-input w-full pl-10 pr-4 py-2"
-                  />
+                {/* Search + audience */}
+                <div className="flex items-center gap-3 mb-3">
+                  <div className="relative flex-1">
+                    <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
+                    <input
+                      type="text"
+                      value={searchQuery}
+                      onChange={(e) => setSearchQuery(e.target.value)}
+                      placeholder="Search students..."
+                      className="glass-input w-full pl-10 pr-4 py-2"
+                    />
+                  </div>
+                  <label className="flex items-center gap-2 text-xs text-gray-400 whitespace-nowrap cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={includeStaff}
+                      onChange={(e) => setIncludeStaff(e.target.checked)}
+                      className="w-4 h-4 rounded border-white/20 bg-white/5"
+                    />
+                    Include teachers &amp; staff
+                  </label>
+                  <label className="flex items-center gap-2 text-xs text-gray-400 whitespace-nowrap cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={includeLeads}
+                      onChange={(e) => setIncludeLeads(e.target.checked)}
+                      className="w-4 h-4 rounded border-white/20 bg-white/5"
+                    />
+                    Website leads
+                  </label>
                 </div>
 
-                {/* Leads List */}
+                {/* Recipient list */}
                 {loading ? (
                   <div className="flex items-center justify-center py-8">
                     <Loader2 className="w-6 h-6 text-yellow-400 animate-spin" />
                   </div>
-                ) : filteredLeads.length === 0 ? (
+                ) : filteredRecipients.length === 0 ? (
                   <div className="text-center py-8">
                     <Users className="w-12 h-12 text-gray-500 mx-auto mb-3" />
-                    <p className="text-gray-400">No leads found with email addresses</p>
+                    <p className="text-gray-400">No students with an email address match</p>
                   </div>
                 ) : (
                   <div className="space-y-2 max-h-48 overflow-y-auto">
-                    {filteredLeads.map((lead) => {
-                      const isSelected = selectedLeadIds.includes(lead.id)
+                    {filteredRecipients.map((recipient) => {
+                      const key = selectionKey(recipient)
+                      const isSelected = selectedIds.includes(key)
 
                       return (
                         <button
-                          key={lead.id}
-                          onClick={() => toggleLead(lead.id)}
+                          key={key}
+                          onClick={() => toggleRecipient(key)}
                           className={`w-full text-left p-3 rounded-lg border transition-all ${
                             isSelected
                               ? 'border-yellow-500/50 bg-yellow-500/10'
@@ -327,12 +365,15 @@ export function SendTemplateModal({
                                 {isSelected && <Check className="w-3 h-3 text-black" />}
                               </div>
                               <div>
-                                <p className="font-medium text-white">
-                                  {lead.first_name} {lead.last_name}
-                                </p>
-                                <p className="text-xs text-gray-400">{lead.email}</p>
+                                <p className="font-medium text-white">{recipientName(recipient)}</p>
+                                <p className="text-xs text-gray-400">{recipient.email}</p>
                               </div>
                             </div>
+                            {recipient.role && recipient.role !== 'student' && (
+                              <span className="px-1.5 py-0.5 text-[10px] uppercase tracking-wide rounded bg-white/10 text-gray-300">
+                                {recipient.role}
+                              </span>
+                            )}
                           </div>
                         </button>
                       )
@@ -348,9 +389,9 @@ export function SendTemplateModal({
         {!successMessage && (
           <div className="flex items-center justify-between p-4 border-t border-white/10">
             <p className="text-sm text-gray-400">
-              {selectedLeadIds.length > 0
-                ? `${selectedLeadIds.length} recipient${selectedLeadIds.length > 1 ? 's' : ''} selected`
-                : 'Select recipients to send'}
+              {selectedIds.length > 0
+                ? `${selectedIds.length} student${selectedIds.length > 1 ? 's' : ''} selected`
+                : 'Select students to send to'}
             </p>
             <div className="flex items-center gap-3">
               <button
@@ -361,7 +402,7 @@ export function SendTemplateModal({
               </button>
               <button
                 onClick={handleSend}
-                disabled={sending || selectedLeadIds.length === 0}
+                disabled={sending || selectedIds.length === 0}
                 className="px-6 py-2 glass-button-gold rounded-lg font-medium disabled:opacity-50 flex items-center gap-2"
               >
                 {sending && <Loader2 className="w-4 h-4 animate-spin" />}

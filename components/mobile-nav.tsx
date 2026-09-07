@@ -32,6 +32,8 @@ interface NavItem {
   href: string
   icon: React.ComponentType<{ className?: string }>
   badge?: number
+  /** Sub-pages listed indented under this item */
+  children?: NavItem[]
 }
 
 // Teacher navigation
@@ -40,8 +42,12 @@ const teacherNavigation: NavItem[] = [
   { name: 'My Students', href: '/dashboard/students', icon: Users },
   { name: 'Training Center', href: '/dashboard/training-center', icon: Music },
   { name: 'Courses', href: '/dashboard/courses', icon: GraduationCap },
-  { name: 'Email', href: '/dashboard/email', icon: Mail },
-  { name: 'Email Templates', href: '/dashboard/email-templates', icon: FileText },
+  {
+    name: 'Email',
+    href: '/dashboard/email',
+    icon: Mail,
+    children: [{ name: 'Templates & Funnels', href: '/dashboard/email-templates', icon: FileText }],
+  },
   { name: 'Calendar', href: '/dashboard/calendar', icon: Calendar },
 ]
 
@@ -152,12 +158,13 @@ export function MobileNav({ user, userEmail }: MobileNavProps) {
 
             {/* Navigation Links */}
             <nav className="flex-1 space-y-1">
-              {navigation.map((item) => {
+              {navigation.flatMap((item) => [item, ...(item.children || []).map((c) => ({ ...c, nested: true }))]).map((item: NavItem & { nested?: boolean }) => {
                 const isActive = pathname === item.href || (item.href !== '/dashboard' && pathname.startsWith(item.href + '/'))
                 return (
                   <Link
                     key={item.name}
                     href={item.href}
+                    style={item.nested ? { marginLeft: '1.75rem' } : undefined}
                     onClick={() => setIsOpen(false)}
                     className={`flex items-center gap-3 px-3.5 py-3 rounded-2xl text-sm font-semibold transition-all ${
                       isActive

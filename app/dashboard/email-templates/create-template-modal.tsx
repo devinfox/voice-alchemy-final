@@ -5,6 +5,7 @@ import { createClient } from '@/lib/supabase'
 import { TEMPLATE_CATEGORIES } from '@/lib/email-variables'
 import { X, Eye } from 'lucide-react'
 import { EmailBuilder } from '@/components/email-builder/email-builder'
+import { TemplateVariablesHint } from './template-variables-hint'
 import { PreviewModal } from '@/components/email-builder/preview-modal'
 import { EmailBlock, EmailSettings } from '@/lib/email-builder-context'
 import { blocksToHtml } from '@/components/email-builder/utils/blocks-to-html'
@@ -28,6 +29,7 @@ export function CreateTemplateModal({
   const [formData, setFormData] = useState({
     name: '',
     subject: '',
+    preheader: '',
     description: '',
     category: 'general',
     is_active: true,
@@ -59,11 +61,12 @@ export function CreateTemplateModal({
 
     const supabase = createClient()
     const body = JSON.stringify(blocks)
-    const bodyHtml = blocksToHtml(blocks)
+    const bodyHtml = blocksToHtml(blocks, emailSettings)
 
     const { error: insertError } = await supabase.from('email_templates').insert({
       name: formData.name.trim(),
       subject: formData.subject.trim(),
+      preheader: formData.preheader.trim() || null,
       body: body,
       body_html: bodyHtml,
       description: formData.description.trim() || null,
@@ -137,7 +140,7 @@ export function CreateTemplateModal({
                     type="text"
                     value={formData.name}
                     onChange={(e) => setFormData({ ...formData, name: e.target.value })}
-                    placeholder="e.g., Welcome Email"
+                    placeholder="e.g., Welcome to Voice Alchemy Academy"
                     className="glass-input w-full px-3 py-2 text-sm"
                   />
                 </div>
@@ -149,7 +152,20 @@ export function CreateTemplateModal({
                     type="text"
                     value={formData.subject}
                     onChange={(e) => setFormData({ ...formData, subject: e.target.value })}
-                    placeholder="e.g., Welcome to Voice Alchemy Academy!"
+                    placeholder="e.g., Welcome to Voice Alchemy Academy, {{first_name}}"
+                    className="glass-input w-full px-3 py-2 text-sm"
+                  />
+                </div>
+                <div>
+                  <label className="block text-xs font-medium text-gray-400 mb-1.5">
+                    Preheader <span className="text-gray-600">(inbox preview text)</span>
+                  </label>
+                  <input
+                    type="text"
+                    value={formData.preheader}
+                    onChange={(e) => setFormData({ ...formData, preheader: e.target.value })}
+                    placeholder="Shown after the subject in the inbox list"
+                    maxLength={255}
                     className="glass-input w-full px-3 py-2 text-sm"
                   />
                 </div>
@@ -170,6 +186,8 @@ export function CreateTemplateModal({
                   </select>
                 </div>
               </div>
+
+              <TemplateVariablesHint />
             </div>
 
             {/* Email Builder */}

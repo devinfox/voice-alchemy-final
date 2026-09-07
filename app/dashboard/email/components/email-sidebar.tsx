@@ -19,6 +19,7 @@ import {
   Sparkles,
   RefreshCw,
   Clock,
+  FileText,
 } from 'lucide-react'
 import { SavedViewsList } from './saved-views-list'
 import { createClient } from '@/lib/supabase'
@@ -646,6 +647,13 @@ export function EmailSidebar({ userId, onCompose }: EmailSidebarProps) {
         >
           <Plus className="w-4 h-4 flex-shrink-0" />
           <span className="truncate font-medium">Add Domain</span>
+        </Link>
+        <Link
+          href="/dashboard/email-templates"
+          className="flex items-center gap-2.5 px-3 py-2 rounded-xl text-xs text-gray-500 hover:text-white hover:bg-white/[0.05] transition-all duration-200 border border-transparent hover:border-white/[0.06]"
+        >
+          <FileText className="w-4 h-4 flex-shrink-0" />
+          <span className="truncate font-medium">Templates &amp; Funnels</span>
         </Link>
         <Link
           href="/dashboard/email/settings"

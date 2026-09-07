@@ -21,6 +21,7 @@ import {
   RefreshCw,
   ChevronDown,
   ChevronRight,
+  FileText,
 } from 'lucide-react'
 import { createClient } from '@/lib/supabase'
 import { EmailAccount, EmailFolder } from '@/types/email.types'
@@ -374,6 +375,14 @@ export function EmailMobileWrapper({ userId, userEmail, children }: EmailMobileW
               {syncing ? 'Syncing...' : 'Sync Emails'}
             </button>
           )}
+          <Link
+            href="/dashboard/email-templates"
+            onClick={() => setSidebarOpen(false)}
+            className="flex items-center gap-2 px-3 py-2 rounded-lg text-sm text-gray-400 hover:bg-white/5 hover:text-white transition-all"
+          >
+            <FileText className="w-4 h-4" />
+            Templates &amp; Funnels
+          </Link>
           <Link
             href="/dashboard/email/settings"
             onClick={() => setSidebarOpen(false)}

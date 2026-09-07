@@ -1,34 +1,38 @@
-import { EmailBlock, EmailSettings, defaultEmailSettings } from '@/lib/email-builder-context'
+import { EmailBlock, EmailSettings, defaultEmailSettings } from '@/lib/email-builder-types'
 import { ensureReadableColor, ensureVisibleDivider, isLightColor } from './color-utils'
 
-// Generate dark mode CSS for email clients that support it
-function generateDarkModeCSS(settings: EmailSettings): string {
+// Color-scheme handling.
+//
+// A light design is sent as "light only": the header/footer are already ink
+// and the body copy carries inline colors, so letting a client flip the
+// container to dark makes the paragraphs vanish (dark text on dark). Apple
+// Mail and Outlook honour the meta tags; Gmail applies its own inversion
+// regardless, which handles inline colors itself.
+//
+// A dark design keeps the old behaviour: offer a light alternative.
+function colorSchemeMeta(settings: EmailSettings): string {
   const isLight = isLightColor(settings.contentBackgroundColor)
+  return isLight
+    ? `<meta name="color-scheme" content="light only">
+  <meta name="supported-color-schemes" content="light">`
+    : `<meta name="color-scheme" content="light dark">
+  <meta name="supported-color-schemes" content="light dark">`
+}
 
-  // If user designed in dark mode, provide light mode alternative and vice versa
+function generateColorSchemeCSS(settings: EmailSettings): string {
+  const isLight = isLightColor(settings.contentBackgroundColor)
   if (isLight) {
-    // User designed in light mode - provide dark mode styles
-    return `
-    @media (prefers-color-scheme: dark) {
-      .email-body { background-color: #1a1a1a !important; }
-      .email-container { background-color: #2d2d2d !important; }
-      .email-text { color: #f5f5f5 !important; }
-      .email-text-muted { color: #cccccc !important; }
-      .email-divider { border-color: #404040 !important; }
-    }
-    `
-  } else {
-    // User designed in dark mode - provide light mode styles
-    return `
+    return `:root { color-scheme: light only; }`
+  }
+  // User designed in dark mode - provide light mode styles
+  return `:root { color-scheme: light dark; }
     @media (prefers-color-scheme: light) {
       .email-body { background-color: #f5f5f5 !important; }
       .email-container { background-color: #ffffff !important; }
       .email-text { color: #333333 !important; }
       .email-text-muted { color: #666666 !important; }
       .email-divider { border-color: #e0e0e0 !important; }
-    }
-    `
-  }
+    }`
 }
 
 // Convert blocks to email-safe HTML with inline styles
@@ -36,7 +40,7 @@ export function blocksToHtml(blocks: EmailBlock[], settings?: EmailSettings): st
   const emailSettings = settings || defaultEmailSettings
   const contentBg = emailSettings.contentBackgroundColor
   const bodyContent = blocks.map(block => blockToHtml(block, contentBg)).join('')
-  const darkModeCSS = generateDarkModeCSS(emailSettings)
+  const colorSchemeCSS = generateColorSchemeCSS(emailSettings)
 
   return `
 <!DOCTYPE html>
@@ -44,13 +48,11 @@ export function blocksToHtml(blocks: EmailBlock[], settings?: EmailSettings): st
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <meta name="color-scheme" content="light dark">
-  <meta name="supported-color-schemes" content="light dark">
+  ${colorSchemeMeta(emailSettings)}
   <title>Email</title>
   <style>
-    /* Dark mode support for email clients */
-    :root { color-scheme: light dark; }
-    ${darkModeCSS}
+    /* Color scheme: light designs are sent light-only (see colorSchemeMeta) */
+    ${colorSchemeCSS}
   </style>
   <!--[if mso]>
   <style type="text/css">

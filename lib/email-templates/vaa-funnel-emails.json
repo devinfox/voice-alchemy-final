@@ -1,0 +1,2665 @@
+{
+  "roles": {
+    "students": {
+      "title": "Students",
+      "kicker": "Free app accounts",
+      "goal": "Get a new singer to sing one note in Pitch Perfect, turn that into a small habit, then show the deeper layer (coaching feedback, courses, mentorship) only after they have felt value.",
+      "trigger": "Student account created in the app.",
+      "audience": "Self-taught singers and artists who do not know if they are actually improving.",
+      "cta_note": "Gold buttons. Every CTA lands inside the app."
+    },
+    "leads": {
+      "title": "Student Leads",
+      "kicker": "Email captured, no account yet",
+      "goal": "Deliver the pitch guide the website already promises, teach one thing, then convert the reader into a free account. Three emails, then stop.",
+      "trigger": "Email submitted through the exit-intent popup or the footer form without creating an account.",
+      "audience": "Visitors who were curious but not ready to sign up.",
+      "cta_note": "Gold buttons. Every CTA goes to student signup. If they create an account, move them to the Students track and stop this one."
+    },
+    "teachers": {
+      "title": "Teachers & Studios",
+      "kicker": "Platform demo requests",
+      "goal": "Turn a demo request into a booked walkthrough, then into a three-student pilot, and close the loop cleanly when a coach goes quiet. Concierge tone, sold through the coach's own workflow pain.",
+      "trigger": "Teacher demo form submitted on the website (or a teacher email captured without a demo request).",
+      "audience": "Independent vocal coaches and studio owners whose students say they practiced, but who cannot see what actually happened.",
+      "cta_note": "Violet buttons. CTAs go to the scheduler, the playbook, or a reply to Julia."
+    },
+    "mentorship": {
+      "title": "Mentorship Applicants",
+      "kicker": "Voice Applications",
+      "goal": "Confirm the application, keep the applicant warm inside the free app until Julia replies, then handle both outcomes (a seat, or not this semester) with the same care. This is the only paid product today, so it gets the most personal treatment.",
+      "trigger": "Voice Application submitted on /mentorship, or started and abandoned.",
+      "audience": "Adults ready to invest a semester in one-on-one work with the founder.",
+      "cta_note": "Gold buttons. Founder voice, first person where possible. Emails 3 and 4 are sent by hand from the CRM."
+    }
+  },
+  "emails": [
+    {
+      "key": "students-1",
+      "role": "students",
+      "n": 1,
+      "name": "Welcome / First Note",
+      "timing": "Immediately after the student account is created",
+      "subject": "Your voice is ready to become visible",
+      "preheader": "Start with one note. No special mic, no pressure.",
+      "cta": "Open Pitch Perfect",
+      "landing": "App → Training Center → Pitch Perfect",
+      "why": "The first email has one job: get the singer to sing a single note into Pitch Perfect and watch the needle move. Everything else (streaks, scales, courses, mentorship) only matters after that first visual proof. Do not list features here. The screenshot shows the tool actually listening so they know what they will see.",
+      "ship_first": true,
+      "assets": [
+        "logo.png",
+        "pitch_perfect_session.webp"
+      ],
+      "blocks": [
+        {
+          "type": "header",
+          "note": "Ink background, VAA gold logo",
+          "properties": {
+            "logoUrl": "{{IMAGE_BASE}}/logo.png",
+            "companyName": "Voice Alchemy Academy",
+            "bgColor": "#0b0817",
+            "textColor": "#ceb466",
+            "padding": 28,
+            "align": "center"
+          }
+        },
+        {
+          "type": "text",
+          "note": "Eyebrow + headline + welcome copy (one rich-text block)",
+          "properties": {
+            "content": "<p style=\"margin:0 0 10px 0;font-size:12px;letter-spacing:2px;text-transform:uppercase;color:#a88f46;font-weight:bold\">Welcome to Voice Alchemy</p><p style=\"margin:0 0 14px 0;font-family:Georgia, 'Times New Roman', serif;font-size:30px;line-height:1.15;color:#0b0817\">Start with one note.</p><p style=\"margin:0 0 14px 0;font-size:16px;line-height:1.6;color:#2D2D2D\">Hi {{first_name}},</p><p style=\"margin:0 0 14px 0;font-size:16px;line-height:1.6;color:#2D2D2D\">The fastest way to understand Voice Alchemy is simple: open Pitch Perfect, tap Start Mic, sing a comfortable note, and watch where your voice actually lands.</p><p style=\"margin:0;font-size:16px;line-height:1.6;color:#2D2D2D\">No special microphone. No perfect warm-up. Just one note, one clear needle, and a little more truth than your ears can give you on their own.</p>",
+            "align": "left",
+            "padding": 32,
+            "fontSize": 16,
+            "color": "#2D2D2D"
+          }
+        },
+        {
+          "type": "image",
+          "note": "Pitch Perfect mid-session (wheel view), full-bleed",
+          "properties": {
+            "src": "{{IMAGE_BASE}}/email/pitch_perfect_session.webp",
+            "alt": "Pitch Perfect mid-session: target C4 matched at +3 cents, 91% target accuracy",
+            "width": 100,
+            "align": "center",
+            "padding": 0,
+            "link": ""
+          }
+        },
+        {
+          "type": "text",
+          "note": "Tip card: gold label + one instruction",
+          "properties": {
+            "content": "<p style=\"margin:0 0 6px 0;font-size:12px;letter-spacing:2px;text-transform:uppercase;color:#a88f46;font-weight:bold\">Try this today</p><p style=\"margin:0;font-size:16px;line-height:1.6;color:#2D2D2D\">Sing one note for five seconds. Breathe. Sing it again. Watch whether the needle settles closer to the center the second time.</p>",
+            "align": "left",
+            "padding": 32,
+            "fontSize": 16,
+            "color": "#2D2D2D"
+          }
+        },
+        {
+          "type": "button",
+          "note": "Gold pill button (student)",
+          "properties": {
+            "text": "Open Pitch Perfect",
+            "url": "https://voicealchemyacademy.app/dashboard/training-center",
+            "bgColor": "#ceb466",
+            "textColor": "#0b0817",
+            "align": "center",
+            "borderRadius": 999,
+            "padding": 24,
+            "fontSize": 16,
+            "fullWidth": false
+          }
+        },
+        {
+          "type": "divider",
+          "note": "Divider",
+          "properties": {
+            "color": "#E4E1EA",
+            "thickness": 1,
+            "width": 84,
+            "style": "solid",
+            "padding": 8
+          }
+        },
+        {
+          "type": "text",
+          "note": "Muted reassurance line",
+          "properties": {
+            "content": "<p style=\"margin:0;font-size:13px;line-height:1.5;color:#6F6A7A\">Your free tools are ready any time you are. Pitch Perfect, Scale Trainer and Rhythm Trainer all live in your Training Center.</p>",
+            "align": "center",
+            "padding": 20,
+            "fontSize": 16,
+            "color": "#2D2D2D"
+          }
+        },
+        {
+          "type": "footer",
+          "note": "Ink footer, Instagram + unsubscribe",
+          "properties": {
+            "text": "Voice Alchemy Academy &middot; hello@voicealchemyacademy.com<br><span style=\"color:#8A8399\">You are receiving this because you created a Voice Alchemy Academy account.</span>",
+            "showSocial": true,
+            "socialLinks": [
+              {
+                "name": "Instagram",
+                "url": "https://instagram.com/VoiceAlchemyAcademy"
+              },
+              {
+                "name": "voicealchemyacademy.com",
+                "url": "https://voicealchemyacademy.com"
+              }
+            ],
+            "unsubscribeUrl": "{{unsubscribe_url}}",
+            "bgColor": "#120d24",
+            "textColor": "#B7B0C7",
+            "padding": 28
+          }
+        }
+      ]
+    },
+    {
+      "key": "students-2",
+      "role": "students",
+      "n": 2,
+      "name": "Habit Builder / 30-Second Check",
+      "timing": "Day 2",
+      "subject": "The 30-second practice that tells you a lot",
+      "preheader": "A tiny check-in before your next song.",
+      "cta": "Do the 30-second check",
+      "landing": "App → Training Center",
+      "why": "Most new singers never come back for session two because they think practice has to be long. This shrinks the habit to something they can do between songs on a commute. Two steps, one screenshot of the whole Training Center so they see there is more than pitch, one button.",
+      "ship_first": true,
+      "assets": [
+        "logo.png",
+        "student_training_overview.webp"
+      ],
+      "blocks": [
+        {
+          "type": "header",
+          "note": "Ink background, VAA gold logo",
+          "properties": {
+            "logoUrl": "{{IMAGE_BASE}}/logo.png",
+            "companyName": "Voice Alchemy Academy",
+            "bgColor": "#0b0817",
+            "textColor": "#ceb466",
+            "padding": 28,
+            "align": "center"
+          }
+        },
+        {
+          "type": "text",
+          "note": "Eyebrow + headline + intro",
+          "properties": {
+            "content": "<p style=\"margin:0 0 10px 0;font-size:12px;letter-spacing:2px;text-transform:uppercase;color:#a88f46;font-weight:bold\">Day 2 &middot; Build the habit</p><p style=\"margin:0 0 14px 0;font-family:Georgia, 'Times New Roman', serif;font-size:30px;line-height:1.15;color:#0b0817\">Give your voice 30 seconds.</p><p style=\"margin:0;font-size:16px;line-height:1.6;color:#2D2D2D\">You do not need a long practice session to learn something useful today. Small sessions teach your voice that showing up can be easy.</p>",
+            "align": "left",
+            "padding": 32,
+            "fontSize": 16,
+            "color": "#2D2D2D"
+          }
+        },
+        {
+          "type": "columns",
+          "note": "Two columns: Step 1 / Step 2",
+          "properties": {
+            "columnCount": 2,
+            "columnWidths": [
+              50,
+              50
+            ],
+            "gap": 20,
+            "padding": 24,
+            "showDivider": true,
+            "dividerColor": "#E4E1EA",
+            "dividerThickness": 1,
+            "columnContent": [
+              {
+                "type": "text",
+                "content": "<p style=\"margin:0 0 6px 0;font-size:12px;letter-spacing:2px;text-transform:uppercase;color:#a88f46;font-weight:bold\">Step 1</p><p style=\"margin:0;font-size:15px;line-height:1.6;color:#2D2D2D\">Open Pitch Perfect and hold a few comfortable notes. Watch the needle settle.</p>",
+                "align": "left",
+                "fontSize": 15,
+                "color": "#2D2D2D",
+                "src": "",
+                "alt": "",
+                "width": 100
+              },
+              {
+                "type": "text",
+                "content": "<p style=\"margin:0 0 6px 0;font-size:12px;letter-spacing:2px;text-transform:uppercase;color:#a88f46;font-weight:bold\">Step 2</p><p style=\"margin:0;font-size:15px;line-height:1.6;color:#2D2D2D\">Tap into Scales or Rhythm for one quick round. That is enough to keep the thread alive.</p>",
+                "align": "left",
+                "fontSize": 15,
+                "color": "#2D2D2D",
+                "src": "",
+                "alt": "",
+                "width": 100
+              }
+            ]
+          }
+        },
+        {
+          "type": "image",
+          "note": "Full-bleed screenshot",
+          "properties": {
+            "src": "{{IMAGE_BASE}}/email/student_training_overview.webp",
+            "alt": "Training Center overview with streaks and scores",
+            "width": 100,
+            "align": "center",
+            "padding": 0,
+            "link": ""
+          }
+        },
+        {
+          "type": "button",
+          "note": "Gold pill button",
+          "properties": {
+            "text": "Do the 30-second check",
+            "url": "https://voicealchemyacademy.app/dashboard/training-center",
+            "bgColor": "#ceb466",
+            "textColor": "#0b0817",
+            "align": "center",
+            "borderRadius": 999,
+            "padding": 24,
+            "fontSize": 16,
+            "fullWidth": false
+          }
+        },
+        {
+          "type": "divider",
+          "note": "Divider",
+          "properties": {
+            "color": "#E4E1EA",
+            "thickness": 1,
+            "width": 84,
+            "style": "solid",
+            "padding": 8
+          }
+        },
+        {
+          "type": "text",
+          "note": "Muted closing line",
+          "properties": {
+            "content": "<p style=\"margin:0;font-size:13px;line-height:1.5;color:#6F6A7A\">One small practice is better than waiting for the perfect practice.</p>",
+            "align": "center",
+            "padding": 20,
+            "fontSize": 16,
+            "color": "#2D2D2D"
+          }
+        },
+        {
+          "type": "footer",
+          "note": "Ink footer, Instagram + unsubscribe",
+          "properties": {
+            "text": "Voice Alchemy Academy &middot; hello@voicealchemyacademy.com<br><span style=\"color:#8A8399\">You are receiving this because you created a Voice Alchemy Academy account.</span>",
+            "showSocial": true,
+            "socialLinks": [
+              {
+                "name": "Instagram",
+                "url": "https://instagram.com/VoiceAlchemyAcademy"
+              },
+              {
+                "name": "voicealchemyacademy.com",
+                "url": "https://voicealchemyacademy.com"
+              }
+            ],
+            "unsubscribeUrl": "{{unsubscribe_url}}",
+            "bgColor": "#120d24",
+            "textColor": "#B7B0C7",
+            "padding": 28
+          }
+        }
+      ]
+    },
+    {
+      "key": "students-3",
+      "role": "students",
+      "n": 3,
+      "name": "Scales + Rhythm Expansion",
+      "timing": "Day 5",
+      "subject": "Your pitch is only one part of the picture",
+      "preheader": "Try scales and rhythm next.",
+      "cta": "Try scales and rhythm",
+      "landing": "App → Training Center",
+      "why": "Once pitch makes sense, the app should feel bigger. Introducing the other two free trainers makes the product stickier and sets up the idea that practice can be measured, which is the bridge to courses and mentorship later. Both screenshots show the trainers mid-session so the copy can stay short.",
+      "ship_first": false,
+      "assets": [
+        "logo.png",
+        "scale_trainer_session.webp",
+        "rhythm_trainer_session.webp"
+      ],
+      "blocks": [
+        {
+          "type": "header",
+          "note": "Ink background, VAA gold logo",
+          "properties": {
+            "logoUrl": "{{IMAGE_BASE}}/logo.png",
+            "companyName": "Voice Alchemy Academy",
+            "bgColor": "#0b0817",
+            "textColor": "#ceb466",
+            "padding": 28,
+            "align": "center"
+          }
+        },
+        {
+          "type": "text",
+          "note": "Eyebrow + headline + intro",
+          "properties": {
+            "content": "<p style=\"margin:0 0 10px 0;font-size:12px;letter-spacing:2px;text-transform:uppercase;color:#a88f46;font-weight:bold\">Day 5 &middot; Two more free tools</p><p style=\"margin:0 0 14px 0;font-family:Georgia, 'Times New Roman', serif;font-size:30px;line-height:1.15;color:#0b0817\">Now train the parts around the note.</p><p style=\"margin:0;font-size:16px;line-height:1.6;color:#2D2D2D\">Pitch matters. So does finding the next note cleanly, keeping time, and staying steady when the pattern changes.</p>",
+            "align": "left",
+            "padding": 32,
+            "fontSize": 16,
+            "color": "#2D2D2D"
+          }
+        },
+        {
+          "type": "columns",
+          "note": "Two columns: Scale Trainer / Rhythm Trainer in use",
+          "properties": {
+            "columnCount": 2,
+            "columnWidths": [
+              50,
+              50
+            ],
+            "gap": 12,
+            "padding": 24,
+            "showDivider": false,
+            "dividerColor": "#E4E1EA",
+            "dividerThickness": 1,
+            "columnContent": [
+              {
+                "type": "image",
+                "content": "",
+                "align": "center",
+                "fontSize": 16,
+                "color": "#2D2D2D",
+                "src": "{{IMAGE_BASE}}/email/scale_trainer_session.webp",
+                "alt": "Scale Trainer mid-practice: four notes passed, G4 next, 97% overall",
+                "width": 100
+              },
+              {
+                "type": "image",
+                "content": "",
+                "align": "center",
+                "fontSize": 16,
+                "color": "#2D2D2D",
+                "src": "{{IMAGE_BASE}}/email/rhythm_trainer_session.webp",
+                "alt": "Rhythm Trainer at 90 BPM: 14 on-beat taps, 78% accuracy, best streak 9",
+                "width": 100
+              }
+            ]
+          }
+        },
+        {
+          "type": "columns",
+          "note": "Two columns: explainer text under each screenshot",
+          "properties": {
+            "columnCount": 2,
+            "columnWidths": [
+              50,
+              50
+            ],
+            "gap": 20,
+            "padding": 24,
+            "showDivider": false,
+            "dividerColor": "#E4E1EA",
+            "dividerThickness": 1,
+            "columnContent": [
+              {
+                "type": "text",
+                "content": "<p style=\"margin:0 0 6px 0;font-size:12px;letter-spacing:2px;text-transform:uppercase;color:#a88f46;font-weight:bold\">Scale Trainer</p><p style=\"margin:0;font-size:15px;line-height:1.6;color:#2D2D2D\">Use it when you want accuracy. Each note lights green when you hold it, and every step is scored.</p>",
+                "align": "left",
+                "fontSize": 15,
+                "color": "#2D2D2D",
+                "src": "",
+                "alt": "",
+                "width": 100
+              },
+              {
+                "type": "text",
+                "content": "<p style=\"margin:0 0 6px 0;font-size:12px;letter-spacing:2px;text-transform:uppercase;color:#a88f46;font-weight:bold\">Rhythm Trainer</p><p style=\"margin:0;font-size:15px;line-height:1.6;color:#2D2D2D\">Use it when you want timing. Tap along and see whether you rush or drag on every beat.</p>",
+                "align": "left",
+                "fontSize": 15,
+                "color": "#2D2D2D",
+                "src": "",
+                "alt": "",
+                "width": 100
+              }
+            ]
+          }
+        },
+        {
+          "type": "button",
+          "note": "Gold pill button",
+          "properties": {
+            "text": "Try scales and rhythm",
+            "url": "https://voicealchemyacademy.app/dashboard/training-center",
+            "bgColor": "#ceb466",
+            "textColor": "#0b0817",
+            "align": "center",
+            "borderRadius": 999,
+            "padding": 24,
+            "fontSize": 16,
+            "fullWidth": false
+          }
+        },
+        {
+          "type": "divider",
+          "note": "Divider",
+          "properties": {
+            "color": "#E4E1EA",
+            "thickness": 1,
+            "width": 84,
+            "style": "solid",
+            "padding": 8
+          }
+        },
+        {
+          "type": "text",
+          "note": "Muted closing line",
+          "properties": {
+            "content": "<p style=\"margin:0;font-size:13px;line-height:1.5;color:#6F6A7A\">Together, they turn practice into something you can actually measure.</p>",
+            "align": "center",
+            "padding": 20,
+            "fontSize": 16,
+            "color": "#2D2D2D"
+          }
+        },
+        {
+          "type": "footer",
+          "note": "Ink footer, Instagram + unsubscribe",
+          "properties": {
+            "text": "Voice Alchemy Academy &middot; hello@voicealchemyacademy.com<br><span style=\"color:#8A8399\">You are receiving this because you created a Voice Alchemy Academy account.</span>",
+            "showSocial": true,
+            "socialLinks": [
+              {
+                "name": "Instagram",
+                "url": "https://instagram.com/VoiceAlchemyAcademy"
+              },
+              {
+                "name": "voicealchemyacademy.com",
+                "url": "https://voicealchemyacademy.com"
+              }
+            ],
+            "unsubscribeUrl": "{{unsubscribe_url}}",
+            "bgColor": "#120d24",
+            "textColor": "#B7B0C7",
+            "padding": 28
+          }
+        }
+      ]
+    },
+    {
+      "key": "students-4",
+      "role": "students",
+      "n": 4,
+      "name": "Upgrade Path / Next Layer",
+      "timing": "Day 10, only if the student has practiced at least once",
+      "subject": "When you want more than numbers",
+      "preheader": "Your practice data can become a plan.",
+      "cta": "See 1:1 mentorship",
+      "landing": "voicealchemyacademy.app/mentorship (courses linked in body)",
+      "why": "Nothing in the app can be bought today except mentorship with Julia, so the upgrade email points there. It only lands after the singer has felt value from the free tools. The tone is an invitation, never a paywall.",
+      "ship_first": false,
+      "assets": [
+        "logo.png",
+        "ai_coach_card.webp"
+      ],
+      "blocks": [
+        {
+          "type": "header",
+          "note": "Ink background, VAA gold logo",
+          "properties": {
+            "logoUrl": "{{IMAGE_BASE}}/logo.png",
+            "companyName": "Voice Alchemy Academy",
+            "bgColor": "#0b0817",
+            "textColor": "#ceb466",
+            "padding": 28,
+            "align": "center"
+          }
+        },
+        {
+          "type": "text",
+          "note": "Eyebrow + headline + intro",
+          "properties": {
+            "content": "<p style=\"margin:0 0 10px 0;font-size:12px;letter-spacing:2px;text-transform:uppercase;color:#a88f46;font-weight:bold\">Day 10 &middot; The next layer</p><p style=\"margin:0 0 14px 0;font-family:Georgia, 'Times New Roman', serif;font-size:30px;line-height:1.15;color:#0b0817\">Your practice can become a plan.</p><p style=\"margin:0 0 14px 0;font-size:16px;line-height:1.6;color:#2D2D2D\">Once you can see what your voice is doing, the next question is: what should I work on next?</p><p style=\"margin:0;font-size:16px;line-height:1.6;color:#2D2D2D\">That is where the deeper side of Voice Alchemy opens up: guided courses, coaching feedback that reads your practice data, lesson notes, and one-on-one mentorship with Julia for singers who want real structure.</p>",
+            "align": "left",
+            "padding": 32,
+            "fontSize": 16,
+            "color": "#2D2D2D"
+          }
+        },
+        {
+          "type": "image",
+          "note": "Full-bleed screenshot",
+          "properties": {
+            "src": "{{IMAGE_BASE}}/email/ai_coach_card.webp",
+            "alt": "AI coach feedback card reading practice data",
+            "width": 100,
+            "align": "center",
+            "padding": 0,
+            "link": ""
+          }
+        },
+        {
+          "type": "columns",
+          "note": "Three columns: Coach feedback / Courses / Mentorship",
+          "properties": {
+            "columnCount": 3,
+            "columnWidths": [
+              33,
+              33,
+              33
+            ],
+            "gap": 16,
+            "padding": 24,
+            "showDivider": false,
+            "dividerColor": "#E4E1EA",
+            "dividerThickness": 1,
+            "columnContent": [
+              {
+                "type": "text",
+                "content": "<p style=\"margin:0 0 6px 0;font-size:12px;letter-spacing:2px;text-transform:uppercase;color:#a88f46;font-weight:bold\">Coach feedback</p><p style=\"margin:0;font-size:14px;line-height:1.6;color:#2D2D2D\">Strengths, focus areas and three drills, drawn from your real sessions.</p>",
+                "align": "left",
+                "fontSize": 15,
+                "color": "#2D2D2D",
+                "src": "",
+                "alt": "",
+                "width": 100
+              },
+              {
+                "type": "text",
+                "content": "<p style=\"margin:0 0 6px 0;font-size:12px;letter-spacing:2px;text-transform:uppercase;color:#a88f46;font-weight:bold\">Courses</p><p style=\"margin:0;font-size:14px;line-height:1.6;color:#2D2D2D\">A structured curriculum instead of a pile of videos.</p>",
+                "align": "left",
+                "fontSize": 15,
+                "color": "#2D2D2D",
+                "src": "",
+                "alt": "",
+                "width": 100
+              },
+              {
+                "type": "text",
+                "content": "<p style=\"margin:0 0 6px 0;font-size:12px;letter-spacing:2px;text-transform:uppercase;color:#a88f46;font-weight:bold\">Mentorship</p><p style=\"margin:0;font-size:14px;line-height:1.6;color:#2D2D2D\">A semester of live 1:1 lessons with the founder, inside the app.</p>",
+                "align": "left",
+                "fontSize": 15,
+                "color": "#2D2D2D",
+                "src": "",
+                "alt": "",
+                "width": 100
+              }
+            ]
+          }
+        },
+        {
+          "type": "button",
+          "note": "Gold pill button",
+          "properties": {
+            "text": "See 1:1 mentorship",
+            "url": "https://voicealchemyacademy.app/mentorship",
+            "bgColor": "#ceb466",
+            "textColor": "#0b0817",
+            "align": "center",
+            "borderRadius": 999,
+            "padding": 24,
+            "fontSize": 16,
+            "fullWidth": false
+          }
+        },
+        {
+          "type": "text",
+          "note": "Muted line with secondary courses link",
+          "properties": {
+            "content": "<p style=\"margin:0;font-size:13px;line-height:1.5;color:#6F6A7A\">Keep using the free tools as your base. When you want a clearer path, the rest of the academy is here. <a href=\"https://voicealchemyacademy.app/dashboard/courses\" style=\"color:#a88f46\">Browse courses</a>.</p>",
+            "align": "center",
+            "padding": 20,
+            "fontSize": 16,
+            "color": "#2D2D2D"
+          }
+        },
+        {
+          "type": "footer",
+          "note": "Ink footer, Instagram + unsubscribe",
+          "properties": {
+            "text": "Voice Alchemy Academy &middot; hello@voicealchemyacademy.com<br><span style=\"color:#8A8399\">Train first. Upgrade when you want deeper guidance.</span>",
+            "showSocial": true,
+            "socialLinks": [
+              {
+                "name": "Instagram",
+                "url": "https://instagram.com/VoiceAlchemyAcademy"
+              },
+              {
+                "name": "voicealchemyacademy.com",
+                "url": "https://voicealchemyacademy.com"
+              }
+            ],
+            "unsubscribeUrl": "{{unsubscribe_url}}",
+            "bgColor": "#120d24",
+            "textColor": "#B7B0C7",
+            "padding": 28
+          }
+        }
+      ]
+    },
+    {
+      "key": "students-5",
+      "role": "students",
+      "n": 5,
+      "name": "Re-engagement / One Note",
+      "timing": "7 days with no app activity (repeat once at 14 days)",
+      "subject": "Come back for one note",
+      "preheader": "No big restart needed.",
+      "cta": "Sing one note",
+      "landing": "App → Training Center → Pitch Perfect",
+      "why": "Lapsed singers feel guilty, and guilt keeps them away. This removes the drama: one comfortable note is enough to restart. Short, kind, the tool they already know shown listening, one button. No streak shaming, no feature list.",
+      "ship_first": false,
+      "assets": [
+        "logo.png",
+        "pitch_perfect_session.webp"
+      ],
+      "blocks": [
+        {
+          "type": "header",
+          "note": "Ink background, VAA gold logo",
+          "properties": {
+            "logoUrl": "{{IMAGE_BASE}}/logo.png",
+            "companyName": "Voice Alchemy Academy",
+            "bgColor": "#0b0817",
+            "textColor": "#ceb466",
+            "padding": 28,
+            "align": "center"
+          }
+        },
+        {
+          "type": "text",
+          "note": "Eyebrow + headline + copy",
+          "properties": {
+            "content": "<p style=\"margin:0 0 10px 0;font-size:12px;letter-spacing:2px;text-transform:uppercase;color:#a88f46;font-weight:bold\">A gentle nudge</p><p style=\"margin:0 0 14px 0;font-family:Georgia, 'Times New Roman', serif;font-size:30px;line-height:1.15;color:#0b0817\">No big restart.</p><p style=\"margin:0 0 14px 0;font-size:16px;line-height:1.6;color:#2D2D2D\">If practice slipped for a few days, you do not have to make it dramatic.</p><p style=\"margin:0;font-size:16px;line-height:1.6;color:#2D2D2D\">Open Pitch Perfect. Sing one comfortable note. Let that be enough to restart the thread. Momentum usually comes after the first tiny action, not before it.</p>",
+            "align": "left",
+            "padding": 32,
+            "fontSize": 16,
+            "color": "#2D2D2D"
+          }
+        },
+        {
+          "type": "image",
+          "note": "Pitch Perfect mid-session (keyboard view), full-bleed",
+          "properties": {
+            "src": "{{IMAGE_BASE}}/email/pitch_perfect_keyboard_session.webp",
+            "alt": "Pitch Perfect keyboard view mid-session, C4 matched",
+            "width": 100,
+            "align": "center",
+            "padding": 0,
+            "link": ""
+          }
+        },
+        {
+          "type": "button",
+          "note": "Gold pill button",
+          "properties": {
+            "text": "Sing one note",
+            "url": "https://voicealchemyacademy.app/dashboard/training-center",
+            "bgColor": "#ceb466",
+            "textColor": "#0b0817",
+            "align": "center",
+            "borderRadius": 999,
+            "padding": 24,
+            "fontSize": 16,
+            "fullWidth": false
+          }
+        },
+        {
+          "type": "divider",
+          "note": "Divider",
+          "properties": {
+            "color": "#E4E1EA",
+            "thickness": 1,
+            "width": 84,
+            "style": "solid",
+            "padding": 8
+          }
+        },
+        {
+          "type": "text",
+          "note": "Muted closing line",
+          "properties": {
+            "content": "<p style=\"margin:0;font-size:13px;line-height:1.5;color:#6F6A7A\">Your tools are still there when you are ready.</p>",
+            "align": "center",
+            "padding": 20,
+            "fontSize": 16,
+            "color": "#2D2D2D"
+          }
+        },
+        {
+          "type": "footer",
+          "note": "Ink footer, Instagram + unsubscribe",
+          "properties": {
+            "text": "Voice Alchemy Academy &middot; hello@voicealchemyacademy.com<br><span style=\"color:#8A8399\">You are receiving this because you created a Voice Alchemy Academy account.</span>",
+            "showSocial": true,
+            "socialLinks": [
+              {
+                "name": "Instagram",
+                "url": "https://instagram.com/VoiceAlchemyAcademy"
+              },
+              {
+                "name": "voicealchemyacademy.com",
+                "url": "https://voicealchemyacademy.com"
+              }
+            ],
+            "unsubscribeUrl": "{{unsubscribe_url}}",
+            "bgColor": "#120d24",
+            "textColor": "#B7B0C7",
+            "padding": 28
+          }
+        }
+      ]
+    },
+    {
+      "key": "leads-1",
+      "role": "leads",
+      "n": 1,
+      "name": "Pitch Guide Delivery",
+      "timing": "Immediately after the email is captured (exit-intent or footer form)",
+      "subject": "Your pitch guide is here",
+      "preheader": "The 3 pitch mistakes almost every self-taught singer makes.",
+      "cta": "Read the guide",
+      "landing": "Hosted PDF (needs to be written), then student signup",
+      "why": "The website's exit-intent popup already promises this guide, and today nothing delivers it. This email keeps that promise and immediately offers a way to test the problem on their own voice. Every email in this track points back to account creation, never to another article.",
+      "ship_first": false,
+      "assets": [
+        "logo.png",
+        "pitch_perfect_session.webp"
+      ],
+      "blocks": [
+        {
+          "type": "header",
+          "note": "Ink background, VAA gold logo",
+          "properties": {
+            "logoUrl": "{{IMAGE_BASE}}/logo.png",
+            "companyName": "Voice Alchemy Academy",
+            "bgColor": "#0b0817",
+            "textColor": "#ceb466",
+            "padding": 28,
+            "align": "center"
+          }
+        },
+        {
+          "type": "text",
+          "note": "Eyebrow + headline + delivery copy",
+          "properties": {
+            "content": "<p style=\"margin:0 0 10px 0;font-size:12px;letter-spacing:2px;text-transform:uppercase;color:#a88f46;font-weight:bold\">Your free guide</p><p style=\"margin:0 0 14px 0;font-family:Georgia, 'Times New Roman', serif;font-size:30px;line-height:1.15;color:#0b0817\">The 3 pitch mistakes almost every self-taught singer makes.</p><p style=\"margin:0 0 14px 0;font-size:16px;line-height:1.6;color:#2D2D2D\">Hi {{first_name}},</p><p style=\"margin:0;font-size:16px;line-height:1.6;color:#2D2D2D\">Here is the guide you asked for. It is short on purpose: three habits that make singers sound less in tune than they are, and one exercise for each.</p>",
+            "align": "left",
+            "padding": 32,
+            "fontSize": 16,
+            "color": "#2D2D2D"
+          }
+        },
+        {
+          "type": "button",
+          "note": "Gold pill button: PDF",
+          "properties": {
+            "text": "Read the guide",
+            "url": "#PITCH_GUIDE_PDF",
+            "bgColor": "#ceb466",
+            "textColor": "#0b0817",
+            "align": "center",
+            "borderRadius": 999,
+            "padding": 24,
+            "fontSize": 16,
+            "fullWidth": false
+          }
+        },
+        {
+          "type": "divider",
+          "note": "Divider",
+          "properties": {
+            "color": "#E4E1EA",
+            "thickness": 1,
+            "width": 84,
+            "style": "solid",
+            "padding": 8
+          }
+        },
+        {
+          "type": "text",
+          "note": "Second section: bridge to the app",
+          "properties": {
+            "content": "<p style=\"margin:0 0 10px 0;font-size:12px;letter-spacing:2px;text-transform:uppercase;color:#a88f46;font-weight:bold\">Then test it</p><p style=\"margin:0;font-size:16px;line-height:1.6;color:#2D2D2D\">Reading about pitch is one thing. Seeing your own note drift is another. Pitch Perfect shows the needle live while you sing, so you can check each mistake against your real voice in under a minute.</p>",
+            "align": "left",
+            "padding": 32,
+            "fontSize": 16,
+            "color": "#2D2D2D"
+          }
+        },
+        {
+          "type": "image",
+          "note": "Pitch Perfect mid-session (wheel view), full-bleed",
+          "properties": {
+            "src": "{{IMAGE_BASE}}/email/pitch_perfect_session.webp",
+            "alt": "Pitch Perfect mid-session with target C4 matched",
+            "width": 100,
+            "align": "center",
+            "padding": 0,
+            "link": ""
+          }
+        },
+        {
+          "type": "button",
+          "note": "Gold pill button: signup",
+          "properties": {
+            "text": "Test it in Pitch Perfect, free",
+            "url": "https://voicealchemyacademy.app/signup?role=student&src=email",
+            "bgColor": "#ceb466",
+            "textColor": "#0b0817",
+            "align": "center",
+            "borderRadius": 999,
+            "padding": 24,
+            "fontSize": 16,
+            "fullWidth": false
+          }
+        },
+        {
+          "type": "footer",
+          "note": "Ink footer, Instagram + unsubscribe",
+          "properties": {
+            "text": "Voice Alchemy Academy &middot; hello@voicealchemyacademy.com<br><span style=\"color:#8A8399\">You are receiving this because you asked for the free pitch guide on voicealchemyacademy.app.</span>",
+            "showSocial": true,
+            "socialLinks": [
+              {
+                "name": "Instagram",
+                "url": "https://instagram.com/VoiceAlchemyAcademy"
+              },
+              {
+                "name": "voicealchemyacademy.com",
+                "url": "https://voicealchemyacademy.com"
+              }
+            ],
+            "unsubscribeUrl": "{{unsubscribe_url}}",
+            "bgColor": "#120d24",
+            "textColor": "#B7B0C7",
+            "padding": 28
+          }
+        }
+      ]
+    },
+    {
+      "key": "leads-2",
+      "role": "leads",
+      "n": 2,
+      "name": "The Mistake Your Ears Miss",
+      "timing": "Day 2",
+      "subject": "The mistake your ears miss",
+      "preheader": "Why sustained notes drift flat, and how to see it.",
+      "cta": "See it live",
+      "landing": "Student signup",
+      "why": "Teaches one concept from the guide in the email itself, so the reader gets value without opening a PDF. The concept chosen (flattening at the end of long notes) is the one Pitch Perfect makes most visible, which makes the CTA feel like the obvious next step.",
+      "ship_first": false,
+      "assets": [
+        "logo.png",
+        "pitch_perfect_session.webp"
+      ],
+      "blocks": [
+        {
+          "type": "header",
+          "note": "Ink background, VAA gold logo",
+          "properties": {
+            "logoUrl": "{{IMAGE_BASE}}/logo.png",
+            "companyName": "Voice Alchemy Academy",
+            "bgColor": "#0b0817",
+            "textColor": "#ceb466",
+            "padding": 28,
+            "align": "center"
+          }
+        },
+        {
+          "type": "text",
+          "note": "Eyebrow + headline + lesson",
+          "properties": {
+            "content": "<p style=\"margin:0 0 10px 0;font-size:12px;letter-spacing:2px;text-transform:uppercase;color:#a88f46;font-weight:bold\">Mistake #1</p><p style=\"margin:0 0 14px 0;font-family:Georgia, 'Times New Roman', serif;font-size:30px;line-height:1.15;color:#0b0817\">Long notes sink. Your ears forgive it.</p><p style=\"margin:0 0 14px 0;font-size:16px;line-height:1.6;color:#2D2D2D\">Most self-taught singers land a note in tune and then let it sag as the breath runs out. By the last beat they are 15 to 30 cents flat, and because it happened slowly, it sounds fine from the inside.</p><p style=\"margin:0;font-size:16px;line-height:1.6;color:#2D2D2D\">The fix is not more effort. It is seeing the sag, so you can feel the moment support drops.</p>",
+            "align": "left",
+            "padding": 32,
+            "fontSize": 16,
+            "color": "#2D2D2D"
+          }
+        },
+        {
+          "type": "image",
+          "note": "Pitch Perfect mid-session (keyboard view), full-bleed",
+          "properties": {
+            "src": "{{IMAGE_BASE}}/email/pitch_perfect_keyboard_session.webp",
+            "alt": "Pitch Perfect keyboard view: needle, Hz and cents readout on a held C4",
+            "width": 100,
+            "align": "center",
+            "padding": 0,
+            "link": ""
+          }
+        },
+        {
+          "type": "text",
+          "note": "Tip card",
+          "properties": {
+            "content": "<p style=\"margin:0 0 6px 0;font-size:12px;letter-spacing:2px;text-transform:uppercase;color:#a88f46;font-weight:bold\">Try this</p><p style=\"margin:0;font-size:16px;line-height:1.6;color:#2D2D2D\">Hold one note for eight slow counts with Pitch Perfect listening. Watch the cents number, not the note name. Where does it start to move?</p>",
+            "align": "left",
+            "padding": 32,
+            "fontSize": 16,
+            "color": "#2D2D2D"
+          }
+        },
+        {
+          "type": "button",
+          "note": "Gold pill button: signup",
+          "properties": {
+            "text": "See it live",
+            "url": "https://voicealchemyacademy.app/signup?role=student&src=email",
+            "bgColor": "#ceb466",
+            "textColor": "#0b0817",
+            "align": "center",
+            "borderRadius": 999,
+            "padding": 24,
+            "fontSize": 16,
+            "fullWidth": false
+          }
+        },
+        {
+          "type": "divider",
+          "note": "Divider",
+          "properties": {
+            "color": "#E4E1EA",
+            "thickness": 1,
+            "width": 84,
+            "style": "solid",
+            "padding": 8
+          }
+        },
+        {
+          "type": "text",
+          "note": "Muted reassurance line",
+          "properties": {
+            "content": "<p style=\"margin:0;font-size:13px;line-height:1.5;color:#6F6A7A\">Free account, no card, works on your phone or laptop microphone.</p>",
+            "align": "center",
+            "padding": 20,
+            "fontSize": 16,
+            "color": "#2D2D2D"
+          }
+        },
+        {
+          "type": "footer",
+          "note": "Ink footer, Instagram + unsubscribe",
+          "properties": {
+            "text": "Voice Alchemy Academy &middot; hello@voicealchemyacademy.com<br><span style=\"color:#8A8399\">You are receiving this because you asked for the free pitch guide on voicealchemyacademy.app.</span>",
+            "showSocial": true,
+            "socialLinks": [
+              {
+                "name": "Instagram",
+                "url": "https://instagram.com/VoiceAlchemyAcademy"
+              },
+              {
+                "name": "voicealchemyacademy.com",
+                "url": "https://voicealchemyacademy.com"
+              }
+            ],
+            "unsubscribeUrl": "{{unsubscribe_url}}",
+            "bgColor": "#120d24",
+            "textColor": "#B7B0C7",
+            "padding": 28
+          }
+        }
+      ]
+    },
+    {
+      "key": "leads-3",
+      "role": "leads",
+      "n": 3,
+      "name": "Before Your Next Rehearsal",
+      "timing": "Day 5",
+      "subject": "Try this before your next rehearsal",
+      "preheader": "A two-minute check-in that makes the app useful today.",
+      "cta": "Start singing free",
+      "landing": "Student signup",
+      "why": "Last email of the lead track. It ties the app to a real moment in their week (the next rehearsal, gig or choir night) so signing up has an immediate payoff instead of being a someday task. Shows the full Training Center so they see the streaks and scores waiting for them.",
+      "ship_first": false,
+      "assets": [
+        "logo.png",
+        "student_training_overview.webp"
+      ],
+      "blocks": [
+        {
+          "type": "header",
+          "note": "Ink background, VAA gold logo",
+          "properties": {
+            "logoUrl": "{{IMAGE_BASE}}/logo.png",
+            "companyName": "Voice Alchemy Academy",
+            "bgColor": "#0b0817",
+            "textColor": "#ceb466",
+            "padding": 28,
+            "align": "center"
+          }
+        },
+        {
+          "type": "text",
+          "note": "Eyebrow + headline + copy",
+          "properties": {
+            "content": "<p style=\"margin:0 0 10px 0;font-size:12px;letter-spacing:2px;text-transform:uppercase;color:#a88f46;font-weight:bold\">A pre-rehearsal ritual</p><p style=\"margin:0 0 14px 0;font-family:Georgia, 'Times New Roman', serif;font-size:30px;line-height:1.15;color:#0b0817\">Two minutes before you sing with other people.</p><p style=\"margin:0 0 14px 0;font-size:16px;line-height:1.6;color:#2D2D2D\">Warm-ups tell your body you are about to sing. A pitch check tells you where your voice actually is today: a little sharp, a little heavy, or right on.</p><p style=\"margin:0;font-size:16px;line-height:1.6;color:#2D2D2D\">Open Pitch Perfect, hold three comfortable notes, then run one round of scales. You will walk into rehearsal knowing something most singers only guess at.</p>",
+            "align": "left",
+            "padding": 32,
+            "fontSize": 16,
+            "color": "#2D2D2D"
+          }
+        },
+        {
+          "type": "image",
+          "note": "Full-bleed screenshot",
+          "properties": {
+            "src": "{{IMAGE_BASE}}/email/student_training_overview.webp",
+            "alt": "Training Center with streaks, scores and trainers",
+            "width": 100,
+            "align": "center",
+            "padding": 0,
+            "link": ""
+          }
+        },
+        {
+          "type": "button",
+          "note": "Gold pill button: signup",
+          "properties": {
+            "text": "Start singing free",
+            "url": "https://voicealchemyacademy.app/signup?role=student&src=email",
+            "bgColor": "#ceb466",
+            "textColor": "#0b0817",
+            "align": "center",
+            "borderRadius": 999,
+            "padding": 24,
+            "fontSize": 16,
+            "fullWidth": false
+          }
+        },
+        {
+          "type": "divider",
+          "note": "Divider",
+          "properties": {
+            "color": "#E4E1EA",
+            "thickness": 1,
+            "width": 84,
+            "style": "solid",
+            "padding": 8
+          }
+        },
+        {
+          "type": "text",
+          "note": "Muted closing line",
+          "properties": {
+            "content": "<p style=\"margin:0;font-size:13px;line-height:1.5;color:#6F6A7A\">This is the last email in this series. Your guide and the free tools stay available.</p>",
+            "align": "center",
+            "padding": 20,
+            "fontSize": 16,
+            "color": "#2D2D2D"
+          }
+        },
+        {
+          "type": "footer",
+          "note": "Ink footer, Instagram + unsubscribe",
+          "properties": {
+            "text": "Voice Alchemy Academy &middot; hello@voicealchemyacademy.com<br><span style=\"color:#8A8399\">You are receiving this because you asked for the free pitch guide on voicealchemyacademy.app.</span>",
+            "showSocial": true,
+            "socialLinks": [
+              {
+                "name": "Instagram",
+                "url": "https://instagram.com/VoiceAlchemyAcademy"
+              },
+              {
+                "name": "voicealchemyacademy.com",
+                "url": "https://voicealchemyacademy.com"
+              }
+            ],
+            "unsubscribeUrl": "{{unsubscribe_url}}",
+            "bgColor": "#120d24",
+            "textColor": "#B7B0C7",
+            "padding": 28
+          }
+        }
+      ]
+    },
+    {
+      "key": "teachers-1",
+      "role": "teachers",
+      "n": 1,
+      "name": "Demo Request Received",
+      "timing": "Immediately after the demo form is submitted",
+      "subject": "We received your VAA demo request",
+      "preheader": "We will show the teacher workflow around your studio.",
+      "cta": "Choose a demo time",
+      "landing": "Scheduling link (needs a real URL)",
+      "why": "A coach who fills in a demo form expects a human reply, not a newsletter. This confirms receipt, reflects the pain they selected on the form, and says exactly what the walkthrough covers so the demo feels worth showing up for. Violet keeps teacher emails visually distinct.",
+      "ship_first": true,
+      "assets": [
+        "logo.png",
+        "teacher_students.webp"
+      ],
+      "blocks": [
+        {
+          "type": "header",
+          "note": "Ink background, VAA gold logo",
+          "properties": {
+            "logoUrl": "{{IMAGE_BASE}}/logo.png",
+            "companyName": "Voice Alchemy Academy",
+            "bgColor": "#0b0817",
+            "textColor": "#ceb466",
+            "padding": 28,
+            "align": "center"
+          }
+        },
+        {
+          "type": "text",
+          "note": "Eyebrow (violet) + headline + copy",
+          "properties": {
+            "content": "<p style=\"margin:0 0 10px 0;font-size:12px;letter-spacing:2px;text-transform:uppercase;color:#a855f7;font-weight:bold\">Demo request received</p><p style=\"margin:0 0 14px 0;font-family:Georgia, 'Times New Roman', serif;font-size:30px;line-height:1.15;color:#0b0817\">Your demo will start between lessons.</p><p style=\"margin:0 0 14px 0;font-size:16px;line-height:1.6;color:#2D2D2D\">Hi {{first_name}},</p><p style=\"margin:0;font-size:16px;line-height:1.6;color:#2D2D2D\">Thanks for asking to see Voice Alchemy Academy. We will keep the walkthrough practical: how your students practice, what you can see before a lesson, and how that turns into better assignments after it.</p>",
+            "align": "left",
+            "padding": 32,
+            "fontSize": 16,
+            "color": "#2D2D2D"
+          }
+        },
+        {
+          "type": "image",
+          "note": "Full-bleed screenshot",
+          "properties": {
+            "src": "{{IMAGE_BASE}}/email/teacher_students.webp",
+            "alt": "Teacher roster with student practice data",
+            "width": 100,
+            "align": "center",
+            "padding": 0,
+            "link": ""
+          }
+        },
+        {
+          "type": "columns",
+          "note": "Two columns: demo agenda",
+          "properties": {
+            "columnCount": 2,
+            "columnWidths": [
+              50,
+              50
+            ],
+            "gap": 20,
+            "padding": 24,
+            "showDivider": true,
+            "dividerColor": "#E4E1EA",
+            "dividerThickness": 1,
+            "columnContent": [
+              {
+                "type": "text",
+                "content": "<p style=\"margin:0 0 6px 0;font-size:12px;letter-spacing:2px;text-transform:uppercase;color:#a855f7;font-weight:bold\">We will show</p><p style=\"margin:0;font-size:15px;line-height:1.6;color:#2D2D2D\">Student practice data before each lesson<br>Live lesson flow with automatic notes<br>Homework recordings in one place</p>",
+                "align": "left",
+                "fontSize": 15,
+                "color": "#2D2D2D",
+                "src": "",
+                "alt": "",
+                "width": 100
+              },
+              {
+                "type": "text",
+                "content": "<p style=\"margin:0 0 6px 0;font-size:12px;letter-spacing:2px;text-transform:uppercase;color:#a855f7;font-weight:bold\">Also covered</p><p style=\"margin:0;font-size:15px;line-height:1.6;color:#2D2D2D\">Scheduling and pending requests<br>Course builder and quizzes<br>How existing students move in</p>",
+                "align": "left",
+                "fontSize": 15,
+                "color": "#2D2D2D",
+                "src": "",
+                "alt": "",
+                "width": 100
+              }
+            ]
+          }
+        },
+        {
+          "type": "button",
+          "note": "Violet pill button (teacher)",
+          "properties": {
+            "text": "Choose a demo time",
+            "url": "#SCHEDULING_LINK",
+            "bgColor": "#a855f7",
+            "textColor": "#FFFFFF",
+            "align": "center",
+            "borderRadius": 999,
+            "padding": 24,
+            "fontSize": 16,
+            "fullWidth": false
+          }
+        },
+        {
+          "type": "divider",
+          "note": "Divider",
+          "properties": {
+            "color": "#E4E1EA",
+            "thickness": 1,
+            "width": 84,
+            "style": "solid",
+            "padding": 8
+          }
+        },
+        {
+          "type": "text",
+          "note": "Muted line: bring a student example",
+          "properties": {
+            "content": "<p style=\"margin:0;font-size:13px;line-height:1.5;color:#6F6A7A\">If you already have a student in mind who says they practiced but you are not sure, bring that example to the demo.</p>",
+            "align": "center",
+            "padding": 20,
+            "fontSize": 16,
+            "color": "#2D2D2D"
+          }
+        },
+        {
+          "type": "footer",
+          "note": "Ink footer, Instagram + unsubscribe",
+          "properties": {
+            "text": "Voice Alchemy Academy &middot; Built for singers who want proof and coaches who want clarity.<br><span style=\"color:#8A8399\">You are receiving this because you requested a platform demo.</span>",
+            "showSocial": true,
+            "socialLinks": [
+              {
+                "name": "Instagram",
+                "url": "https://instagram.com/VoiceAlchemyAcademy"
+              },
+              {
+                "name": "voicealchemyacademy.com",
+                "url": "https://voicealchemyacademy.com"
+              }
+            ],
+            "unsubscribeUrl": "{{unsubscribe_url}}",
+            "bgColor": "#120d24",
+            "textColor": "#B7B0C7",
+            "padding": 28
+          }
+        }
+      ]
+    },
+    {
+      "key": "teachers-2",
+      "role": "teachers",
+      "n": 2,
+      "name": "Unbooked Reminder",
+      "timing": "Day 3 if no demo time has been chosen",
+      "subject": "Still want to see student practice data?",
+      "preheader": "Your walkthrough slot is still open.",
+      "cta": "Pick a time",
+      "landing": "Scheduling link",
+      "why": "Most demo requests go quiet because booking a time felt like one step too many. This is a short, human reminder that re-states the single most compelling thing in the product (seeing what students did between lessons) and asks for one click. No agenda repeat, no pressure.",
+      "ship_first": false,
+      "assets": [
+        "logo.png",
+        "coach_dashboard.webp"
+      ],
+      "blocks": [
+        {
+          "type": "header",
+          "note": "Ink background, VAA gold logo",
+          "properties": {
+            "logoUrl": "{{IMAGE_BASE}}/logo.png",
+            "companyName": "Voice Alchemy Academy",
+            "bgColor": "#0b0817",
+            "textColor": "#ceb466",
+            "padding": 28,
+            "align": "center"
+          }
+        },
+        {
+          "type": "text",
+          "note": "Eyebrow (violet) + headline + copy",
+          "properties": {
+            "content": "<p style=\"margin:0 0 10px 0;font-size:12px;letter-spacing:2px;text-transform:uppercase;color:#a855f7;font-weight:bold\">Quick reminder</p><p style=\"margin:0 0 14px 0;font-family:Georgia, 'Times New Roman', serif;font-size:30px;line-height:1.15;color:#0b0817\">Still want to see what your students practiced?</p><p style=\"margin:0 0 14px 0;font-size:16px;line-height:1.6;color:#2D2D2D\">Hi {{first_name}},</p><p style=\"margin:0 0 14px 0;font-size:16px;line-height:1.6;color:#2D2D2D\">Your demo request is still open on our side. Most coaches book the walkthrough for one reason: to see a student's practice data on screen before a lesson, and decide whether that changes how they teach.</p><p style=\"margin:0;font-size:16px;line-height:1.6;color:#2D2D2D\">It takes twenty minutes. Pick a time that suits your studio and we will build the demo around it.</p>",
+            "align": "left",
+            "padding": 32,
+            "fontSize": 16,
+            "color": "#2D2D2D"
+          }
+        },
+        {
+          "type": "image",
+          "note": "Full-bleed screenshot",
+          "properties": {
+            "src": "{{IMAGE_BASE}}/email/coach_dashboard.webp",
+            "alt": "Coach dashboard with active students and live studio",
+            "width": 100,
+            "align": "center",
+            "padding": 0,
+            "link": ""
+          }
+        },
+        {
+          "type": "button",
+          "note": "Violet pill button",
+          "properties": {
+            "text": "Pick a time",
+            "url": "#SCHEDULING_LINK",
+            "bgColor": "#a855f7",
+            "textColor": "#FFFFFF",
+            "align": "center",
+            "borderRadius": 999,
+            "padding": 24,
+            "fontSize": 16,
+            "fullWidth": false
+          }
+        },
+        {
+          "type": "divider",
+          "note": "Divider",
+          "properties": {
+            "color": "#E4E1EA",
+            "thickness": 1,
+            "width": 84,
+            "style": "solid",
+            "padding": 8
+          }
+        },
+        {
+          "type": "text",
+          "note": "Muted line with playbook link",
+          "properties": {
+            "content": "<p style=\"margin:0;font-size:13px;line-height:1.5;color:#6F6A7A\">Not the right moment? Reply to this email and tell us when to check back, or read the <a href=\"#PLAYBOOK_PDF\" style=\"color:#a855f7\">practice visibility playbook</a> first.</p>",
+            "align": "center",
+            "padding": 20,
+            "fontSize": 16,
+            "color": "#2D2D2D"
+          }
+        },
+        {
+          "type": "footer",
+          "note": "Ink footer, Instagram + unsubscribe",
+          "properties": {
+            "text": "Voice Alchemy Academy &middot; Built for singers who want proof and coaches who want clarity.<br><span style=\"color:#8A8399\">You are receiving this because you requested a platform demo.</span>",
+            "showSocial": true,
+            "socialLinks": [
+              {
+                "name": "Instagram",
+                "url": "https://instagram.com/VoiceAlchemyAcademy"
+              },
+              {
+                "name": "voicealchemyacademy.com",
+                "url": "https://voicealchemyacademy.com"
+              }
+            ],
+            "unsubscribeUrl": "{{unsubscribe_url}}",
+            "bgColor": "#120d24",
+            "textColor": "#B7B0C7",
+            "padding": 28
+          }
+        }
+      ]
+    },
+    {
+      "key": "teachers-3",
+      "role": "teachers",
+      "n": 3,
+      "name": "Practice Visibility Playbook",
+      "timing": "Day 5 if still unbooked, or the first email for teachers who only left an email",
+      "subject": "Your practice visibility playbook",
+      "preheader": "A simple way to make between-lesson practice clearer.",
+      "cta": "Download the playbook",
+      "landing": "Hosted PDF (needs to be written), then demo form",
+      "why": "A softer offer for coaches who are curious but not ready for a sales call. The playbook names the real pain, students who say they practiced, and gives a method that works with or without software. VAA is then positioned as the operational version of the same idea. Requires the PDF to exist before this goes live.",
+      "ship_first": false,
+      "assets": [
+        "logo.png",
+        "teacher_student_detail.webp"
+      ],
+      "blocks": [
+        {
+          "type": "header",
+          "note": "Ink background, VAA gold logo",
+          "properties": {
+            "logoUrl": "{{IMAGE_BASE}}/logo.png",
+            "companyName": "Voice Alchemy Academy",
+            "bgColor": "#0b0817",
+            "textColor": "#ceb466",
+            "padding": 28,
+            "align": "center"
+          }
+        },
+        {
+          "type": "text",
+          "note": "Eyebrow (violet) + headline + copy",
+          "properties": {
+            "content": "<p style=\"margin:0 0 10px 0;font-size:12px;letter-spacing:2px;text-transform:uppercase;color:#a855f7;font-weight:bold\">A resource for vocal coaches</p><p style=\"margin:0 0 14px 0;font-family:Georgia, 'Times New Roman', serif;font-size:30px;line-height:1.15;color:#0b0817\">Make practice easier to see.</p><p style=\"margin:0 0 14px 0;font-size:16px;line-height:1.6;color:#2D2D2D\">Most teachers are not short on care. They are short on visibility.</p><p style=\"margin:0;font-size:16px;line-height:1.6;color:#2D2D2D\">This short playbook shows a simple way to make between-lesson practice more honest, more trackable, and less awkward to talk about with students. Use it even if you never change platforms.</p>",
+            "align": "left",
+            "padding": 32,
+            "fontSize": 16,
+            "color": "#2D2D2D"
+          }
+        },
+        {
+          "type": "image",
+          "note": "Full-bleed screenshot",
+          "properties": {
+            "src": "{{IMAGE_BASE}}/email/teacher_student_detail.webp",
+            "alt": "Student detail page with practice history and notes",
+            "width": 100,
+            "align": "center",
+            "padding": 0,
+            "link": ""
+          }
+        },
+        {
+          "type": "button",
+          "note": "Violet pill button",
+          "properties": {
+            "text": "Download the playbook",
+            "url": "#PLAYBOOK_PDF",
+            "bgColor": "#a855f7",
+            "textColor": "#FFFFFF",
+            "align": "center",
+            "borderRadius": 999,
+            "padding": 24,
+            "fontSize": 16,
+            "fullWidth": false
+          }
+        },
+        {
+          "type": "text",
+          "note": "Secondary text link to the demo form",
+          "properties": {
+            "content": "<p style=\"margin:0;font-size:13px;line-height:1.5;color:#6F6A7A\">Want the software version of the same idea? <a href=\"https://voicealchemyacademy.app/?view=teacher#teacher-demo\" style=\"color:#a855f7;font-weight:bold\">Book a short demo</a> and we will show it around your studio.</p>",
+            "align": "center",
+            "padding": 16,
+            "fontSize": 16,
+            "color": "#2D2D2D"
+          }
+        },
+        {
+          "type": "divider",
+          "note": "Divider",
+          "properties": {
+            "color": "#E4E1EA",
+            "thickness": 1,
+            "width": 84,
+            "style": "solid",
+            "padding": 8
+          }
+        },
+        {
+          "type": "text",
+          "note": "Muted closing line",
+          "properties": {
+            "content": "<p style=\"margin:0;font-size:13px;line-height:1.5;color:#6F6A7A\">The question to ask before every lesson: what happened since we last met? VAA answers it with data.</p>",
+            "align": "center",
+            "padding": 20,
+            "fontSize": 16,
+            "color": "#2D2D2D"
+          }
+        },
+        {
+          "type": "footer",
+          "note": "Ink footer, Instagram + unsubscribe",
+          "properties": {
+            "text": "Voice Alchemy Academy &middot; Built for singers who want proof and coaches who want clarity.<br><span style=\"color:#8A8399\">You are receiving this because you asked about Voice Alchemy for teachers.</span>",
+            "showSocial": true,
+            "socialLinks": [
+              {
+                "name": "Instagram",
+                "url": "https://instagram.com/VoiceAlchemyAcademy"
+              },
+              {
+                "name": "voicealchemyacademy.com",
+                "url": "https://voicealchemyacademy.com"
+              }
+            ],
+            "unsubscribeUrl": "{{unsubscribe_url}}",
+            "bgColor": "#120d24",
+            "textColor": "#B7B0C7",
+            "padding": 28
+          }
+        }
+      ]
+    },
+    {
+      "key": "teachers-4",
+      "role": "teachers",
+      "n": 4,
+      "name": "Post-Demo Recap / Pilot",
+      "timing": "Same day as the demo (sent by Julia, first paragraph personalized)",
+      "subject": "Recap: how VAA would fit your studio",
+      "preheader": "A simple first step for your students.",
+      "cta": "Plan the pilot",
+      "landing": "Reply to Julia",
+      "why": "The serious buyer converts here. Instead of asking a coach to move their whole studio, the recap proposes a three-student pilot so adoption feels small and reversible. The three-column week-one plan makes the next step concrete.",
+      "ship_first": false,
+      "assets": [
+        "logo.png",
+        "teacher_courses.webp"
+      ],
+      "blocks": [
+        {
+          "type": "header",
+          "note": "Ink background, VAA gold logo",
+          "properties": {
+            "logoUrl": "{{IMAGE_BASE}}/logo.png",
+            "companyName": "Voice Alchemy Academy",
+            "bgColor": "#0b0817",
+            "textColor": "#ceb466",
+            "padding": 28,
+            "align": "center"
+          }
+        },
+        {
+          "type": "text",
+          "note": "Eyebrow (violet) + headline + personalized recap",
+          "properties": {
+            "content": "<p style=\"margin:0 0 10px 0;font-size:12px;letter-spacing:2px;text-transform:uppercase;color:#a855f7;font-weight:bold\">After your demo</p><p style=\"margin:0 0 14px 0;font-family:Georgia, 'Times New Roman', serif;font-size:30px;line-height:1.15;color:#0b0817\">A clean first week.</p><p style=\"margin:0 0 14px 0;font-size:16px;line-height:1.6;color:#2D2D2D\">Thank you for spending time with us today. Based on what you shared, the easiest first step is not moving your whole studio at once.</p><p style=\"margin:0;font-size:16px;line-height:1.6;color:#2D2D2D\">Start with three students. Give them the free tools, assign one simple practice target, and look at their data before the next lesson.</p>",
+            "align": "left",
+            "padding": 32,
+            "fontSize": 16,
+            "color": "#2D2D2D"
+          }
+        },
+        {
+          "type": "image",
+          "note": "Full-bleed screenshot",
+          "properties": {
+            "src": "{{IMAGE_BASE}}/email/teacher_courses.webp",
+            "alt": "Teacher course builder",
+            "width": 100,
+            "align": "center",
+            "padding": 0,
+            "link": ""
+          }
+        },
+        {
+          "type": "columns",
+          "note": "Three columns: week-one plan",
+          "properties": {
+            "columnCount": 3,
+            "columnWidths": [
+              33,
+              33,
+              33
+            ],
+            "gap": 16,
+            "padding": 24,
+            "showDivider": false,
+            "dividerColor": "#E4E1EA",
+            "dividerThickness": 1,
+            "columnContent": [
+              {
+                "type": "text",
+                "content": "<p style=\"margin:0 0 6px 0;font-size:12px;letter-spacing:2px;text-transform:uppercase;color:#a855f7;font-weight:bold\">1. Invite</p><p style=\"margin:0;font-size:14px;line-height:1.6;color:#2D2D2D\">Send three students to the app. They request you as their teacher and you approve.</p>",
+                "align": "left",
+                "fontSize": 15,
+                "color": "#2D2D2D",
+                "src": "",
+                "alt": "",
+                "width": 100
+              },
+              {
+                "type": "text",
+                "content": "<p style=\"margin:0 0 6px 0;font-size:12px;letter-spacing:2px;text-transform:uppercase;color:#a855f7;font-weight:bold\">2. Assign</p><p style=\"margin:0;font-size:14px;line-height:1.6;color:#2D2D2D\">Give each one a single scale or pitch target for the week.</p>",
+                "align": "left",
+                "fontSize": 15,
+                "color": "#2D2D2D",
+                "src": "",
+                "alt": "",
+                "width": 100
+              },
+              {
+                "type": "text",
+                "content": "<p style=\"margin:0 0 6px 0;font-size:12px;letter-spacing:2px;text-transform:uppercase;color:#a855f7;font-weight:bold\">3. Review</p><p style=\"margin:0;font-size:14px;line-height:1.6;color:#2D2D2D\">Open their practice data before the next lesson and run one live lesson in the app.</p>",
+                "align": "left",
+                "fontSize": 15,
+                "color": "#2D2D2D",
+                "src": "",
+                "alt": "",
+                "width": 100
+              }
+            ]
+          }
+        },
+        {
+          "type": "button",
+          "note": "Violet pill button (mailto reply)",
+          "properties": {
+            "text": "Plan the pilot",
+            "url": "mailto:hello@voicealchemyacademy.com",
+            "bgColor": "#a855f7",
+            "textColor": "#FFFFFF",
+            "align": "center",
+            "borderRadius": 999,
+            "padding": 24,
+            "fontSize": 16,
+            "fullWidth": false
+          }
+        },
+        {
+          "type": "divider",
+          "note": "Divider",
+          "properties": {
+            "color": "#E4E1EA",
+            "thickness": 1,
+            "width": 84,
+            "style": "solid",
+            "padding": 8
+          }
+        },
+        {
+          "type": "text",
+          "note": "Muted closing line",
+          "properties": {
+            "content": "<p style=\"margin:0;font-size:13px;line-height:1.5;color:#6F6A7A\">Reply to this email with the first students you would want to test with and we will set them up together.</p>",
+            "align": "center",
+            "padding": 20,
+            "fontSize": 16,
+            "color": "#2D2D2D"
+          }
+        },
+        {
+          "type": "footer",
+          "note": "Ink footer, Instagram + unsubscribe",
+          "properties": {
+            "text": "Voice Alchemy Academy &middot; Built for singers who want proof and coaches who want clarity.<br><span style=\"color:#8A8399\">You are receiving this because you attended a Voice Alchemy demo.</span>",
+            "showSocial": true,
+            "socialLinks": [
+              {
+                "name": "Instagram",
+                "url": "https://instagram.com/VoiceAlchemyAcademy"
+              },
+              {
+                "name": "voicealchemyacademy.com",
+                "url": "https://voicealchemyacademy.com"
+              }
+            ],
+            "unsubscribeUrl": "{{unsubscribe_url}}",
+            "bgColor": "#120d24",
+            "textColor": "#B7B0C7",
+            "padding": 28
+          }
+        }
+      ]
+    },
+    {
+      "key": "teachers-5",
+      "role": "teachers",
+      "n": 5,
+      "name": "Keep Your Spot?",
+      "timing": "Day 10 after the demo if there has been no reply",
+      "subject": "Should we keep a place for your studio?",
+      "preheader": "A yes or a not-now is equally welcome.",
+      "cta": "Yes, keep my spot",
+      "landing": "Reply to Julia",
+      "why": "Closes the loop politely. A coach who has gone quiet after a demo usually needs permission to say not now. Asking for a simple yes or no preserves goodwill, clears the pipeline, and often gets the real objection out in the reply. No image, no pitch, one question.",
+      "ship_first": false,
+      "assets": [
+        "logo.png"
+      ],
+      "blocks": [
+        {
+          "type": "header",
+          "note": "Ink background, VAA gold logo",
+          "properties": {
+            "logoUrl": "{{IMAGE_BASE}}/logo.png",
+            "companyName": "Voice Alchemy Academy",
+            "bgColor": "#0b0817",
+            "textColor": "#ceb466",
+            "padding": 28,
+            "align": "center"
+          }
+        },
+        {
+          "type": "text",
+          "note": "Eyebrow (violet) + headline + copy",
+          "properties": {
+            "content": "<p style=\"margin:0 0 10px 0;font-size:12px;letter-spacing:2px;text-transform:uppercase;color:#a855f7;font-weight:bold\">One question</p><p style=\"margin:0 0 14px 0;font-family:Georgia, 'Times New Roman', serif;font-size:30px;line-height:1.15;color:#0b0817\">Should we keep a place for your studio?</p><p style=\"margin:0 0 14px 0;font-size:16px;line-height:1.6;color:#2D2D2D\">Hi {{first_name}},</p><p style=\"margin:0 0 14px 0;font-size:16px;line-height:1.6;color:#2D2D2D\">We set aside onboarding time for the studios we demo, and we would rather hold yours than give it away by mistake.</p><p style=\"margin:0;font-size:16px;line-height:1.6;color:#2D2D2D\">If a pilot still makes sense, hit the button and we will pick up where the demo left off. If the timing is wrong, a one-line reply saying not now is genuinely fine, and we will stop nudging.</p>",
+            "align": "left",
+            "padding": 32,
+            "fontSize": 16,
+            "color": "#2D2D2D"
+          }
+        },
+        {
+          "type": "button",
+          "note": "Violet pill button (mailto)",
+          "properties": {
+            "text": "Yes, keep my spot",
+            "url": "mailto:hello@voicealchemyacademy.com?subject=Keep%20my%20spot",
+            "bgColor": "#a855f7",
+            "textColor": "#FFFFFF",
+            "align": "center",
+            "borderRadius": 999,
+            "padding": 24,
+            "fontSize": 16,
+            "fullWidth": false
+          }
+        },
+        {
+          "type": "text",
+          "note": "Text link: Not now",
+          "properties": {
+            "content": "<p style=\"margin:0;font-size:13px;line-height:1.5;color:#6F6A7A\"><a href=\"mailto:hello@voicealchemyacademy.com?subject=Not%20now\" style=\"color:#a855f7;font-weight:bold\">Not now</a> &middot; we will check back next semester.</p>",
+            "align": "center",
+            "padding": 8,
+            "fontSize": 16,
+            "color": "#2D2D2D"
+          }
+        },
+        {
+          "type": "divider",
+          "note": "Divider",
+          "properties": {
+            "color": "#E4E1EA",
+            "thickness": 1,
+            "width": 84,
+            "style": "solid",
+            "padding": 8
+          }
+        },
+        {
+          "type": "text",
+          "note": "Muted closing line",
+          "properties": {
+            "content": "<p style=\"margin:0;font-size:13px;line-height:1.5;color:#6F6A7A\">Either way, thank you for taking the time to look at what we are building for coaches.</p>",
+            "align": "center",
+            "padding": 20,
+            "fontSize": 16,
+            "color": "#2D2D2D"
+          }
+        },
+        {
+          "type": "footer",
+          "note": "Ink footer, Instagram + unsubscribe",
+          "properties": {
+            "text": "Voice Alchemy Academy &middot; Built for singers who want proof and coaches who want clarity.<br><span style=\"color:#8A8399\">You are receiving this because you attended a Voice Alchemy demo.</span>",
+            "showSocial": true,
+            "socialLinks": [
+              {
+                "name": "Instagram",
+                "url": "https://instagram.com/VoiceAlchemyAcademy"
+              },
+              {
+                "name": "voicealchemyacademy.com",
+                "url": "https://voicealchemyacademy.com"
+              }
+            ],
+            "unsubscribeUrl": "{{unsubscribe_url}}",
+            "bgColor": "#120d24",
+            "textColor": "#B7B0C7",
+            "padding": 28
+          }
+        }
+      ]
+    },
+    {
+      "key": "teachers-6",
+      "role": "teachers",
+      "n": 6,
+      "name": "Re-engagement / Between Lessons",
+      "timing": "14 days with no reply at any stage",
+      "subject": "The real problem is between lessons",
+      "preheader": "Most teaching tools manage lessons. This shows what happened between them.",
+      "cta": "See the teacher workflow",
+      "landing": "Website teacher view, then demo form",
+      "why": "A single thought-leadership email for coaches who went cold at any stage. It leads with the idea, not the product, so it earns a read even from someone who decided against a demo. The CTA goes to the website's teacher view rather than straight to a booking, which is a lower ask.",
+      "ship_first": false,
+      "assets": [
+        "logo.png",
+        "teacher_students.webp"
+      ],
+      "blocks": [
+        {
+          "type": "header",
+          "note": "Ink background, VAA gold logo",
+          "properties": {
+            "logoUrl": "{{IMAGE_BASE}}/logo.png",
+            "companyName": "Voice Alchemy Academy",
+            "bgColor": "#0b0817",
+            "textColor": "#ceb466",
+            "padding": 28,
+            "align": "center"
+          }
+        },
+        {
+          "type": "text",
+          "note": "Eyebrow (violet) + headline + essay",
+          "properties": {
+            "content": "<p style=\"margin:0 0 10px 0;font-size:12px;letter-spacing:2px;text-transform:uppercase;color:#a855f7;font-weight:bold\">A thought for your studio</p><p style=\"margin:0 0 14px 0;font-family:Georgia, 'Times New Roman', serif;font-size:30px;line-height:1.15;color:#0b0817\">The real problem is between lessons.</p><p style=\"margin:0 0 14px 0;font-size:16px;line-height:1.6;color:#2D2D2D\">A lesson is thirty to sixty minutes. The other six days and twenty-three hours are where a voice actually changes, and most of us teach blind to them.</p><p style=\"margin:0;font-size:16px;line-height:1.6;color:#2D2D2D\">Students say they practiced. Some did. Some did the wrong thing carefully. Some opened the app once and closed it. Until you can see the difference, every lesson starts with guesswork.</p>",
+            "align": "left",
+            "padding": 32,
+            "fontSize": 16,
+            "color": "#2D2D2D"
+          }
+        },
+        {
+          "type": "image",
+          "note": "Full-bleed screenshot",
+          "properties": {
+            "src": "{{IMAGE_BASE}}/email/teacher_students.webp",
+            "alt": "Teacher roster with practice-this-week data",
+            "width": 100,
+            "align": "center",
+            "padding": 0,
+            "link": ""
+          }
+        },
+        {
+          "type": "text",
+          "note": "Tip card (violet label)",
+          "properties": {
+            "content": "<p style=\"margin:0 0 6px 0;font-size:12px;letter-spacing:2px;text-transform:uppercase;color:#a855f7;font-weight:bold\">What changes</p><p style=\"margin:0;font-size:16px;line-height:1.6;color:#2D2D2D\">When practice data arrives before the lesson, the first ten minutes stop being diagnosis and become work.</p>",
+            "align": "left",
+            "padding": 32,
+            "fontSize": 16,
+            "color": "#2D2D2D"
+          }
+        },
+        {
+          "type": "button",
+          "note": "Violet pill button",
+          "properties": {
+            "text": "See the teacher workflow",
+            "url": "https://voicealchemyacademy.app/?view=teacher",
+            "bgColor": "#a855f7",
+            "textColor": "#FFFFFF",
+            "align": "center",
+            "borderRadius": 999,
+            "padding": 24,
+            "fontSize": 16,
+            "fullWidth": false
+          }
+        },
+        {
+          "type": "divider",
+          "note": "Divider",
+          "properties": {
+            "color": "#E4E1EA",
+            "thickness": 1,
+            "width": 84,
+            "style": "solid",
+            "padding": 8
+          }
+        },
+        {
+          "type": "text",
+          "note": "Muted closing line",
+          "properties": {
+            "content": "<p style=\"margin:0;font-size:13px;line-height:1.5;color:#6F6A7A\">This is the last automated email we send to coaches. Reply any time and a person will answer.</p>",
+            "align": "center",
+            "padding": 20,
+            "fontSize": 16,
+            "color": "#2D2D2D"
+          }
+        },
+        {
+          "type": "footer",
+          "note": "Ink footer, Instagram + unsubscribe",
+          "properties": {
+            "text": "Voice Alchemy Academy &middot; Built for singers who want proof and coaches who want clarity.<br><span style=\"color:#8A8399\">You are receiving this because you asked about Voice Alchemy for teachers.</span>",
+            "showSocial": true,
+            "socialLinks": [
+              {
+                "name": "Instagram",
+                "url": "https://instagram.com/VoiceAlchemyAcademy"
+              },
+              {
+                "name": "voicealchemyacademy.com",
+                "url": "https://voicealchemyacademy.com"
+              }
+            ],
+            "unsubscribeUrl": "{{unsubscribe_url}}",
+            "bgColor": "#120d24",
+            "textColor": "#B7B0C7",
+            "padding": 28
+          }
+        }
+      ]
+    },
+    {
+      "key": "mentorship-1",
+      "role": "mentorship",
+      "n": 1,
+      "name": "Voice Application Received",
+      "timing": "Immediately after the application is submitted",
+      "subject": "Your Voice Application is in",
+      "preheader": "Julia will read it personally.",
+      "cta": "Start a gentle pitch check",
+      "landing": "Student signup, then Pitch Perfect",
+      "why": "Applying to a founder-led program is an emotional step. This confirms the application landed, promises a personal reply, and gives the applicant something useful to do while they wait: create a free account and take a pitch check, so Julia has real data by the time the conversation happens. Warm, brief, no selling.",
+      "ship_first": true,
+      "assets": [
+        "logo.png",
+        "lesson_notes_card.webp"
+      ],
+      "blocks": [
+        {
+          "type": "header",
+          "note": "Ink background, VAA gold logo",
+          "properties": {
+            "logoUrl": "{{IMAGE_BASE}}/logo.png",
+            "companyName": "Voice Alchemy Academy",
+            "bgColor": "#0b0817",
+            "textColor": "#ceb466",
+            "padding": 28,
+            "align": "center"
+          }
+        },
+        {
+          "type": "text",
+          "note": "Eyebrow + headline + confirmation copy",
+          "properties": {
+            "content": "<p style=\"margin:0 0 10px 0;font-size:12px;letter-spacing:2px;text-transform:uppercase;color:#a88f46;font-weight:bold\">Voice Application</p><p style=\"margin:0 0 14px 0;font-family:Georgia, 'Times New Roman', serif;font-size:30px;line-height:1.15;color:#0b0817\">Your application is in.</p><p style=\"margin:0 0 14px 0;font-size:16px;line-height:1.6;color:#2D2D2D\">Hi {{first_name}},</p><p style=\"margin:0 0 14px 0;font-size:16px;line-height:1.6;color:#2D2D2D\">Thank you for sharing your voice story with us. Julia reads every application personally, and we will follow up as soon as she has read yours.</p><p style=\"margin:0;font-size:16px;line-height:1.6;color:#2D2D2D\">While you wait, you can begin getting familiar with the app. Start with a gentle pitch check. It gives you a simple snapshot of where your voice is today, and it gives Julia something real to talk about when you meet.</p>",
+            "align": "left",
+            "padding": 32,
+            "fontSize": 16,
+            "color": "#2D2D2D"
+          }
+        },
+        {
+          "type": "image",
+          "note": "Full-bleed screenshot",
+          "properties": {
+            "src": "{{IMAGE_BASE}}/email/lesson_notes_card.webp",
+            "alt": "Lesson notes with AI summary, teacher feedback and homework",
+            "width": 100,
+            "align": "center",
+            "padding": 0,
+            "link": ""
+          }
+        },
+        {
+          "type": "text",
+          "note": "Tip card: what happens next",
+          "properties": {
+            "content": "<p style=\"margin:0 0 6px 0;font-size:12px;letter-spacing:2px;text-transform:uppercase;color:#a88f46;font-weight:bold\">What happens next</p><p style=\"margin:0;font-size:16px;line-height:1.6;color:#2D2D2D\">Julia replies from hello@voicealchemyacademy.com, usually within a few days. If it is a fit, she will suggest a time to talk and walk you through the semester.</p>",
+            "align": "left",
+            "padding": 32,
+            "fontSize": 16,
+            "color": "#2D2D2D"
+          }
+        },
+        {
+          "type": "button",
+          "note": "Gold pill button",
+          "properties": {
+            "text": "Start a gentle pitch check",
+            "url": "https://voicealchemyacademy.app/signup?role=student&src=email",
+            "bgColor": "#ceb466",
+            "textColor": "#0b0817",
+            "align": "center",
+            "borderRadius": 999,
+            "padding": 24,
+            "fontSize": 16,
+            "fullWidth": false
+          }
+        },
+        {
+          "type": "divider",
+          "note": "Divider",
+          "properties": {
+            "color": "#E4E1EA",
+            "thickness": 1,
+            "width": 84,
+            "style": "solid",
+            "padding": 8
+          }
+        },
+        {
+          "type": "text",
+          "note": "Muted line with Instagram link",
+          "properties": {
+            "content": "<p style=\"margin:0;font-size:13px;line-height:1.5;color:#6F6A7A\">Explore <a href=\"https://instagram.com/VoiceAlchemyAcademy\" style=\"color:#a88f46\">@VoiceAlchemyAcademy</a> for philosophy, tips, tools and inspiring music.</p>",
+            "align": "center",
+            "padding": 20,
+            "fontSize": 16,
+            "color": "#2D2D2D"
+          }
+        },
+        {
+          "type": "footer",
+          "note": "Ink footer, Instagram + unsubscribe",
+          "properties": {
+            "text": "Voice Alchemy Academy &middot; hello@voicealchemyacademy.com<br><span style=\"color:#8A8399\">You are receiving this because you submitted a Voice Application.</span>",
+            "showSocial": true,
+            "socialLinks": [
+              {
+                "name": "Instagram",
+                "url": "https://instagram.com/VoiceAlchemyAcademy"
+              },
+              {
+                "name": "voicealchemyacademy.com",
+                "url": "https://voicealchemyacademy.com"
+              }
+            ],
+            "unsubscribeUrl": "{{unsubscribe_url}}",
+            "bgColor": "#120d24",
+            "textColor": "#B7B0C7",
+            "padding": 28
+          }
+        }
+      ]
+    },
+    {
+      "key": "mentorship-2",
+      "role": "mentorship",
+      "n": 2,
+      "name": "While Julia Reviews",
+      "timing": "Day 2 after submission, if no reply has gone out yet",
+      "subject": "While Julia reviews your application",
+      "preheader": "What a semester actually looks like.",
+      "cta": "Open Pitch Perfect",
+      "landing": "App → Training Center → Pitch Perfect",
+      "why": "Silence after an application breeds doubt. This fills the gap with substance: what the semester covers and how lessons live inside the app. It keeps the applicant engaged in the free tools so the eventual conversation starts from real practice, not from scratch.",
+      "ship_first": false,
+      "assets": [
+        "logo.png",
+        "student_my_lessons.webp"
+      ],
+      "blocks": [
+        {
+          "type": "header",
+          "note": "Ink background, VAA gold logo",
+          "properties": {
+            "logoUrl": "{{IMAGE_BASE}}/logo.png",
+            "companyName": "Voice Alchemy Academy",
+            "bgColor": "#0b0817",
+            "textColor": "#ceb466",
+            "padding": 28,
+            "align": "center"
+          }
+        },
+        {
+          "type": "text",
+          "note": "Eyebrow + headline + copy",
+          "properties": {
+            "content": "<p style=\"margin:0 0 10px 0;font-size:12px;letter-spacing:2px;text-transform:uppercase;color:#a88f46;font-weight:bold\">Voice Application &middot; Day 2</p><p style=\"margin:0 0 14px 0;font-family:Georgia, 'Times New Roman', serif;font-size:30px;line-height:1.15;color:#0b0817\">While Julia reads your story.</p><p style=\"margin:0;font-size:16px;line-height:1.6;color:#2D2D2D\">Applications are read in the order they arrive, and each one gets a proper read rather than a skim. In the meantime, here is what the semester looks like from the inside.</p>",
+            "align": "left",
+            "padding": 32,
+            "fontSize": 16,
+            "color": "#2D2D2D"
+          }
+        },
+        {
+          "type": "columns",
+          "note": "Three columns: what the semester includes",
+          "properties": {
+            "columnCount": 3,
+            "columnWidths": [
+              33,
+              33,
+              33
+            ],
+            "gap": 16,
+            "padding": 24,
+            "showDivider": false,
+            "dividerColor": "#E4E1EA",
+            "dividerThickness": 1,
+            "columnContent": [
+              {
+                "type": "text",
+                "content": "<p style=\"margin:0 0 6px 0;font-size:12px;letter-spacing:2px;text-transform:uppercase;color:#a88f46;font-weight:bold\">Weekly 1:1 lessons</p><p style=\"margin:0;font-size:14px;line-height:1.6;color:#2D2D2D\">Live video with Julia, inside the app, with your practice data on screen.</p>",
+                "align": "left",
+                "fontSize": 15,
+                "color": "#2D2D2D",
+                "src": "",
+                "alt": "",
+                "width": 100
+              },
+              {
+                "type": "text",
+                "content": "<p style=\"margin:0 0 6px 0;font-size:12px;letter-spacing:2px;text-transform:uppercase;color:#a88f46;font-weight:bold\">Notes that follow you</p><p style=\"margin:0;font-size:14px;line-height:1.6;color:#2D2D2D\">Every lesson is summarized with homework that shows up in your trainers.</p>",
+                "align": "left",
+                "fontSize": 15,
+                "color": "#2D2D2D",
+                "src": "",
+                "alt": "",
+                "width": 100
+              },
+              {
+                "type": "text",
+                "content": "<p style=\"margin:0 0 6px 0;font-size:12px;letter-spacing:2px;text-transform:uppercase;color:#a88f46;font-weight:bold\">The e-workbook</p><p style=\"margin:0;font-size:14px;line-height:1.6;color:#2D2D2D\">Philosophy, warm-ups and exercises, plus your own working space.</p>",
+                "align": "left",
+                "fontSize": 15,
+                "color": "#2D2D2D",
+                "src": "",
+                "alt": "",
+                "width": 100
+              }
+            ]
+          }
+        },
+        {
+          "type": "image",
+          "note": "Full-bleed screenshot",
+          "properties": {
+            "src": "{{IMAGE_BASE}}/email/student_my_lessons.webp",
+            "alt": "My Lessons view with upcoming lesson and teacher",
+            "width": 100,
+            "align": "center",
+            "padding": 0,
+            "link": ""
+          }
+        },
+        {
+          "type": "text",
+          "note": "Bridge copy",
+          "properties": {
+            "content": "<p style=\"margin:0;font-size:16px;line-height:1.6;color:#2D2D2D\">If you have not tried it yet, a two-minute session in Pitch Perfect is the best way to make our first conversation concrete.</p>",
+            "align": "left",
+            "padding": 32,
+            "fontSize": 16,
+            "color": "#2D2D2D"
+          }
+        },
+        {
+          "type": "button",
+          "note": "Gold pill button",
+          "properties": {
+            "text": "Open Pitch Perfect",
+            "url": "https://voicealchemyacademy.app/dashboard/training-center",
+            "bgColor": "#ceb466",
+            "textColor": "#0b0817",
+            "align": "center",
+            "borderRadius": 999,
+            "padding": 24,
+            "fontSize": 16,
+            "fullWidth": false
+          }
+        },
+        {
+          "type": "footer",
+          "note": "Ink footer, Instagram + unsubscribe",
+          "properties": {
+            "text": "Voice Alchemy Academy &middot; hello@voicealchemyacademy.com<br><span style=\"color:#8A8399\">You are receiving this because you submitted a Voice Application.</span>",
+            "showSocial": true,
+            "socialLinks": [
+              {
+                "name": "Instagram",
+                "url": "https://instagram.com/VoiceAlchemyAcademy"
+              },
+              {
+                "name": "voicealchemyacademy.com",
+                "url": "https://voicealchemyacademy.com"
+              }
+            ],
+            "unsubscribeUrl": "{{unsubscribe_url}}",
+            "bgColor": "#120d24",
+            "textColor": "#B7B0C7",
+            "padding": 28
+          }
+        }
+      ]
+    },
+    {
+      "key": "mentorship-3",
+      "role": "mentorship",
+      "n": 3,
+      "name": "Julia Would Like to Meet You",
+      "timing": "Manual send when an application is accepted",
+      "subject": "Julia would like to meet with you",
+      "preheader": "Let's find a time to talk about your semester.",
+      "cta": "Book a conversation",
+      "landing": "Booking link (needs a real URL) or reply",
+      "why": "The admissions email. It should feel like a personal note from Julia, not a system message, so the copy is first person and the photo shows a live online lesson. One CTA to book the call, plus a reply option for people who prefer email. Julia edits the opening line before sending.",
+      "ship_first": false,
+      "assets": [
+        "logo.png",
+        "mentorship-call.jpg"
+      ],
+      "blocks": [
+        {
+          "type": "header",
+          "note": "Ink background, VAA gold logo",
+          "properties": {
+            "logoUrl": "{{IMAGE_BASE}}/logo.png",
+            "companyName": "Voice Alchemy Academy",
+            "bgColor": "#0b0817",
+            "textColor": "#ceb466",
+            "padding": 28,
+            "align": "center"
+          }
+        },
+        {
+          "type": "text",
+          "note": "Eyebrow + headline + personal note (Julia edits line one)",
+          "properties": {
+            "content": "<p style=\"margin:0 0 10px 0;font-size:12px;letter-spacing:2px;text-transform:uppercase;color:#a88f46;font-weight:bold\">From Julia</p><p style=\"margin:0 0 14px 0;font-family:Georgia, 'Times New Roman', serif;font-size:30px;line-height:1.15;color:#0b0817\">I would love to meet you.</p><p style=\"margin:0 0 14px 0;font-size:16px;line-height:1.6;color:#2D2D2D\">Hi {{first_name}},</p><p style=\"margin:0 0 14px 0;font-size:16px;line-height:1.6;color:#2D2D2D\">I read your application this week and something in it stayed with me. I think there is real work we could do together this semester, and I would like to talk it through with you properly, voice to voice.</p><p style=\"margin:0;font-size:16px;line-height:1.6;color:#2D2D2D\">The call is relaxed: twenty to thirty minutes, no singing required, just where you are, where you want to go, and whether the way I work fits that.</p>",
+            "align": "left",
+            "padding": 32,
+            "fontSize": 16,
+            "color": "#2D2D2D"
+          }
+        },
+        {
+          "type": "image",
+          "note": "Full-bleed photo: live online lesson",
+          "properties": {
+            "src": "{{IMAGE_BASE}}/photos/mentorship-call.jpg",
+            "alt": "A singer in a live online lesson with Julia on screen",
+            "width": 100,
+            "align": "center",
+            "padding": 0,
+            "link": ""
+          }
+        },
+        {
+          "type": "button",
+          "note": "Gold pill button: booking link",
+          "properties": {
+            "text": "Book a conversation",
+            "url": "#JULIA_BOOKING_LINK",
+            "bgColor": "#ceb466",
+            "textColor": "#0b0817",
+            "align": "center",
+            "borderRadius": 999,
+            "padding": 24,
+            "fontSize": 16,
+            "fullWidth": false
+          }
+        },
+        {
+          "type": "text",
+          "note": "Text link: reply instead",
+          "properties": {
+            "content": "<p style=\"margin:0;font-size:13px;line-height:1.5;color:#6F6A7A\">Prefer email? Just <a href=\"mailto:hello@voicealchemyacademy.com?subject=Mentorship%20conversation\" style=\"color:#a88f46\">reply to this message</a> with a few times that work.</p>",
+            "align": "center",
+            "padding": 8,
+            "fontSize": 16,
+            "color": "#2D2D2D"
+          }
+        },
+        {
+          "type": "divider",
+          "note": "Divider",
+          "properties": {
+            "color": "#E4E1EA",
+            "thickness": 1,
+            "width": 84,
+            "style": "solid",
+            "padding": 8
+          }
+        },
+        {
+          "type": "text",
+          "note": "Muted closing line",
+          "properties": {
+            "content": "<p style=\"margin:0;font-size:13px;line-height:1.5;color:#6F6A7A\">Seats are limited each semester so every student gets real attention. This one is held for you until we speak.</p>",
+            "align": "center",
+            "padding": 20,
+            "fontSize": 16,
+            "color": "#2D2D2D"
+          }
+        },
+        {
+          "type": "footer",
+          "note": "Ink footer, Instagram + unsubscribe",
+          "properties": {
+            "text": "Voice Alchemy Academy &middot; hello@voicealchemyacademy.com<br><span style=\"color:#8A8399\">You are receiving this because you submitted a Voice Application.</span>",
+            "showSocial": true,
+            "socialLinks": [
+              {
+                "name": "Instagram",
+                "url": "https://instagram.com/VoiceAlchemyAcademy"
+              },
+              {
+                "name": "voicealchemyacademy.com",
+                "url": "https://voicealchemyacademy.com"
+              }
+            ],
+            "unsubscribeUrl": "{{unsubscribe_url}}",
+            "bgColor": "#120d24",
+            "textColor": "#B7B0C7",
+            "padding": 28
+          }
+        }
+      ]
+    },
+    {
+      "key": "mentorship-4",
+      "role": "mentorship",
+      "n": 4,
+      "name": "Not This Semester",
+      "timing": "Manual send when there is no seat, or the fit is not right yet",
+      "subject": "About your Voice Application",
+      "preheader": "Not this semester, and what we can offer instead.",
+      "cta": "Keep training free",
+      "landing": "App → Training Center",
+      "why": "A no that still feels like Voice Alchemy. It is honest about the seat limit, keeps the door open for the next intake, and points the singer at the free tools so the relationship continues instead of ending. Never templated-cold; Julia can add a line.",
+      "ship_first": false,
+      "assets": [
+        "logo.png",
+        "student_training_overview.webp"
+      ],
+      "blocks": [
+        {
+          "type": "header",
+          "note": "Ink background, VAA gold logo",
+          "properties": {
+            "logoUrl": "{{IMAGE_BASE}}/logo.png",
+            "companyName": "Voice Alchemy Academy",
+            "bgColor": "#0b0817",
+            "textColor": "#ceb466",
+            "padding": 28,
+            "align": "center"
+          }
+        },
+        {
+          "type": "text",
+          "note": "Eyebrow + headline + honest no (Julia can personalize)",
+          "properties": {
+            "content": "<p style=\"margin:0 0 10px 0;font-size:12px;letter-spacing:2px;text-transform:uppercase;color:#a88f46;font-weight:bold\">Voice Application</p><p style=\"margin:0 0 14px 0;font-family:Georgia, 'Times New Roman', serif;font-size:30px;line-height:1.15;color:#0b0817\">Not this semester, and I am sorry about that.</p><p style=\"margin:0 0 14px 0;font-size:16px;line-height:1.6;color:#2D2D2D\">Hi {{first_name}},</p><p style=\"margin:0 0 14px 0;font-size:16px;line-height:1.6;color:#2D2D2D\">Thank you for trusting me with your story. The mentorship runs with a small number of seats so each singer gets real attention, and this intake is full.</p><p style=\"margin:0;font-size:16px;line-height:1.6;color:#2D2D2D\">I would like to keep your application on file for the next semester. In the meantime, everything in the Training Center is free, and if you use it, I will be able to see how your voice has moved when we talk again.</p>",
+            "align": "left",
+            "padding": 32,
+            "fontSize": 16,
+            "color": "#2D2D2D"
+          }
+        },
+        {
+          "type": "image",
+          "note": "Full-bleed screenshot",
+          "properties": {
+            "src": "{{IMAGE_BASE}}/email/student_training_overview.webp",
+            "alt": "Training Center with free trainers",
+            "width": 100,
+            "align": "center",
+            "padding": 0,
+            "link": ""
+          }
+        },
+        {
+          "type": "button",
+          "note": "Gold pill button",
+          "properties": {
+            "text": "Keep training free",
+            "url": "https://voicealchemyacademy.app/dashboard/training-center",
+            "bgColor": "#ceb466",
+            "textColor": "#0b0817",
+            "align": "center",
+            "borderRadius": 999,
+            "padding": 24,
+            "fontSize": 16,
+            "fullWidth": false
+          }
+        },
+        {
+          "type": "divider",
+          "note": "Divider",
+          "properties": {
+            "color": "#E4E1EA",
+            "thickness": 1,
+            "width": 84,
+            "style": "solid",
+            "padding": 8
+          }
+        },
+        {
+          "type": "text",
+          "note": "Muted closing line",
+          "properties": {
+            "content": "<p style=\"margin:0;font-size:13px;line-height:1.5;color:#6F6A7A\">We open applications once per semester. You will hear from us first when the next one opens.</p>",
+            "align": "center",
+            "padding": 20,
+            "fontSize": 16,
+            "color": "#2D2D2D"
+          }
+        },
+        {
+          "type": "footer",
+          "note": "Ink footer, Instagram + unsubscribe",
+          "properties": {
+            "text": "Voice Alchemy Academy &middot; hello@voicealchemyacademy.com<br><span style=\"color:#8A8399\">You are receiving this because you submitted a Voice Application.</span>",
+            "showSocial": true,
+            "socialLinks": [
+              {
+                "name": "Instagram",
+                "url": "https://instagram.com/VoiceAlchemyAcademy"
+              },
+              {
+                "name": "voicealchemyacademy.com",
+                "url": "https://voicealchemyacademy.com"
+              }
+            ],
+            "unsubscribeUrl": "{{unsubscribe_url}}",
+            "bgColor": "#120d24",
+            "textColor": "#B7B0C7",
+            "padding": 28
+          }
+        }
+      ]
+    },
+    {
+      "key": "mentorship-5",
+      "role": "mentorship",
+      "n": 5,
+      "name": "Application Started, Not Finished",
+      "timing": "2 hours after a started application is abandoned (only if the email field was captured)",
+      "subject": "Your Voice Application is waiting",
+      "preheader": "You do not need perfect answers.",
+      "cta": "Finish your application",
+      "landing": "voicealchemyacademy.app/mentorship#apply",
+      "why": "Recovers people who opened the application and froze on the long-answer questions. The message lowers the bar: the application is not a test, a few honest sentences beat polished ones. Note: the website form only submits on completion today, so this needs the email field saved on blur before it can fire.",
+      "ship_first": false,
+      "assets": [
+        "logo.png",
+        "julia-zoom.jpg"
+      ],
+      "blocks": [
+        {
+          "type": "header",
+          "note": "Ink background, VAA gold logo",
+          "properties": {
+            "logoUrl": "{{IMAGE_BASE}}/logo.png",
+            "companyName": "Voice Alchemy Academy",
+            "bgColor": "#0b0817",
+            "textColor": "#ceb466",
+            "padding": 28,
+            "align": "center"
+          }
+        },
+        {
+          "type": "text",
+          "note": "Eyebrow + headline + copy",
+          "properties": {
+            "content": "<p style=\"margin:0 0 10px 0;font-size:12px;letter-spacing:2px;text-transform:uppercase;color:#a88f46;font-weight:bold\">Voice Application</p><p style=\"margin:0 0 14px 0;font-family:Georgia, 'Times New Roman', serif;font-size:30px;line-height:1.15;color:#0b0817\">You do not need perfect answers.</p><p style=\"margin:0 0 14px 0;font-size:16px;line-height:1.6;color:#2D2D2D\">If you started the Voice Application and stepped away, that is completely fine.</p><p style=\"margin:0;font-size:16px;line-height:1.6;color:#2D2D2D\">The application is not a test. It is a way for Julia to understand where your voice has been, what you want from it, and what kind of support would actually help. Write honestly. A few clear sentences are better than trying to sound polished.</p>",
+            "align": "left",
+            "padding": 32,
+            "fontSize": 16,
+            "color": "#2D2D2D"
+          }
+        },
+        {
+          "type": "image",
+          "note": "Full-bleed photo of Julia",
+          "properties": {
+            "src": "{{IMAGE_BASE}}/photos/julia-zoom.jpg",
+            "alt": "Julia coaching a student in a live online lesson",
+            "width": 100,
+            "align": "center",
+            "padding": 0,
+            "link": ""
+          }
+        },
+        {
+          "type": "text",
+          "note": "Tip card: what Julia looks for",
+          "properties": {
+            "content": "<p style=\"margin:0 0 6px 0;font-size:12px;letter-spacing:2px;text-transform:uppercase;color:#a88f46;font-weight:bold\">Julia looks for</p><p style=\"margin:0;font-size:16px;line-height:1.6;color:#2D2D2D\">Openness, curiosity, and a willingness to practice between lessons. Not experience, not genre, not a perfect voice.</p>",
+            "align": "left",
+            "padding": 32,
+            "fontSize": 16,
+            "color": "#2D2D2D"
+          }
+        },
+        {
+          "type": "button",
+          "note": "Gold pill button",
+          "properties": {
+            "text": "Finish your application",
+            "url": "https://voicealchemyacademy.app/mentorship#apply",
+            "bgColor": "#ceb466",
+            "textColor": "#0b0817",
+            "align": "center",
+            "borderRadius": 999,
+            "padding": 24,
+            "fontSize": 16,
+            "fullWidth": false
+          }
+        },
+        {
+          "type": "divider",
+          "note": "Divider",
+          "properties": {
+            "color": "#E4E1EA",
+            "thickness": 1,
+            "width": 84,
+            "style": "solid",
+            "padding": 8
+          }
+        },
+        {
+          "type": "text",
+          "note": "Muted closing line",
+          "properties": {
+            "content": "<p style=\"margin:0;font-size:13px;line-height:1.5;color:#6F6A7A\">Founder-led mentorship &middot; limited seats each semester &middot; all genres and levels welcome.</p>",
+            "align": "center",
+            "padding": 20,
+            "fontSize": 16,
+            "color": "#2D2D2D"
+          }
+        },
+        {
+          "type": "footer",
+          "note": "Ink footer, Instagram + unsubscribe",
+          "properties": {
+            "text": "Voice Alchemy Academy &middot; hello@voicealchemyacademy.com<br><span style=\"color:#8A8399\">You are receiving this because you started a Voice Application.</span>",
+            "showSocial": true,
+            "socialLinks": [
+              {
+                "name": "Instagram",
+                "url": "https://instagram.com/VoiceAlchemyAcademy"
+              },
+              {
+                "name": "voicealchemyacademy.com",
+                "url": "https://voicealchemyacademy.com"
+              }
+            ],
+            "unsubscribeUrl": "{{unsubscribe_url}}",
+            "bgColor": "#120d24",
+            "textColor": "#B7B0C7",
+            "padding": 28
+          }
+        }
+      ]
+    },
+    {
+      "key": "mentorship-6",
+      "role": "mentorship",
+      "n": 6,
+      "name": "Keep This Door Open?",
+      "timing": "7 days after an abandoned application, last touch",
+      "subject": "Want to keep this door open?",
+      "preheader": "One more chance to finish, or start free instead.",
+      "cta": "Finish your application",
+      "landing": "voicealchemyacademy.app/mentorship#apply",
+      "why": "Final nudge for non-completers. It offers two honest exits: finish the application, or skip it and train free in the app. Either keeps the person in the Voice Alchemy world. After this, no more mentorship emails to this address.",
+      "ship_first": false,
+      "assets": [
+        "logo.png",
+        "stage-mic.jpg"
+      ],
+      "blocks": [
+        {
+          "type": "header",
+          "note": "Ink background, VAA gold logo",
+          "properties": {
+            "logoUrl": "{{IMAGE_BASE}}/logo.png",
+            "companyName": "Voice Alchemy Academy",
+            "bgColor": "#0b0817",
+            "textColor": "#ceb466",
+            "padding": 28,
+            "align": "center"
+          }
+        },
+        {
+          "type": "text",
+          "note": "Eyebrow + headline + copy",
+          "properties": {
+            "content": "<p style=\"margin:0 0 10px 0;font-size:12px;letter-spacing:2px;text-transform:uppercase;color:#a88f46;font-weight:bold\">Last note on this</p><p style=\"margin:0 0 14px 0;font-family:Georgia, 'Times New Roman', serif;font-size:30px;line-height:1.15;color:#0b0817\">Want to keep this door open?</p><p style=\"margin:0 0 14px 0;font-size:16px;line-height:1.6;color:#2D2D2D\">Your Voice Application is still saved where you left it. If the timing was wrong, there is no need to explain, and there is no deadline except the seat count.</p><p style=\"margin:0;font-size:16px;line-height:1.6;color:#2D2D2D\">If you would rather not apply right now, that is fine too. The Training Center is free, and plenty of mentorship students started there first.</p>",
+            "align": "left",
+            "padding": 32,
+            "fontSize": 16,
+            "color": "#2D2D2D"
+          }
+        },
+        {
+          "type": "image",
+          "note": "Full-bleed photo",
+          "properties": {
+            "src": "{{IMAGE_BASE}}/photos/stage-mic.jpg",
+            "alt": "A stage microphone in warm light",
+            "width": 100,
+            "align": "center",
+            "padding": 0,
+            "link": ""
+          }
+        },
+        {
+          "type": "button",
+          "note": "Gold pill button",
+          "properties": {
+            "text": "Finish your application",
+            "url": "https://voicealchemyacademy.app/mentorship#apply",
+            "bgColor": "#ceb466",
+            "textColor": "#0b0817",
+            "align": "center",
+            "borderRadius": 999,
+            "padding": 24,
+            "fontSize": 16,
+            "fullWidth": false
+          }
+        },
+        {
+          "type": "text",
+          "note": "Text link: start free instead",
+          "properties": {
+            "content": "<p style=\"margin:0;font-size:13px;line-height:1.5;color:#6F6A7A\">Or <a href=\"https://voicealchemyacademy.app/signup?role=student&src=email\" style=\"color:#a88f46;font-weight:bold\">start free in the app</a> and apply whenever you are ready.</p>",
+            "align": "center",
+            "padding": 8,
+            "fontSize": 16,
+            "color": "#2D2D2D"
+          }
+        },
+        {
+          "type": "divider",
+          "note": "Divider",
+          "properties": {
+            "color": "#E4E1EA",
+            "thickness": 1,
+            "width": 84,
+            "style": "solid",
+            "padding": 8
+          }
+        },
+        {
+          "type": "text",
+          "note": "Muted closing line",
+          "properties": {
+            "content": "<p style=\"margin:0;font-size:13px;line-height:1.5;color:#6F6A7A\">This is the last email about your application. We will not chase you again.</p>",
+            "align": "center",
+            "padding": 20,
+            "fontSize": 16,
+            "color": "#2D2D2D"
+          }
+        },
+        {
+          "type": "footer",
+          "note": "Ink footer, Instagram + unsubscribe",
+          "properties": {
+            "text": "Voice Alchemy Academy &middot; hello@voicealchemyacademy.com<br><span style=\"color:#8A8399\">You are receiving this because you started a Voice Application.</span>",
+            "showSocial": true,
+            "socialLinks": [
+              {
+                "name": "Instagram",
+                "url": "https://instagram.com/VoiceAlchemyAcademy"
+              },
+              {
+                "name": "voicealchemyacademy.com",
+                "url": "https://voicealchemyacademy.com"
+              }
+            ],
+            "unsubscribeUrl": "{{unsubscribe_url}}",
+            "bgColor": "#120d24",
+            "textColor": "#B7B0C7",
+            "padding": 28
+          }
+        }
+      ]
+    }
+  ]
+}

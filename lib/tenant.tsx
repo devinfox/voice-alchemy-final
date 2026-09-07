@@ -24,8 +24,6 @@ export interface GradientConfig {
 export interface TenantContextValue {
   /** Always true for Voice Alchemy Academy gold-branded UI paths. */
   isVoiceAlchemy: boolean
-  isCitadelGold: boolean
-  isMeridian: boolean
   organizationName: string
   domain: string
   gradientConfig: GradientConfig
@@ -42,8 +40,6 @@ const DEFAULT_GRADIENT: GradientConfig = {
 
 const TenantContext = createContext<TenantContextValue>({
   isVoiceAlchemy: true,
-  isCitadelGold: true,
-  isMeridian: false,
   organizationName: 'Voice Alchemy Academy',
   domain: 'voicealchemyacademy.com',
   gradientConfig: DEFAULT_GRADIENT,
@@ -53,8 +49,6 @@ export function TenantProvider({ children }: { children: ReactNode }) {
   const value = useMemo<TenantContextValue>(
     () => ({
       isVoiceAlchemy: true,
-      isCitadelGold: true,
-      isMeridian: false,
       organizationName: 'Voice Alchemy Academy',
       domain: process.env.NEXT_PUBLIC_EMAIL_DOMAIN || 'voicealchemyacademy.com',
       gradientConfig: DEFAULT_GRADIENT,
@@ -72,8 +66,6 @@ export function useTenant(): TenantContextValue {
 export function getTenantConfig() {
   return {
     isVoiceAlchemy: true,
-    isCitadelGold: true,
-    isMeridian: false,
     organizationName: 'Voice Alchemy Academy',
     domain: process.env.NEXT_PUBLIC_EMAIL_DOMAIN || 'voicealchemyacademy.com',
     gradientConfig: DEFAULT_GRADIENT,

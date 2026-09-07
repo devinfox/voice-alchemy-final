@@ -72,7 +72,7 @@ export function FunnelTagsEditor({
               </button>
             </div>
             <p className="text-gray-400 text-sm mt-2">
-              Add descriptive tags to help AI match calls to this funnel automatically
+              Tags describe who this funnel is for and help the inbox assistant match inbound emails to it
             </p>
           </div>
 
@@ -84,8 +84,8 @@ export function FunnelTagsEditor({
               <div>
                 <h3 className="text-purple-400 font-medium text-sm">AI-Powered Matching</h3>
                 <p className="text-gray-400 text-sm mt-1">
-                  Write natural descriptions like &quot;inbound call from interested lead&quot; or &quot;cold call follow-up needed&quot;.
-                  Our AI will semantically match calls based on context, not just exact words.
+                  Write natural phrases like &quot;new student asking about pricing&quot; or &quot;returning student after a break&quot;.
+                  Matching is by meaning, not exact words, and every match is queued for your approval first.
                 </p>
               </div>
             </div>
@@ -95,7 +95,7 @@ export function FunnelTagsEditor({
               <div>
                 <h3 className="text-white font-medium">Auto-enrollment</h3>
                 <p className="text-gray-400 text-sm mt-1">
-                  Allow AI to draft enrollments for approval when calls match this funnel
+                  Suggest enrollments for approval when an inbound email matches this funnel
                 </p>
               </div>
               <button
@@ -117,7 +117,7 @@ export function FunnelTagsEditor({
               <h3 className="text-white font-medium mb-3">Current Tags</h3>
               <div className="flex flex-wrap gap-2 min-h-[40px]">
                 {tags.length === 0 ? (
-                  <p className="text-gray-500 text-sm">No tags added yet. Add some tags to enable AI matching.</p>
+                  <p className="text-gray-500 text-sm">No tags yet. Add a few so matching has something to go on.</p>
                 ) : (
                   tags.map((tag) => (
                     <span
@@ -150,7 +150,7 @@ export function FunnelTagsEditor({
                       handleAddTag(newTag)
                     }
                   }}
-                  placeholder="e.g., inbound call from interested lead..."
+                  placeholder="e.g., new student asking about lessons..."
                   className="flex-1 px-4 py-2 bg-white/5 border border-white/10 rounded-lg text-white placeholder-gray-500 focus:outline-none focus:border-yellow-500/50"
                 />
                 <button
