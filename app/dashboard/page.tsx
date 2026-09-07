@@ -1,3 +1,4 @@
+import type { Metadata } from 'next'
 import { redirect } from 'next/navigation'
 import Link from 'next/link'
 import { createClient, getCurrentUser } from '@/lib/supabase-server'
@@ -162,6 +163,8 @@ function getWeekStart(date = new Date()): string {
   weekStart.setHours(0, 0, 0, 0)
   return weekStart.toISOString().slice(0, 10)
 }
+
+export const metadata: Metadata = { title: 'Dashboard', description: 'Your Voice Alchemy Academy home: lessons, practice and progress at a glance.' }
 
 export default async function DashboardPage() {
   const supabase = await createClient()

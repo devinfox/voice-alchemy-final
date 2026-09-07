@@ -1,3 +1,4 @@
+import type { Metadata } from 'next'
 import { createClient, getCurrentUser } from '@/lib/supabase-server'
 import { getSupabaseAdmin } from '@/lib/supabase-admin'
 import { redirect } from 'next/navigation'
@@ -6,6 +7,8 @@ import { EmailSplitPaneLayout } from './components/email-split-pane-layout'
 import { EmailMobileWrapper } from './components/email-mobile-wrapper'
 import { RouteRefresher } from './components/route-refresher'
 import { canAccessEmailTools } from '@/lib/email-access'
+
+export const metadata: Metadata = { title: 'Email', description: 'Your academy inbox: conversations with students and coaches.' }
 
 export default async function EmailLayout({
   children,

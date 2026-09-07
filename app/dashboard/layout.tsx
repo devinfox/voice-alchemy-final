@@ -1,9 +1,14 @@
+import type { Metadata } from 'next'
 import { redirect } from 'next/navigation'
+import { NOINDEX } from '@/lib/seo'
 import { createClient, getCurrentUser } from '@/lib/supabase-server'
 import { Sidebar } from '@/components/sidebar'
 import { Header } from '@/components/header'
 import { MobileNav } from '@/components/mobile-nav'
 import { DashboardFloatingButtons } from '@/components/dashboard-floating-buttons'
+
+// Everything behind login stays out of search results.
+export const metadata: Metadata = { title: 'Dashboard', robots: NOINDEX }
 
 export default async function DashboardLayout({
   children,

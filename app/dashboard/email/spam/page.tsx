@@ -1,4 +1,7 @@
+import type { Metadata } from 'next'
 import { FolderPage } from '../components/folder-page'
+
+export const metadata: Metadata = { title: 'Spam' }
 
 export default async function SpamPage({
   searchParams,

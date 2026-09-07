@@ -1,6 +1,9 @@
+import type { Metadata } from 'next'
 import { createClient, getCurrentUser } from '@/lib/supabase-server'
 import { redirect } from 'next/navigation'
 import { CalendarView } from './calendar-view'
+
+export const metadata: Metadata = { title: 'Calendar', description: 'Upcoming lessons and availability.' }
 
 export default async function CalendarPage() {
   const supabase = await createClient()

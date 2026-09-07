@@ -1,3 +1,4 @@
+import type { Metadata } from 'next'
 import { createClient, getCurrentUser } from '@/lib/supabase-server'
 import { redirect, notFound } from 'next/navigation'
 import Link from 'next/link'
@@ -42,6 +43,8 @@ function nextEmailText(e: EnrollmentRow): string {
   const days = Math.ceil(hours / 24)
   return days === 1 ? 'Tomorrow' : `In ${days} days`
 }
+
+export const metadata: Metadata = { title: 'Funnel' }
 
 export default async function FunnelDetailPage({ params }: PageProps) {
   const supabase = await createClient()

@@ -1,9 +1,12 @@
+import type { Metadata } from 'next'
 import { FolderPage } from '../components/folder-page'
 
 // Always render fresh — never serve a cached version that could omit recent sends.
 export const dynamic = 'force-dynamic'
 export const revalidate = 0
 export const fetchCache = 'force-no-store'
+
+export const metadata: Metadata = { title: 'Sent' }
 
 export default async function SentPage({
   searchParams,

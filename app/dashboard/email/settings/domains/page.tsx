@@ -1,6 +1,9 @@
+import type { Metadata } from 'next'
 import { getCurrentUser, createClient } from '@/lib/supabase-server'
 import { redirect } from 'next/navigation'
 import { DomainsList } from '../../components/domains-list'
+
+export const metadata: Metadata = { title: 'Email Domains' }
 
 export default async function DomainsSettingsPage() {
   const user = await getCurrentUser()

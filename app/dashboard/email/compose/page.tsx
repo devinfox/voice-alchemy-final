@@ -1,3 +1,4 @@
+import type { Metadata } from 'next'
 import { getCurrentUser, createClient } from '@/lib/supabase-server'
 import { createClient as createAdminClient } from '@supabase/supabase-js'
 import { redirect } from 'next/navigation'
@@ -6,6 +7,8 @@ import { ArrowLeft } from 'lucide-react'
 import { ComposePageClient } from './compose-client'
 import { CreateEmailAccountPrompt } from './create-account-prompt'
 import { getOrgEmailDomain } from '@/lib/email-domain'
+
+export const metadata: Metadata = { title: 'Compose' }
 
 export default async function ComposePage({
   searchParams,

@@ -1,9 +1,12 @@
+import type { Metadata } from 'next'
 import { getCurrentUser, createClient } from '@/lib/supabase-server'
 import { redirect } from 'next/navigation'
 import { SignatureEditor } from '../components/signature-editor'
 import { EmailHealthPanel } from './email-health-panel'
 import Link from 'next/link'
 import { Mail, Globe, ArrowRight } from 'lucide-react'
+
+export const metadata: Metadata = { title: 'Email Settings' }
 
 export default async function EmailSettingsPage() {
   const user = await getCurrentUser()

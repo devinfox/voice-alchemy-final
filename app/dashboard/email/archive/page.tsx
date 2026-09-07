@@ -1,4 +1,7 @@
+import type { Metadata } from 'next'
 import { FolderPage } from '../components/folder-page'
+
+export const metadata: Metadata = { title: 'Archive' }
 
 export default async function ArchivePage({
   searchParams,
