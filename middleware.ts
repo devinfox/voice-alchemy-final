@@ -67,8 +67,11 @@ export async function middleware(request: NextRequest) {
                       pathname.startsWith('/forgot-password') ||
                       pathname.startsWith('/reset-password') ||
                       pathname.startsWith('/auth/callback')
+  // Recital rooms are shareable with guests who have no account.
+  const isPublicRecitalRoute = pathname.startsWith('/recital/') || pathname.startsWith('/training/')
   const isProtectedRoute = !isAuthRoute &&
                            !pathname.startsWith('/api') &&
+                           !isPublicRecitalRoute &&
                            pathname !== '/'
 
   // Redirect unauthenticated users to login

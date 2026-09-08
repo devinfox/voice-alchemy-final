@@ -18,6 +18,8 @@ import {
   FileText,
   Music2,
   Sparkles,
+  Theater,
+  Presentation,
 } from 'lucide-react'
 import { createClient } from '@/lib/supabase'
 import { useRouter } from 'next/navigation'
@@ -39,6 +41,8 @@ const teacherNavigation: NavItem[] = [
   { name: 'My Students', href: '/dashboard/students', icon: Users },
   { name: 'Training Center', href: '/dashboard/training-center', icon: Music },
   { name: 'Courses', href: '/dashboard/courses', icon: GraduationCap },
+  { name: 'Recitals', href: '/dashboard/recitals', icon: Theater },
+  { name: 'Training Sessions', href: '/dashboard/training-sessions', icon: Presentation },
   {
     name: 'Email',
     href: '/dashboard/email',
@@ -58,6 +62,7 @@ const studentNavigation: NavItem[] = [
   { name: 'Dashboard', href: '/dashboard', icon: LayoutDashboard },
   { name: 'Training Center', href: '/dashboard/training-center', icon: Music },
   { name: 'My Lessons', href: '/dashboard/my-lessons', icon: BookOpen },
+  { name: 'Recitals', href: '/dashboard/recitals', icon: Theater },
   { name: 'Courses', href: '/dashboard/courses', icon: GraduationCap },
   { name: 'Find Teacher', href: '/dashboard/find-teacher', icon: Search },
   { name: 'Calendar', href: '/dashboard/calendar', icon: Calendar },
