@@ -132,12 +132,34 @@ export function Sidebar({ user, userEmail }: SidebarProps) {
     const isActive = !item.group && (pathname === item.href || (item.href !== '/dashboard' && pathname.startsWith(item.href + '/')))
     // A parent stays open while any of its sub-pages is showing
     const childActive = (item.children || []).some((c) => pathname === c.href || pathname.startsWith(c.href + '/'))
-    const isOpen = item.group ? (openGroups[item.name] ?? childActive) : isActive || childActive
+    // Manual toggles win; otherwise a section is open while it or a sub-page is showing.
+    const isOpen = openGroups[item.name] ?? (item.group ? childActive : isActive || childActive)
 
     if (depth === 0 && item.children && item.children.length > 0) {
       return (
         <div key={item.name} className="space-y-1">
-          {item.group ? renderGroupButton(item, childActive, isOpen) : renderNavLink(item, isActive, depth)}
+          {item.group ? (
+            renderGroupButton(item, childActive, isOpen)
+          ) : (
+            <div className="relative">
+              {renderNavLink(item, isActive, depth, true)}
+              <button
+                type="button"
+                onClick={(e) => {
+                  e.preventDefault()
+                  e.stopPropagation()
+                  setOpenGroups((prev) => ({ ...prev, [item.name]: !isOpen }))
+                }}
+                aria-label={isOpen ? `Collapse ${item.name}` : `Expand ${item.name}`}
+                aria-expanded={isOpen}
+                className={`absolute right-2 top-1/2 -translate-y-1/2 p-1.5 rounded-lg transition-colors ${
+                  isActive ? 'text-[#CEB466] hover:bg-[#CEB466]/15' : 'text-gray-500 hover:text-white hover:bg-white/[0.08]'
+                }`}
+              >
+                <ChevronDown className={`w-4 h-4 transition-transform duration-300 ${isOpen ? 'rotate-180' : ''}`} />
+              </button>
+            </div>
+          )}
           {isOpen && (
             <div className="ml-6 pl-3 border-l border-white/[0.08] space-y-1">
               {item.children.map((child) => renderNavItem(child, depth + 1))}
@@ -170,12 +192,12 @@ export function Sidebar({ user, userEmail }: SidebarProps) {
     </button>
   )
 
-  const renderNavLink = (item: NavItem, isActive: boolean, depth: number) => {
+  const renderNavLink = (item: NavItem, isActive: boolean, depth: number, hasToggle = false) => {
     return (
       <Link
         key={item.name}
         href={item.href}
-        className={`flex items-center gap-3 px-3.5 py-3 rounded-2xl text-xs sm:text-sm font-semibold transition-all duration-300 ${
+        className={`flex items-center gap-3 px-3.5 py-3 ${hasToggle ? 'pr-11' : ''} rounded-2xl text-xs sm:text-sm font-semibold transition-all duration-300 ${
           isActive
             ? 'bg-gradient-to-r from-[#CEB466]/20 via-[#CEB466]/10 to-transparent text-[#CEB466] border border-[#CEB466]/40 shadow-lg shadow-[#CEB466]/10'
             : 'text-gray-300 hover:bg-white/[0.06] hover:text-white border border-transparent'
