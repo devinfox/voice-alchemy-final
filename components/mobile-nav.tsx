@@ -23,6 +23,8 @@ import {
   Sparkles,
   Theater,
   Presentation,
+  Video,
+  UserPlus,
 } from 'lucide-react'
 import { createClient } from '@/lib/supabase'
 import { useRouter } from 'next/navigation'
@@ -36,6 +38,8 @@ interface NavItem {
   badge?: number
   /** Sub-pages listed indented under this item */
   children?: NavItem[]
+  /** A heading with no page of its own; children are listed beneath it. */
+  group?: boolean
 }
 
 // Teacher navigation
@@ -44,13 +48,24 @@ const teacherNavigation: NavItem[] = [
   { name: 'My Students', href: '/dashboard/students', icon: Users },
   { name: 'Training Center', href: '/dashboard/training-center', icon: Music },
   { name: 'Courses', href: '/dashboard/courses', icon: GraduationCap },
-  { name: 'Recitals', href: '/dashboard/recitals', icon: Theater },
-  { name: 'Training Sessions', href: '/dashboard/training-sessions', icon: Presentation },
+  {
+    name: 'Video Sessions',
+    href: '/dashboard/video-sessions',
+    icon: Video,
+    group: true,
+    children: [
+      { name: 'Recitals', href: '/dashboard/recitals', icon: Theater },
+      { name: 'Training Sessions', href: '/dashboard/training-sessions', icon: Presentation },
+    ],
+  },
   {
     name: 'Email',
     href: '/dashboard/email',
     icon: Mail,
-    children: [{ name: 'Templates & Funnels', href: '/dashboard/email-templates', icon: FileText }],
+    children: [
+      { name: 'Templates & Funnels', href: '/dashboard/email-templates', icon: FileText },
+      { name: 'Leads', href: '/dashboard/email-templates/leads', icon: UserPlus },
+    ],
   },
   { name: 'Calendar', href: '/dashboard/calendar', icon: Calendar },
 ]
@@ -165,6 +180,14 @@ export function MobileNav({ user, userEmail }: MobileNavProps) {
             <nav className="flex-1 space-y-1">
               {navigation.flatMap((item) => [item, ...(item.children || []).map((c) => ({ ...c, nested: true }))]).map((item: NavItem & { nested?: boolean }) => {
                 const isActive = pathname === item.href || (item.href !== '/dashboard' && pathname.startsWith(item.href + '/'))
+                if (item.group) {
+                  return (
+                    <div key={item.name} className="flex items-center gap-3 px-3.5 pt-3 pb-1 text-[10px] font-bold uppercase tracking-wider text-gray-500">
+                      <item.icon className="w-3.5 h-3.5 text-[#CEB466]" />
+                      <span>{item.name}</span>
+                    </div>
+                  )
+                }
                 return (
                   <Link
                     key={item.name}

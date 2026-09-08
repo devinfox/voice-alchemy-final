@@ -1,5 +1,6 @@
 'use client'
 
+import { useState } from 'react'
 import Link from 'next/link'
 import Image from 'next/image'
 import { usePathname } from 'next/navigation'
@@ -20,6 +21,9 @@ import {
   Sparkles,
   Theater,
   Presentation,
+  Video,
+  UserPlus,
+  ChevronDown,
 } from 'lucide-react'
 import { createClient } from '@/lib/supabase'
 import { useRouter } from 'next/navigation'
@@ -33,6 +37,8 @@ interface NavItem {
   badge?: number
   /** Sub-pages shown indented while this section is open */
   children?: NavItem[]
+  /** A dropdown heading with no page of its own; clicking it only expands the children. */
+  group?: boolean
 }
 
 // Teacher navigation
@@ -41,13 +47,24 @@ const teacherNavigation: NavItem[] = [
   { name: 'My Students', href: '/dashboard/students', icon: Users },
   { name: 'Training Center', href: '/dashboard/training-center', icon: Music },
   { name: 'Courses', href: '/dashboard/courses', icon: GraduationCap },
-  { name: 'Recitals', href: '/dashboard/recitals', icon: Theater },
-  { name: 'Training Sessions', href: '/dashboard/training-sessions', icon: Presentation },
+  {
+    name: 'Video Sessions',
+    href: '/dashboard/video-sessions',
+    icon: Video,
+    group: true,
+    children: [
+      { name: 'Recitals', href: '/dashboard/recitals', icon: Theater },
+      { name: 'Training Sessions', href: '/dashboard/training-sessions', icon: Presentation },
+    ],
+  },
   {
     name: 'Email',
     href: '/dashboard/email',
     icon: Mail,
-    children: [{ name: 'Templates & Funnels', href: '/dashboard/email-templates', icon: FileText }],
+    children: [
+      { name: 'Templates & Funnels', href: '/dashboard/email-templates', icon: FileText },
+      { name: 'Leads', href: '/dashboard/email-templates/leads', icon: UserPlus },
+    ],
   },
   { name: 'Calendar', href: '/dashboard/calendar', icon: Calendar },
 ]
@@ -90,6 +107,7 @@ function getPageTourKey(pathname: string, isTeacher: boolean): string | null {
 
 export function Sidebar({ user, userEmail }: SidebarProps) {
   const pathname = usePathname()
+  const [openGroups, setOpenGroups] = useState<Record<string, boolean>>({})
   const router = useRouter()
 
   const handleSignOut = async () => {
@@ -113,15 +131,15 @@ export function Sidebar({ user, userEmail }: SidebarProps) {
     : studentNavigation
 
   const renderNavItem = (item: NavItem, depth = 0) => {
-    const isActive = pathname === item.href || (item.href !== '/dashboard' && pathname.startsWith(item.href + '/'))
+    const isActive = !item.group && (pathname === item.href || (item.href !== '/dashboard' && pathname.startsWith(item.href + '/')))
     // A parent stays open while any of its sub-pages is showing
     const childActive = (item.children || []).some((c) => pathname === c.href || pathname.startsWith(c.href + '/'))
-    const isOpen = isActive || childActive
+    const isOpen = item.group ? (openGroups[item.name] ?? childActive) : isActive || childActive
 
     if (depth === 0 && item.children && item.children.length > 0) {
       return (
         <div key={item.name} className="space-y-1">
-          {renderNavLink(item, isActive, depth)}
+          {item.group ? renderGroupButton(item, childActive, isOpen) : renderNavLink(item, isActive, depth)}
           {isOpen && (
             <div className="ml-6 pl-3 border-l border-white/[0.08] space-y-1">
               {item.children.map((child) => renderNavItem(child, depth + 1))}
@@ -132,6 +150,27 @@ export function Sidebar({ user, userEmail }: SidebarProps) {
     }
     return renderNavLink(item, isActive, depth)
   }
+
+  const renderGroupButton = (item: NavItem, childActive: boolean, isOpen: boolean) => (
+    <button
+      type="button"
+      onClick={() => setOpenGroups((prev) => ({ ...prev, [item.name]: !isOpen }))}
+      aria-expanded={isOpen}
+      className={`w-full flex items-center gap-3 px-3.5 py-3 rounded-2xl text-xs sm:text-sm font-semibold transition-all duration-300 text-left ${
+        childActive
+          ? 'text-[#CEB466] border border-[#CEB466]/20 bg-[#CEB466]/5'
+          : 'text-gray-300 hover:bg-white/[0.06] hover:text-white border border-transparent'
+      }`}
+    >
+      <div className={`w-8 h-8 rounded-xl flex items-center justify-center transition-colors ${
+        childActive ? 'bg-[#CEB466]/20 text-[#CEB466]' : 'bg-white/5 text-gray-400'
+      }`}>
+        <item.icon className="w-4 h-4" />
+      </div>
+      <span className="flex-1">{item.name}</span>
+      <ChevronDown className={`w-4 h-4 text-gray-500 transition-transform duration-300 ${isOpen ? 'rotate-180' : ''}`} />
+    </button>
+  )
 
   const renderNavLink = (item: NavItem, isActive: boolean, depth: number) => {
     return (
