@@ -5,7 +5,7 @@ import { generateMessageId, generateSnippet } from '@/lib/email-utils'
 import { renderEmailTemplate, templateHtml, type RecipientContext, type SenderContext } from '@/lib/email-variables'
 import { v4 as uuidv4 } from 'uuid'
 import type { SupabaseClient } from '@supabase/supabase-js'
-import { cancelEnrollments, enrollInFunnel, findFunnelByTrigger, isUnsubscribed } from '@/lib/email-leads'
+import { enrollInFunnel, findFunnelByTrigger, isUnsubscribed } from '@/lib/email-leads'
 import { listUnsubscribeHeaders } from '@/lib/email-unsubscribe'
 
 export const runtime = 'nodejs'
@@ -87,8 +87,8 @@ async function resolveSendingAccount(admin: SupabaseClient, preferredUserId: str
 }
 
 /**
- * Part 0: new student accounts join the "student_signup" funnel, and any lead
- * track for the same address ends (they no longer need to be sold the app).
+ * Part 0: new student accounts join the "student_signup" funnel. A matching
+ * website lead is linked to the account but its own funnel keeps going.
  */
 async function sweepNewStudents(admin: SupabaseClient, summary: { signupEnrolled: number; errors: string[] }) {
   const funnel = await findFunnelByTrigger(admin, 'student_signup')
@@ -121,11 +121,11 @@ async function sweepNewStudents(admin: SupabaseClient, summary: { signupEnrolled
       const result = await enrollInFunnel(admin, funnel, { profileId: profile.id }, { via: 'signup' })
       if (result.enrolled) summary.signupEnrolled++
 
-      // Link the website lead (if any) to the account and stop the lead track.
+      // Link the website lead (if any) to the account for reporting. The lead
+      // track keeps running; creating an account no longer stops it.
       const { data: lead } = await admin.from('email_leads').select('id, profile_id').eq('email', email).maybeSingle()
-      if (lead) {
-        if (!lead.profile_id) await admin.from('email_leads').update({ profile_id: profile.id, updated_at: new Date().toISOString() }).eq('id', lead.id)
-        await cancelEnrollments(admin, { leadId: lead.id }, 'Created an account', ['student_lead'])
+      if (lead && !lead.profile_id) {
+        await admin.from('email_leads').update({ profile_id: profile.id, updated_at: new Date().toISOString() }).eq('id', lead.id)
       }
     } catch (err) {
       summary.errors.push(`signup ${profile.id}: ${err instanceof Error ? err.message : String(err)}`)

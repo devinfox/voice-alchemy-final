@@ -76,8 +76,9 @@ export async function POST(request: NextRequest) {
       metadata,
     })
 
-    // Someone with an account already gets the in-app student track; do not
-    // start the lead track for them. Link the lead to the profile instead.
+    // Link the lead to an existing account when the email matches, purely for
+    // reporting. Having an account does NOT stop the lead funnel: anyone who
+    // asks for the guide gets the guide.
     const { data: userRow } = await admin.from('users').select('id').ilike('email', email).limit(1).maybeSingle()
     if (userRow && !lead.profile_id) {
       await admin.from('email_leads').update({ profile_id: userRow.id }).eq('id', lead.id)
@@ -86,9 +87,6 @@ export async function POST(request: NextRequest) {
     const trigger = triggerFor(type, persona)
     if (!trigger) {
       return NextResponse.json({ ok: true, lead_id: lead.id, enrolled: false, funnel: null, reason: 'details only' })
-    }
-    if (trigger === 'student_lead' && userRow) {
-      return NextResponse.json({ ok: true, lead_id: lead.id, enrolled: false, funnel: null, reason: 'already has an account' })
     }
     if (lead.is_unsubscribed) {
       return NextResponse.json({ ok: true, lead_id: lead.id, enrolled: false, funnel: null, reason: 'unsubscribed' })

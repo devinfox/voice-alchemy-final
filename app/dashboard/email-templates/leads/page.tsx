@@ -102,7 +102,6 @@ export default async function LeadsPage() {
     let note: string | null = null
     if (!e) {
       if (l.is_unsubscribed) note = 'Unsubscribed, so no emails are sent.'
-      else if (l.profile_id) note = 'Already has an account. The in-app student emails apply instead of the lead funnel.'
       else if (!trigger) note = 'Extra details only. Their earlier submission decides the funnel.'
       else if (!wouldBe) note = `No funnel is set to start on “${triggerLabel.get(trigger) || trigger}”.`
       else if (wouldBe.status !== 'active') note = `“${wouldBe.name}” is turned off, so nothing started.`
