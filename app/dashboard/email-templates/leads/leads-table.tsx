@@ -2,7 +2,9 @@
 
 import { useMemo, useState } from 'react'
 import Link from 'next/link'
-import { AlertTriangle, ExternalLink, Search, Users } from 'lucide-react'
+import { useRouter } from 'next/navigation'
+import { AlertTriangle, ExternalLink, Search, Trash2, Users } from 'lucide-react'
+import { ConfirmDialog } from '@/components/confirm-dialog'
 
 export interface LeadRow {
   id: string
@@ -61,7 +63,12 @@ function relative(iso: string | null): string {
 type PersonaFilter = 'all' | 'singer' | 'coach'
 type StateFilter = 'all' | 'enrolled' | 'not-enrolled'
 
-export function LeadsTable({ rows }: { rows: LeadRow[] }) {
+export function LeadsTable({ rows: initialRows }: { rows: LeadRow[] }) {
+  const router = useRouter()
+  const [rows, setRows] = useState(initialRows)
+  const [pendingDelete, setPendingDelete] = useState<LeadRow | null>(null)
+  const [deleting, setDeleting] = useState(false)
+  const [deleteError, setDeleteError] = useState<string | null>(null)
   const [search, setSearch] = useState('')
   const [persona, setPersona] = useState<PersonaFilter>('all')
   const [state, setState] = useState<StateFilter>('all')
@@ -99,6 +106,26 @@ export function LeadsTable({ rows }: { rows: LeadRow[] }) {
     }
     return Array.from(map.values()).sort((a, b) => b.count - a.count)
   }, [rows])
+
+  const deleteLead = async () => {
+    if (!pendingDelete) return
+    setDeleting(true)
+    setDeleteError(null)
+    try {
+      const res = await fetch(`/api/email-leads/${pendingDelete.id}`, { method: 'DELETE' })
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}))
+        throw new Error(data.error || 'Could not delete lead')
+      }
+      setRows((prev) => prev.filter((r) => r.id !== pendingDelete.id))
+      router.refresh()
+    } catch (e) {
+      setDeleteError(e instanceof Error ? e.message : 'Could not delete lead')
+    } finally {
+      setDeleting(false)
+      setPendingDelete(null)
+    }
+  }
 
   const pill = (text: string, cls: string) => <span className={`px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide rounded-full ${cls}`}>{text}</span>
 
@@ -169,6 +196,7 @@ export function LeadsTable({ rows }: { rows: LeadRow[] }) {
           <h2 className="text-sm font-medium text-gray-400 uppercase tracking-wide">Website leads</h2>
           <span className="text-sm text-gray-500">{filtered.length} shown</span>
         </div>
+        {deleteError && <p className="text-xs text-red-300 mb-3">{deleteError}</p>}
         {filtered.length === 0 ? (
           <div className="text-center py-12">
             <Users className="w-10 h-10 text-gray-600 mx-auto mb-3" />
@@ -183,6 +211,7 @@ export function LeadsTable({ rows }: { rows: LeadRow[] }) {
                   <th className="text-left p-3 font-medium w-[24%]">Came from</th>
                   <th className="text-left p-3 font-medium">Funnel</th>
                   <th className="text-left p-3 font-medium w-[14%]">Received</th>
+                  <th className="p-3 w-12" />
                 </tr>
               </thead>
               <tbody className="divide-y divide-white/5">
@@ -233,6 +262,17 @@ export function LeadsTable({ rows }: { rows: LeadRow[] }) {
                         <p>{when(r.createdAt)}</p>
                         <p className="text-xs text-gray-500">{relative(r.createdAt)}</p>
                       </td>
+                      <td className="p-3">
+                        <button
+                          type="button"
+                          onClick={() => setPendingDelete(r)}
+                          className="p-2 rounded-lg text-gray-500 hover:text-red-300 hover:bg-red-500/10 transition-colors"
+                          title="Delete lead"
+                          aria-label={`Delete ${r.name || r.email}`}
+                        >
+                          <Trash2 className="w-4 h-4" />
+                        </button>
+                      </td>
                     </tr>
                   )
                 })}
@@ -241,6 +281,16 @@ export function LeadsTable({ rows }: { rows: LeadRow[] }) {
           </div>
         )}
       </div>
+
+      <ConfirmDialog
+        isOpen={!!pendingDelete}
+        title={`Delete ${pendingDelete?.name || pendingDelete?.email || 'this lead'}?`}
+        message="They are removed from the leads list and taken out of any funnel they are in, so no further emails go to them. If they fill in a form again they will be added back as a new lead."
+        confirmText={deleting ? 'Deleting…' : 'Delete lead'}
+        destructive
+        onConfirm={() => void deleteLead()}
+        onCancel={() => !deleting && setPendingDelete(null)}
+      />
     </div>
   )
 }
