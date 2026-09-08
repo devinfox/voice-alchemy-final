@@ -135,7 +135,7 @@ export default async function EmailTemplatesPage({ searchParams }: PageProps) {
         {tab('funnels', 'Funnels', GitBranch, funnelCount)}
         {(pendingCount > 0 || activeTab === 'suggested') && tab('suggested', 'To review', Sparkles, pendingCount)}
         <Link
-          href="/dashboard/email-templates/leads"
+          href="/dashboard/leads"
           className="px-5 py-2 text-sm font-medium rounded-lg transition-all flex items-center gap-2 text-gray-400 hover:text-white hover:bg-white/10"
         >
           <UserPlus className="w-4 h-4" />

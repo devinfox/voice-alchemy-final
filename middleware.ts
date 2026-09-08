@@ -37,9 +37,11 @@ export async function middleware(request: NextRequest) {
 
   const pathname = request.nextUrl.pathname
   const isEmailDashboardRoute = pathname.startsWith('/dashboard/email') ||
-                                pathname.startsWith('/dashboard/email-templates')
+                                pathname.startsWith('/dashboard/email-templates') ||
+                                pathname.startsWith('/dashboard/leads')
   const isEmailApiRoute = pathname.startsWith('/api/email') ||
-                          pathname.startsWith('/api/email-templates')
+                          pathname.startsWith('/api/email-templates') ||
+                          pathname.startsWith('/api/email-leads')
   const isEmailWebhookRoute = pathname.startsWith('/api/email/webhooks/')
 
   if (user && (isEmailDashboardRoute || (isEmailApiRoute && !isEmailWebhookRoute))) {

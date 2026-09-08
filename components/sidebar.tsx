@@ -61,11 +61,9 @@ const teacherNavigation: NavItem[] = [
     name: 'Email',
     href: '/dashboard/email',
     icon: Mail,
-    children: [
-      { name: 'Templates & Funnels', href: '/dashboard/email-templates', icon: FileText },
-      { name: 'Leads', href: '/dashboard/email-templates/leads', icon: UserPlus },
-    ],
+    children: [{ name: 'Templates & Funnels', href: '/dashboard/email-templates', icon: FileText }],
   },
+  { name: 'Leads', href: '/dashboard/leads', icon: UserPlus },
   { name: 'Calendar', href: '/dashboard/calendar', icon: Calendar },
 ]
 
@@ -123,7 +121,7 @@ export function Sidebar({ user, userEmail }: SidebarProps) {
   const isAdmin = user?.role === 'admin'
   const hasEmailAccess = canAccessEmailTools(user, userEmail)
   const visibleTeacherNavigation = teacherNavigation.filter((item) => {
-    if (item.href.startsWith('/dashboard/email')) return hasEmailAccess
+    if (item.href.startsWith('/dashboard/email') || item.href === '/dashboard/leads') return hasEmailAccess
     return true
   })
   const navigation = isTeacher

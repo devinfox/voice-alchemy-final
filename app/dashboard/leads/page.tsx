@@ -1,6 +1,6 @@
 import type { Metadata } from 'next'
 import Link from 'next/link'
-import { ArrowLeft, UserPlus } from 'lucide-react'
+import { UserPlus } from 'lucide-react'
 import { getSupabaseAdmin } from '@/lib/supabase-admin'
 import { DesktopOnly } from '@/components/desktop-only'
 import { FUNNEL_TRIGGERS, type FunnelTriggerKey } from '@/lib/email-leads'
@@ -146,17 +146,16 @@ export default async function LeadsPage() {
     <DesktopOnly featureName="Leads">
       <div className="space-y-5 max-w-[1600px]">
         <div>
-          <Link href="/dashboard/email-templates?tab=funnels" className="inline-flex items-center gap-1.5 text-xs text-gray-400 hover:text-[#CEB466] transition-colors mb-3">
-            <ArrowLeft className="w-3.5 h-3.5" /> Emails &amp; Funnels
-          </Link>
+          <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-[#CEB466]/15 border border-[#CEB466]/30 text-[10px] sm:text-xs font-semibold text-[#CEB466] mb-2">
+            <UserPlus className="w-3.5 h-3.5" />
+            <span>Voice Alchemy · Leads</span>
+          </div>
           <div className="flex items-center gap-3">
-            <div className="w-10 h-10 rounded-xl bg-[#CEB466]/15 border border-[#CEB466]/30 flex items-center justify-center">
-              <UserPlus className="w-5 h-5 text-[#CEB466]" />
-            </div>
             <div>
-              <h1 className="text-2xl font-bold text-white">Leads</h1>
-              <p className="text-gray-400 text-sm mt-0.5">
+              <h1 className="text-2xl sm:text-3xl md:text-4xl font-bold text-white font-luxury">Leads</h1>
+              <p className="text-xs sm:text-sm text-gray-300 mt-1 max-w-2xl">
                 Everyone who left an email on the website, where they came from, and which funnel picked them up.
+                <Link href="/dashboard/email-templates?tab=funnels" className="ml-2 text-[#CEB466] hover:underline">Manage funnels</Link>
               </p>
             </div>
           </div>
