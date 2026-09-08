@@ -48,7 +48,7 @@
       "ship_first": true,
       "assets": [
         "logo.png",
-        "pitch_perfect_session.webp"
+        "pitch_perfect_session.png"
       ],
       "blocks": [
         {
@@ -78,7 +78,7 @@
           "type": "image",
           "note": "Pitch Perfect mid-session (wheel view), full-bleed",
           "properties": {
-            "src": "{{IMAGE_BASE}}/email/pitch_perfect_session.webp",
+            "src": "{{IMAGE_BASE}}/email/pitch_perfect_session.png",
             "alt": "Pitch Perfect mid-session: target C4 matched at +3 cents, 91% target accuracy",
             "width": 100,
             "align": "center",
@@ -172,7 +172,7 @@
       "ship_first": true,
       "assets": [
         "logo.png",
-        "student_training_overview.webp"
+        "student_training_overview.png"
       ],
       "blocks": [
         {
@@ -240,7 +240,7 @@
           "type": "image",
           "note": "Full-bleed screenshot",
           "properties": {
-            "src": "{{IMAGE_BASE}}/email/student_training_overview.webp",
+            "src": "{{IMAGE_BASE}}/email/student_training_overview.png",
             "alt": "Training Center overview with streaks and scores",
             "width": 100,
             "align": "center",
@@ -323,8 +323,8 @@
       "ship_first": false,
       "assets": [
         "logo.png",
-        "scale_trainer_session.webp",
-        "rhythm_trainer_session.webp"
+        "scale_trainer_session.png",
+        "rhythm_trainer_session.png"
       ],
       "blocks": [
         {
@@ -371,7 +371,7 @@
                 "align": "center",
                 "fontSize": 16,
                 "color": "#2D2D2D",
-                "src": "{{IMAGE_BASE}}/email/scale_trainer_session.webp",
+                "src": "{{IMAGE_BASE}}/email/scale_trainer_session.png",
                 "alt": "Scale Trainer mid-practice: four notes passed, G4 next, 97% overall",
                 "width": 100
               },
@@ -381,7 +381,7 @@
                 "align": "center",
                 "fontSize": 16,
                 "color": "#2D2D2D",
-                "src": "{{IMAGE_BASE}}/email/rhythm_trainer_session.webp",
+                "src": "{{IMAGE_BASE}}/email/rhythm_trainer_session.png",
                 "alt": "Rhythm Trainer at 90 BPM: 14 on-beat taps, 78% accuracy, best streak 9",
                 "width": 100
               }
@@ -501,7 +501,7 @@
       "ship_first": false,
       "assets": [
         "logo.png",
-        "ai_coach_card.webp"
+        "ai_coach_card.png"
       ],
       "blocks": [
         {
@@ -531,7 +531,7 @@
           "type": "image",
           "note": "Full-bleed screenshot",
           "properties": {
-            "src": "{{IMAGE_BASE}}/email/ai_coach_card.webp",
+            "src": "{{IMAGE_BASE}}/email/ai_coach_card.png",
             "alt": "AI coach feedback card reading practice data",
             "width": 100,
             "align": "center",
@@ -652,7 +652,7 @@
       "ship_first": false,
       "assets": [
         "logo.png",
-        "pitch_perfect_session.webp"
+        "pitch_perfect_session.png"
       ],
       "blocks": [
         {
@@ -682,7 +682,7 @@
           "type": "image",
           "note": "Pitch Perfect mid-session (keyboard view), full-bleed",
           "properties": {
-            "src": "{{IMAGE_BASE}}/email/pitch_perfect_keyboard_session.webp",
+            "src": "{{IMAGE_BASE}}/email/pitch_perfect_keyboard_session.png",
             "alt": "Pitch Perfect keyboard view mid-session, C4 matched",
             "width": 100,
             "align": "center",
@@ -765,7 +765,7 @@
       "ship_first": false,
       "assets": [
         "logo.png",
-        "pitch_perfect_session.webp"
+        "pitch_perfect_session.png"
       ],
       "blocks": [
         {
@@ -832,7 +832,7 @@
           "type": "image",
           "note": "Pitch Perfect mid-session (wheel view), full-bleed",
           "properties": {
-            "src": "{{IMAGE_BASE}}/email/pitch_perfect_session.webp",
+            "src": "{{IMAGE_BASE}}/email/pitch_perfect_session.png",
             "alt": "Pitch Perfect mid-session with target C4 matched",
             "width": 100,
             "align": "center",
@@ -893,7 +893,7 @@
       "ship_first": false,
       "assets": [
         "logo.png",
-        "pitch_perfect_session.webp"
+        "pitch_perfect_session.png"
       ],
       "blocks": [
         {
@@ -923,7 +923,7 @@
           "type": "image",
           "note": "Pitch Perfect mid-session (keyboard view), full-bleed",
           "properties": {
-            "src": "{{IMAGE_BASE}}/email/pitch_perfect_keyboard_session.webp",
+            "src": "{{IMAGE_BASE}}/email/pitch_perfect_keyboard_session.png",
             "alt": "Pitch Perfect keyboard view: needle, Hz and cents readout on a held C4",
             "width": 100,
             "align": "center",
@@ -1017,7 +1017,7 @@
       "ship_first": false,
       "assets": [
         "logo.png",
-        "student_training_overview.webp"
+        "student_training_overview.png"
       ],
       "blocks": [
         {
@@ -1047,7 +1047,7 @@
           "type": "image",
           "note": "Full-bleed screenshot",
           "properties": {
-            "src": "{{IMAGE_BASE}}/email/student_training_overview.webp",
+            "src": "{{IMAGE_BASE}}/email/student_training_overview.png",
             "alt": "Training Center with streaks, scores and trainers",
             "width": 100,
             "align": "center",
@@ -1130,7 +1130,7 @@
       "ship_first": true,
       "assets": [
         "logo.png",
-        "teacher_students.webp"
+        "teacher_students.png"
       ],
       "blocks": [
         {
@@ -1160,7 +1160,7 @@
           "type": "image",
           "note": "Full-bleed screenshot",
           "properties": {
-            "src": "{{IMAGE_BASE}}/email/teacher_students.webp",
+            "src": "{{IMAGE_BASE}}/email/teacher_students.png",
             "alt": "Teacher roster with student practice data",
             "width": 100,
             "align": "center",
@@ -1281,7 +1281,7 @@
       "ship_first": false,
       "assets": [
         "logo.png",
-        "coach_dashboard.webp"
+        "coach_dashboard.png"
       ],
       "blocks": [
         {
@@ -1311,7 +1311,7 @@
           "type": "image",
           "note": "Full-bleed screenshot",
           "properties": {
-            "src": "{{IMAGE_BASE}}/email/coach_dashboard.webp",
+            "src": "{{IMAGE_BASE}}/email/coach_dashboard.png",
             "alt": "Coach dashboard with active students and live studio",
             "width": 100,
             "align": "center",
@@ -1394,7 +1394,7 @@
       "ship_first": false,
       "assets": [
         "logo.png",
-        "teacher_student_detail.webp"
+        "teacher_student_detail.png"
       ],
       "blocks": [
         {
@@ -1424,7 +1424,7 @@
           "type": "image",
           "note": "Full-bleed screenshot",
           "properties": {
-            "src": "{{IMAGE_BASE}}/email/teacher_student_detail.webp",
+            "src": "{{IMAGE_BASE}}/email/teacher_student_detail.png",
             "alt": "Student detail page with practice history and notes",
             "width": 100,
             "align": "center",
@@ -1518,7 +1518,7 @@
       "ship_first": false,
       "assets": [
         "logo.png",
-        "teacher_courses.webp"
+        "teacher_courses.png"
       ],
       "blocks": [
         {
@@ -1548,7 +1548,7 @@
           "type": "image",
           "note": "Full-bleed screenshot",
           "properties": {
-            "src": "{{IMAGE_BASE}}/email/teacher_courses.webp",
+            "src": "{{IMAGE_BASE}}/email/teacher_courses.png",
             "alt": "Teacher course builder",
             "width": 100,
             "align": "center",
@@ -1791,7 +1791,7 @@
       "ship_first": false,
       "assets": [
         "logo.png",
-        "teacher_students.webp"
+        "teacher_students.png"
       ],
       "blocks": [
         {
@@ -1821,7 +1821,7 @@
           "type": "image",
           "note": "Full-bleed screenshot",
           "properties": {
-            "src": "{{IMAGE_BASE}}/email/teacher_students.webp",
+            "src": "{{IMAGE_BASE}}/email/teacher_students.png",
             "alt": "Teacher roster with practice-this-week data",
             "width": 100,
             "align": "center",
@@ -1915,7 +1915,7 @@
       "ship_first": true,
       "assets": [
         "logo.png",
-        "lesson_notes_card.webp"
+        "lesson_notes_card.png"
       ],
       "blocks": [
         {
@@ -1945,7 +1945,7 @@
           "type": "image",
           "note": "Full-bleed screenshot",
           "properties": {
-            "src": "{{IMAGE_BASE}}/email/lesson_notes_card.webp",
+            "src": "{{IMAGE_BASE}}/email/lesson_notes_card.png",
             "alt": "Lesson notes with AI summary, teacher feedback and homework",
             "width": 100,
             "align": "center",
@@ -2039,7 +2039,7 @@
       "ship_first": false,
       "assets": [
         "logo.png",
-        "student_my_lessons.webp"
+        "student_my_lessons.png"
       ],
       "blocks": [
         {
@@ -2118,7 +2118,7 @@
           "type": "image",
           "note": "Full-bleed screenshot",
           "properties": {
-            "src": "{{IMAGE_BASE}}/email/student_my_lessons.webp",
+            "src": "{{IMAGE_BASE}}/email/student_my_lessons.png",
             "alt": "My Lessons view with upcoming lesson and teacher",
             "width": 100,
             "align": "center",
@@ -2314,7 +2314,7 @@
       "ship_first": false,
       "assets": [
         "logo.png",
-        "student_training_overview.webp"
+        "student_training_overview.png"
       ],
       "blocks": [
         {
@@ -2344,7 +2344,7 @@
           "type": "image",
           "note": "Full-bleed screenshot",
           "properties": {
-            "src": "{{IMAGE_BASE}}/email/student_training_overview.webp",
+            "src": "{{IMAGE_BASE}}/email/student_training_overview.png",
             "alt": "Training Center with free trainers",
             "width": 100,
             "align": "center",

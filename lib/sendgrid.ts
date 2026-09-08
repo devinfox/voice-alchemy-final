@@ -259,9 +259,12 @@ export async function sendEmail(params: SendEmailParams): Promise<{
   if (params.headers) msg.headers = params.headers
   if (params.sendAt) msg.sendAt = params.sendAt
 
-  // Default tracking settings
+  // Default tracking settings. Click tracking rewrites every link to a
+  // sendgrid.net address, which mailbox providers treat as a spam signal
+  // unless a branded link domain is validated in SendGrid. Keep it off until
+  // SENDGRID_CLICK_TRACKING=true is set after link branding is verified.
   msg.trackingSettings = params.trackingSettings || {
-    clickTracking: { enable: true },
+    clickTracking: { enable: process.env.SENDGRID_CLICK_TRACKING === 'true' },
     openTracking: { enable: true },
   }
 

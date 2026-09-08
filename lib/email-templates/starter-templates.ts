@@ -195,7 +195,7 @@ const ROLE_CATEGORY: Record<string, TemplateCategoryValue> = {
 /**
  * Where the campaign images are served from. Default: the public
  * `email-template-images` storage bucket of this Supabase project, folder
- * `campaign/` (logo.png, app/*.webp, photos/*.jpg), uploaded from
+ * `campaign/` (logo.png, app/*.png, email/*.png, photos/*.jpg), uploaded from
  * vaa-website/public/images. Override with NEXT_PUBLIC_EMAIL_IMAGE_BASE.
  */
 export function emailImageBase(): string {
