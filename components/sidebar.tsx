@@ -44,9 +44,7 @@ interface NavItem {
 // Teacher navigation
 const teacherNavigation: NavItem[] = [
   { name: 'Dashboard', href: '/dashboard', icon: LayoutDashboard },
-  { name: 'My Students', href: '/dashboard/students', icon: Users },
-  { name: 'Training Center', href: '/dashboard/training-center', icon: Music },
-  { name: 'Courses', href: '/dashboard/courses', icon: GraduationCap },
+  { name: 'Calendar', href: '/dashboard/calendar', icon: Calendar },
   {
     name: 'Video Sessions',
     href: '/dashboard/video-sessions',
@@ -57,6 +55,7 @@ const teacherNavigation: NavItem[] = [
       { name: 'Training Sessions', href: '/dashboard/training-sessions', icon: Presentation },
     ],
   },
+  { name: 'My Students', href: '/dashboard/students', icon: Users },
   {
     name: 'Email',
     href: '/dashboard/email',
@@ -64,7 +63,8 @@ const teacherNavigation: NavItem[] = [
     children: [{ name: 'Templates & Funnels', href: '/dashboard/email-templates', icon: FileText }],
   },
   { name: 'Leads', href: '/dashboard/leads', icon: UserPlus },
-  { name: 'Calendar', href: '/dashboard/calendar', icon: Calendar },
+  { name: 'Courses', href: '/dashboard/courses', icon: GraduationCap },
+  { name: 'Training Center', href: '/dashboard/training-center', icon: Music },
 ]
 
 // Admin-only navigation, appended to the teacher nav
