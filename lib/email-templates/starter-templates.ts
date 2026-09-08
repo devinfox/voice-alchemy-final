@@ -212,7 +212,7 @@ const REPLY = 'mailto:hello@voicealchemyacademy.com'
  * fallback keeps every button working (a reply, or the app) until then.
  */
 export function campaignLinks(): Record<string, string> {
-  const site = (process.env.NEXT_PUBLIC_MARKETING_SITE_URL || 'https://voicealchemyacademy.app').replace(/\/$/, '')
+  const site = (process.env.NEXT_PUBLIC_MARKETING_SITE_URL || 'https://www.voicealchemyacademy.com').replace(/\/$/, '')
   return {
     '#SCHEDULING_LINK': process.env.EMAIL_LINK_DEMO_SCHEDULING || `${REPLY}?subject=Demo%20time`,
     '#PLAYBOOK_PDF': process.env.EMAIL_LINK_PLAYBOOK_PDF || `${site}/?view=teacher`,

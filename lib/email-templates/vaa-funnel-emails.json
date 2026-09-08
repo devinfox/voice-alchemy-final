@@ -496,7 +496,7 @@
       "subject": "When you want more than numbers",
       "preheader": "Your practice data can become a plan.",
       "cta": "See 1:1 mentorship",
-      "landing": "voicealchemyacademy.app/mentorship (courses linked in body)",
+      "landing": "voicealchemyacademy.com/mentorship (courses linked in body)",
       "why": "Nothing in the app can be bought today except mentorship with Julia, so the upgrade email points there. It only lands after the singer has felt value from the free tools. The tone is an invitation, never a paywall.",
       "ship_first": false,
       "assets": [
@@ -593,7 +593,7 @@
           "note": "Gold pill button",
           "properties": {
             "text": "See 1:1 mentorship",
-            "url": "https://voicealchemyacademy.app/mentorship",
+            "url": "https://www.voicealchemyacademy.com/mentorship",
             "bgColor": "#ceb466",
             "textColor": "#0b0817",
             "align": "center",
@@ -859,7 +859,7 @@
           "type": "footer",
           "note": "Ink footer, Instagram + unsubscribe",
           "properties": {
-            "text": "Voice Alchemy Academy &middot; hello@voicealchemyacademy.com<br><span style=\"color:#8A8399\">You are receiving this because you asked for the free pitch guide on voicealchemyacademy.app.</span>",
+            "text": "Voice Alchemy Academy &middot; hello@voicealchemyacademy.com<br><span style=\"color:#8A8399\">You are receiving this because you asked for the free pitch guide on voicealchemyacademy.com.</span>",
             "showSocial": true,
             "socialLinks": [
               {
@@ -983,7 +983,7 @@
           "type": "footer",
           "note": "Ink footer, Instagram + unsubscribe",
           "properties": {
-            "text": "Voice Alchemy Academy &middot; hello@voicealchemyacademy.com<br><span style=\"color:#8A8399\">You are receiving this because you asked for the free pitch guide on voicealchemyacademy.app.</span>",
+            "text": "Voice Alchemy Academy &middot; hello@voicealchemyacademy.com<br><span style=\"color:#8A8399\">You are receiving this because you asked for the free pitch guide on voicealchemyacademy.com.</span>",
             "showSocial": true,
             "socialLinks": [
               {
@@ -1096,7 +1096,7 @@
           "type": "footer",
           "note": "Ink footer, Instagram + unsubscribe",
           "properties": {
-            "text": "Voice Alchemy Academy &middot; hello@voicealchemyacademy.com<br><span style=\"color:#8A8399\">You are receiving this because you asked for the free pitch guide on voicealchemyacademy.app.</span>",
+            "text": "Voice Alchemy Academy &middot; hello@voicealchemyacademy.com<br><span style=\"color:#8A8399\">You are receiving this because you asked for the free pitch guide on voicealchemyacademy.com.</span>",
             "showSocial": true,
             "socialLinks": [
               {
@@ -1451,7 +1451,7 @@
           "type": "text",
           "note": "Secondary text link to the demo form",
           "properties": {
-            "content": "<p style=\"margin:0;font-size:13px;line-height:1.5;color:#6F6A7A\">Want the software version of the same idea? <a href=\"https://voicealchemyacademy.app/?view=teacher#teacher-demo\" style=\"color:#a855f7;font-weight:bold\">Book a short demo</a> and we will show it around your studio.</p>",
+            "content": "<p style=\"margin:0;font-size:13px;line-height:1.5;color:#6F6A7A\">Want the software version of the same idea? <a href=\"https://www.voicealchemyacademy.com/?view=teacher#teacher-demo\" style=\"color:#a855f7;font-weight:bold\">Book a short demo</a> and we will show it around your studio.</p>",
             "align": "center",
             "padding": 16,
             "fontSize": 16,
@@ -1845,7 +1845,7 @@
           "note": "Violet pill button",
           "properties": {
             "text": "See the teacher workflow",
-            "url": "https://voicealchemyacademy.app/?view=teacher",
+            "url": "https://www.voicealchemyacademy.com/?view=teacher",
             "bgColor": "#a855f7",
             "textColor": "#FFFFFF",
             "align": "center",
@@ -2422,7 +2422,7 @@
       "subject": "Your Voice Application is waiting",
       "preheader": "You do not need perfect answers.",
       "cta": "Finish your application",
-      "landing": "voicealchemyacademy.app/mentorship#apply",
+      "landing": "voicealchemyacademy.com/mentorship#apply",
       "why": "Recovers people who opened the application and froze on the long-answer questions. The message lowers the bar: the application is not a test, a few honest sentences beat polished ones. Note: the website form only submits on completion today, so this needs the email field saved on blur before it can fire.",
       "ship_first": false,
       "assets": [
@@ -2481,7 +2481,7 @@
           "note": "Gold pill button",
           "properties": {
             "text": "Finish your application",
-            "url": "https://voicealchemyacademy.app/mentorship#apply",
+            "url": "https://www.voicealchemyacademy.com/mentorship#apply",
             "bgColor": "#ceb466",
             "textColor": "#0b0817",
             "align": "center",
@@ -2546,7 +2546,7 @@
       "subject": "Want to keep this door open?",
       "preheader": "One more chance to finish, or start free instead.",
       "cta": "Finish your application",
-      "landing": "voicealchemyacademy.app/mentorship#apply",
+      "landing": "voicealchemyacademy.com/mentorship#apply",
       "why": "Final nudge for non-completers. It offers two honest exits: finish the application, or skip it and train free in the app. Either keeps the person in the Voice Alchemy world. After this, no more mentorship emails to this address.",
       "ship_first": false,
       "assets": [
@@ -2594,7 +2594,7 @@
           "note": "Gold pill button",
           "properties": {
             "text": "Finish your application",
-            "url": "https://voicealchemyacademy.app/mentorship#apply",
+            "url": "https://www.voicealchemyacademy.com/mentorship#apply",
             "bgColor": "#ceb466",
             "textColor": "#0b0817",
             "align": "center",
