@@ -3,6 +3,7 @@ import { requireEmailAccess } from '@/lib/email-access-server'
 import { createClient as createServiceClient } from '@supabase/supabase-js'
 import { NextRequest, NextResponse } from 'next/server'
 import { isTriggerKey } from '@/lib/email-leads'
+import { tagIdList } from '@/lib/email-tags'
 
 // GET /api/email-funnels/[id] - Get a single funnel with details
 export async function GET(
@@ -93,6 +94,12 @@ export async function PATCH(
     if (auto_enroll_enabled !== undefined) updateData.auto_enroll_enabled = auto_enroll_enabled
     if (trigger_key !== undefined) updateData.trigger_key = trigger_key || null
     if (audience_id !== undefined) updateData.audience_id = audience_id || null
+    const triggerTags = tagIdList(body.trigger_tag_ids)
+    const exitTags = tagIdList(body.exit_tag_ids)
+    const completeTags = tagIdList(body.complete_tag_ids)
+    if (triggerTags !== undefined) updateData.trigger_tag_ids = triggerTags
+    if (exitTags !== undefined) updateData.exit_tag_ids = exitTags
+    if (completeTags !== undefined) updateData.complete_tag_ids = completeTags
 
     console.log('[Email Funnels API] Updating funnel:', { id, updateData })
 

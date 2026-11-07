@@ -3,8 +3,11 @@
 import { useEffect, useMemo, useState } from 'react'
 import {
   Users, Search, Download, ArrowUpDown, Mail, Phone, Calendar, Activity,
-  AlertTriangle, CheckCircle2, RefreshCw, Music, ChevronLeft, ChevronRight,
+  AlertTriangle, CheckCircle2, RefreshCw, Music, ChevronLeft, ChevronRight, Tag as TagIcon,
 } from 'lucide-react'
+import { ContactTagEditor, type ContactTag } from '@/components/tags/contact-tag-editor'
+import { ManageTagsModal } from '@/components/tags/manage-tags-modal'
+import { useTags } from '@/components/tags/use-tags'
 
 const PAGE_SIZE = 25
 
@@ -28,6 +31,7 @@ interface AdminStudentRow {
   trainingSessions: number
   lastActivityAt: string | null
   hasProfile: boolean
+  tags?: ContactTag[]
 }
 
 interface Summary {
@@ -66,6 +70,18 @@ export function StudentDirectory() {
   const [sortAsc, setSortAsc] = useState(false)
   const [filter, setFilter] = useState<'all' | 'active' | 'inactive' | 'noProfile'>('all')
   const [page, setPage] = useState(1)
+  const [tagFilter, setTagFilter] = useState<string>('all')
+  const [manageTags, setManageTags] = useState(false)
+  const [tagNote, setTagNote] = useState<string | null>(null)
+  const { tags: allTags, error: tagsError } = useTags()
+
+  useEffect(() => {
+    if (!tagNote) return
+    const t = setTimeout(() => setTagNote(null), 6000)
+    return () => clearTimeout(t)
+  }, [tagNote])
+
+  const setRowTags = (id: string, tags: ContactTag[]) => setRows(prev => prev.map(r => (r.id === id ? { ...r, tags } : r)))
 
   const load = async () => {
     setLoading(true)
@@ -93,12 +109,16 @@ export function StudentDirectory() {
     else if (filter === 'inactive') out = out.filter(r => r.activeTeachers === 0 && r.hasProfile)
     else if (filter === 'noProfile') out = out.filter(r => !r.hasProfile)
 
+    if (tagFilter === '__none__') out = out.filter(r => (r.tags ?? []).length === 0)
+    else if (tagFilter !== 'all') out = out.filter(r => (r.tags ?? []).some(t => t.id === tagFilter))
+
     if (q) {
       out = out.filter(r =>
         r.displayName.toLowerCase().includes(q) ||
         (r.email ?? '').toLowerCase().includes(q) ||
         (r.phone ?? '').toLowerCase().includes(q) ||
-        r.teacherNames.some(t => t.toLowerCase().includes(q))
+        r.teacherNames.some(t => t.toLowerCase().includes(q)) ||
+        (r.tags ?? []).some(t => t.name.toLowerCase().includes(q))
       )
     }
 
@@ -111,10 +131,10 @@ export function StudentDirectory() {
         : String(av).localeCompare(String(bv))
       return sortAsc ? cmp : -cmp
     })
-  }, [rows, query, sortKey, sortAsc, filter])
+  }, [rows, query, sortKey, sortAsc, filter, tagFilter])
 
   // Back to the first page whenever the result set changes shape.
-  useEffect(() => { setPage(1) }, [query, filter, sortKey, sortAsc, rows])
+  useEffect(() => { setPage(1) }, [query, filter, tagFilter, sortKey, sortAsc, rows.length])
 
   const pageCount = Math.max(1, Math.ceil(visible.length / PAGE_SIZE))
   const currentPage = Math.min(page, pageCount)
@@ -141,14 +161,14 @@ export function StudentDirectory() {
 
   const exportCsv = () => {
     const headers = [
-      'First Name', 'Last Name', 'Email', 'Phone', 'Role', 'Joined',
+      'First Name', 'Last Name', 'Email', 'Phone', 'Role', 'Tags', 'Joined',
       'Last Sign In', 'Email Confirmed', 'Active Teachers', 'Teachers',
       'Pending Requests', 'Lessons Recorded', 'Class Notes', 'Training Sessions',
       'Last Activity', 'Timezone',
     ]
     const escape = (v: unknown) => `"${String(v ?? '').replace(/"/g, '""')}"`
     const lines = visible.map(r => [
-      r.firstName, r.lastName, r.email, r.phone, r.role, r.joinedAt,
+      r.firstName, r.lastName, r.email, r.phone, r.role, (r.tags ?? []).map(t => t.name).join('; '), r.joinedAt,
       r.lastSignInAt, r.emailConfirmed ? 'yes' : 'no', r.activeTeachers,
       r.teacherNames.join('; '), r.pendingRequests, r.lessonsRecorded,
       r.notesCount, r.trainingSessions, r.lastActivityAt, r.timezone,
@@ -254,10 +274,29 @@ export function StudentDirectory() {
           <input
             value={query}
             onChange={e => setQuery(e.target.value)}
-            placeholder="Search name, email, phone or teacher…"
+            placeholder="Search name, email, phone, tag or teacher…"
             className="w-full pl-11 pr-4 py-2.5 glass-input rounded-xl"
           />
         </div>
+        {!tagsError && (
+          <>
+            <select value={tagFilter} onChange={e => setTagFilter(e.target.value)} className="glass-select text-sm">
+              <option value="all">Any tag</option>
+              <option value="__none__">No tags</option>
+              {allTags.map(t => (
+                <option key={t.id} value={t.id}>{t.name}</option>
+              ))}
+            </select>
+            <button
+              type="button"
+              onClick={() => setManageTags(true)}
+              className="flex items-center gap-2 px-3 py-2 rounded-xl bg-white/[0.06] hover:bg-white/[0.1] border border-white/10 text-sm text-slate-200 transition-colors"
+            >
+              <TagIcon className="w-4 h-4" />
+              Tags
+            </button>
+          </>
+        )}
         <div className="flex gap-1 glass-card-subtle border border-white/[0.08] p-1 rounded-xl">
           {([
             ['all', 'All'],
@@ -285,14 +324,20 @@ export function StudentDirectory() {
           {error}
         </div>
       )}
+      {tagNote && (
+        <div className="rounded-xl border border-emerald-500/30 bg-emerald-500/10 px-4 py-2.5 text-sm text-emerald-200">
+          {tagNote}
+        </div>
+      )}
 
       <div className="glass-card rounded-2xl border-white/[0.08] overflow-hidden">
         <div className="overflow-x-auto">
-          <table className="w-full min-w-[1100px]">
+          <table className="w-full min-w-[1260px]">
             <thead className="bg-white/[0.03] border-b border-white/[0.08]">
               <tr>
                 <SortHeader label="Student" k="displayName" />
                 <SortHeader label="Email" k="email" />
+                <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-slate-400">Tags</th>
                 <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-slate-400">Phone</th>
                 <SortHeader label="Joined" k="joinedAt" />
                 <SortHeader label="Last sign in" k="lastSignInAt" />
@@ -305,14 +350,14 @@ export function StudentDirectory() {
             <tbody className="divide-y divide-white/[0.05]">
               {loading ? (
                 <tr>
-                  <td colSpan={9} className="px-4 py-12 text-center text-slate-400">
+                  <td colSpan={10} className="px-4 py-12 text-center text-slate-400">
                     <RefreshCw className="w-5 h-5 animate-spin mx-auto mb-2" />
                     Loading students…
                   </td>
                 </tr>
               ) : visible.length === 0 ? (
                 <tr>
-                  <td colSpan={9} className="px-4 py-12 text-center text-slate-400">
+                  <td colSpan={10} className="px-4 py-12 text-center text-slate-400">
                     No students match this filter.
                   </td>
                 </tr>
@@ -349,6 +394,19 @@ export function StudentDirectory() {
                       ) : <span className="text-slate-600">—</span>}
                       {r.email && !r.emailConfirmed && (
                         <span className="ml-2 text-xs text-amber-400">unconfirmed</span>
+                      )}
+                    </td>
+                    <td className="px-4 py-3 min-w-[160px]">
+                      {r.hasProfile ? (
+                        <ContactTagEditor
+                          studentId={r.id}
+                          tags={r.tags ?? []}
+                          onChange={tags => setRowTags(r.id, tags)}
+                          readOnly={!!tagsError}
+                          onAutomation={note => setTagNote(`${r.displayName}: ${note}`)}
+                        />
+                      ) : (
+                        <span className="text-slate-600">—</span>
                       )}
                     </td>
                     <td className="px-4 py-3 text-sm text-slate-300">
@@ -455,6 +513,8 @@ export function StudentDirectory() {
           </nav>
         )}
       </div>
+
+      {manageTags && <ManageTagsModal onClose={() => setManageTags(false)} />}
     </div>
   )
 }

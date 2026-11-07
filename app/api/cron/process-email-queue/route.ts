@@ -5,8 +5,24 @@ import { generateMessageId, generateSnippet } from '@/lib/email-utils'
 import { renderEmailTemplate, templateHtml, type RecipientContext, type SenderContext } from '@/lib/email-variables'
 import { v4 as uuidv4 } from 'uuid'
 import type { SupabaseClient } from '@supabase/supabase-js'
-import { enrollInFunnel, findFunnelByTrigger, isUnsubscribed } from '@/lib/email-leads'
+import { enrollInFunnel, findFunnelByTrigger, isUnsubscribed, type EnrollRecipient } from '@/lib/email-leads'
+import { applyCompletionTags } from '@/lib/email-tags'
 import { listUnsubscribeHeaders } from '@/lib/email-unsubscribe'
+
+/** Finishing a funnel applies its completion tags (which may start the next one). */
+async function finishWithTags(admin: SupabaseClient, funnelId: string, enrollment: { lead_id: string | null; contact_id: string | null }) {
+  const recipient: EnrollRecipient | null = enrollment.lead_id
+    ? { profileId: enrollment.lead_id }
+    : enrollment.contact_id
+      ? { leadId: enrollment.contact_id }
+      : null
+  if (!recipient) return
+  try {
+    await applyCompletionTags(admin, funnelId, recipient)
+  } catch (err) {
+    console.error('[Email Queue Cron] completion tags failed:', funnelId, err)
+  }
+}
 
 export const runtime = 'nodejs'
 export const maxDuration = 60
@@ -285,6 +301,7 @@ export async function GET(request: NextRequest) {
             .from('email_funnel_enrollments')
             .update({ status: 'completed', completed_at: nowIso, next_email_scheduled_at: null, updated_at: nowIso })
             .eq('id', enrollment.id)
+          await finishWithTags(admin, funnel.id, enrollment)
           summary.funnelCompleted++
           continue
         }
@@ -467,6 +484,7 @@ export async function GET(request: NextRequest) {
             .update({ status: 'completed', completed_at: nowIso, last_email_sent_at: nowIso, next_email_scheduled_at: null, updated_at: nowIso })
             .eq('id', enrollment.id)
           await admin.from('email_funnels').update({ total_completed: (funnel.total_completed || 0) + 1 }).eq('id', funnel.id)
+          await finishWithTags(admin, funnel.id, enrollment)
           summary.funnelCompleted++
         }
       } catch (err) {

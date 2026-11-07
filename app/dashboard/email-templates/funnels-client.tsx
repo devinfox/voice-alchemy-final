@@ -4,8 +4,10 @@ import { useEffect, useMemo, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import Link from 'next/link'
 import {
-  Search, Plus, Pencil, Trash2, Users, GitBranch, UserPlus, ChevronRight, ChevronDown, Zap, FolderInput, Info,
+  Search, Plus, Pencil, Trash2, Users, GitBranch, UserPlus, ChevronRight, ChevronDown, Zap, FolderInput, Info, Tag as TagIcon,
 } from 'lucide-react'
+import { useTags } from '@/components/tags/use-tags'
+import { ManageTagsModal } from '@/components/tags/manage-tags-modal'
 import { EmailFunnel, EmailTemplate, Profile, FunnelStatus } from '@/types/database.types'
 import { Switch } from '@/components/ui/switch'
 import { OverflowMenu } from '@/components/ui/overflow-menu'
@@ -58,6 +60,10 @@ export function FunnelsClient({
   const [togglingId, setTogglingId] = useState<string | null>(null)
   const [typeModal, setTypeModal] = useState<{ open: boolean; audience: EmailAudience | null }>({ open: false, audience: null })
   const [collapsed, setCollapsed] = useState<Record<string, boolean>>({})
+  const [manageTags, setManageTags] = useState(false)
+  const { tags: allTags, error: tagsError } = useTags()
+  const tagName = (id: string) => allTags.find((t) => t.id === id)?.name
+  const tagNames = (ids: string[] | null | undefined) => (ids || []).map(tagName).filter((n): n is string => !!n)
 
   useEffect(() => {
     // Restore collapsed sections after hydration (deferred so server and
@@ -257,6 +263,24 @@ export function FunnelsClient({
                   Starts automatically: {trigger}
                 </span>
               )}
+              {tagNames(funnel.trigger_tag_ids).length > 0 && (
+                <span className="flex items-center gap-1.5 text-violet-300/90">
+                  <TagIcon className="w-3.5 h-3.5" />
+                  Starts on tag: {tagNames(funnel.trigger_tag_ids).join(', ')}
+                </span>
+              )}
+              {tagNames(funnel.exit_tag_ids).length > 0 && (
+                <span className="flex items-center gap-1.5 text-amber-300/80">
+                  <TagIcon className="w-3.5 h-3.5" />
+                  Stops on tag: {tagNames(funnel.exit_tag_ids).join(', ')}
+                </span>
+              )}
+              {tagNames(funnel.complete_tag_ids).length > 0 && (
+                <span className="flex items-center gap-1.5 text-emerald-300/80">
+                  <TagIcon className="w-3.5 h-3.5" />
+                  Tags when finished: {tagNames(funnel.complete_tag_ids).join(', ')}
+                </span>
+              )}
             </div>
           </div>
         </div>
@@ -284,6 +308,15 @@ export function FunnelsClient({
         </div>
         {canManage && (
           <div className="flex items-center gap-2">
+            {!tagsError && (
+              <button
+                onClick={() => setManageTags(true)}
+                className="flex items-center gap-2 px-3 py-2 glass-button rounded-xl text-sm"
+              >
+                <TagIcon className="w-4 h-4" />
+                Tags
+              </button>
+            )}
             {!audiencesError && (
               <button
                 onClick={() => setTypeModal({ open: true, audience: null })}
@@ -432,6 +465,8 @@ export function FunnelsClient({
           }}
         />
       )}
+
+      {manageTags && <ManageTagsModal onClose={() => setManageTags(false)} />}
 
       {typeModal.open && (
         <UserTypeModal

@@ -7,6 +7,8 @@ import { TemplatePreviewModal } from './template-preview-modal'
 import { EmailTemplate } from '@/types/database.types'
 import { FUNNEL_TRIGGERS } from '@/lib/email-leads'
 import type { EmailAudience } from '@/lib/email-audiences'
+import { TagMultiSelect } from '@/components/tags/tag-multi-select'
+import { useTags } from '@/components/tags/use-tags'
 
 interface FunnelPhase {
   id: string
@@ -31,6 +33,9 @@ interface CreateFunnelModalProps {
     status: string
     trigger_key?: string | null
     audience_id?: string | null
+    trigger_tag_ids?: string[] | null
+    exit_tag_ids?: string[] | null
+    complete_tag_ids?: string[] | null
     phases?: Array<{
       id: string
       name: string | null
@@ -53,6 +58,10 @@ export function CreateFunnelModal({
   const [description, setDescription] = useState(editingFunnel?.description || '')
   const [triggerKey, setTriggerKey] = useState<string>(editingFunnel?.trigger_key || '')
   const [audienceId, setAudienceId] = useState<string>(editingFunnel?.audience_id || defaultAudienceId || '')
+  const [triggerTagIds, setTriggerTagIds] = useState<string[]>(editingFunnel?.trigger_tag_ids || [])
+  const [exitTagIds, setExitTagIds] = useState<string[]>(editingFunnel?.exit_tag_ids || [])
+  const [completeTagIds, setCompleteTagIds] = useState<string[]>(editingFunnel?.complete_tag_ids || [])
+  const { error: tagsError, hint: tagsHint } = useTags()
   const [phases, setPhases] = useState<FunnelPhase[]>(() => {
     if (editingFunnel?.phases && editingFunnel.phases.length > 0) {
       return editingFunnel.phases.map((p, i) => ({
@@ -133,6 +142,9 @@ export function CreateFunnelModal({
           description: description.trim() || null,
           trigger_key: triggerKey || null,
           audience_id: audienceId || null,
+          // Tag automation. Omitted when tags are unavailable so an old schema
+          // does not reject the save.
+          ...(tagsError ? {} : { trigger_tag_ids: triggerTagIds, exit_tag_ids: exitTagIds, complete_tag_ids: completeTagIds }),
           // Only stamp a status on create. On edit, omitting it preserves the
           // funnel's current status instead of silently demoting active
           // funnels back to draft.
@@ -279,6 +291,40 @@ export function CreateFunnelModal({
             <p className="text-gray-500 text-xs mt-1">
               Website form submissions and new student accounts enroll people here while the funnel is active. Each trigger can start only one funnel.
             </p>
+          </div>
+
+          {/* Tag automation */}
+          <div className="glass-card-subtle rounded-xl p-4 space-y-4">
+            <div>
+              <p className="text-sm font-medium text-gray-300">Tags</p>
+              <p className="text-gray-500 text-xs mt-0.5">
+                Tags work like Mailchimp tags: put one on a lead or student and any funnel listening for it reacts. Several funnels can listen to the same tag.
+              </p>
+              {tagsError && (
+                <p className="text-xs text-amber-300/90 mt-2">
+                  Tags are not set up yet: {tagsError}
+                  {tagsHint && <span className="text-gray-500"> {tagsHint}</span>}
+                </p>
+              )}
+            </div>
+            {!tagsError && (
+              <>
+                <div>
+                  <label className="block text-xs font-medium text-gray-400 mb-1.5">Also starts when someone is tagged</label>
+                  <TagMultiSelect value={triggerTagIds} onChange={setTriggerTagIds} placeholder="Choose start tags" />
+                </div>
+                <div>
+                  <label className="block text-xs font-medium text-gray-400 mb-1.5">Stops for someone when they are tagged</label>
+                  <TagMultiSelect value={exitTagIds} onChange={setExitTagIds} placeholder="Choose stop tags" />
+                  <p className="text-gray-500 text-xs mt-1">Handy for “Booked a lesson” or “Enrolled”, so the sequence ends the moment it has done its job.</p>
+                </div>
+                <div>
+                  <label className="block text-xs font-medium text-gray-400 mb-1.5">When they finish the last step, tag them</label>
+                  <TagMultiSelect value={completeTagIds} onChange={setCompleteTagIds} placeholder="Choose finish tags" />
+                  <p className="text-gray-500 text-xs mt-1">If another funnel starts on that tag, finishing this one hands them straight into it.</p>
+                </div>
+              </>
+            )}
           </div>
 
           {/* Phases */}

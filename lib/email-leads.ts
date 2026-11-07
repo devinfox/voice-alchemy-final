@@ -147,6 +147,9 @@ export async function findFunnelByTrigger(admin: SupabaseClient, key: FunnelTrig
 
 export type EnrollRecipient = { profileId: string; leadId?: undefined } | { leadId: string; profileId?: undefined }
 
+/** How a person ended up in a funnel (email_funnel_enrollments.enrolled_via). */
+export type EnrollVia = 'manual' | 'website' | 'signup' | 'ai' | 'tag'
+
 export interface EnrollResult {
   enrolled: boolean
   reason?: string
@@ -163,7 +166,7 @@ export async function enrollInFunnel(
   admin: SupabaseClient,
   funnel: FunnelForEnroll,
   recipient: EnrollRecipient,
-  opts: { enrolledBy?: string | null; via: 'manual' | 'website' | 'signup' | 'ai' } = { via: 'manual' }
+  opts: { enrolledBy?: string | null; via: EnrollVia } = { via: 'manual' }
 ): Promise<EnrollResult> {
   if (funnel.status !== 'active') return { enrolled: false, reason: 'Funnel is not active', funnelName: funnel.name }
   if (funnel.phases.length === 0) return { enrolled: false, reason: 'Funnel has no phases', funnelName: funnel.name }

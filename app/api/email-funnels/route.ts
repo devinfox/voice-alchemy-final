@@ -3,6 +3,7 @@ import { requireEmailAccess } from '@/lib/email-access-server'
 import { createClient as createServiceClient } from '@supabase/supabase-js'
 import { NextRequest, NextResponse } from 'next/server'
 import { isTriggerKey } from '@/lib/email-leads'
+import { tagIdList } from '@/lib/email-tags'
 
 // GET /api/email-funnels - List all funnels
 export async function GET(request: NextRequest) {
@@ -81,6 +82,9 @@ export async function POST(request: NextRequest) {
         status: status || 'draft',
         trigger_key: trigger_key || null,
         audience_id: audience_id || null,
+        trigger_tag_ids: tagIdList(body.trigger_tag_ids) || [],
+        exit_tag_ids: tagIdList(body.exit_tag_ids) || [],
+        complete_tag_ids: tagIdList(body.complete_tag_ids) || [],
         created_by: profile.id,
       })
       .select()

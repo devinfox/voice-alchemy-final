@@ -1,8 +1,10 @@
 'use client'
 
 import { useState, useEffect } from 'react'
-import { X, Mail, Clock, Users, Search, Check, AlertCircle, Loader2, Calendar } from 'lucide-react'
+import { X, Mail, Clock, Users, Search, Check, AlertCircle, Loader2, Calendar, Tag as TagIcon } from 'lucide-react'
 import { EmailTemplate } from '@/types/database.types'
+import { TagMultiSelect } from '@/components/tags/tag-multi-select'
+import { useTags } from '@/components/tags/use-tags'
 
 interface Recipient {
   id: string
@@ -13,6 +15,8 @@ interface Recipient {
   email: string | null
   /** 'lead' for website leads (email_leads); undefined for accounts */
   kind?: 'lead'
+  /** Contact tags on this person (email_tags.id) */
+  tag_ids?: string[]
 }
 
 const selectionKey = (r: Recipient) => `${r.kind === 'lead' ? 'lead' : 'student'}:${r.id}`
@@ -44,6 +48,12 @@ export function SendTemplateModal({
   const [scheduledTime, setScheduledTime] = useState('')
   const [error, setError] = useState<string | null>(null)
   const [successMessage, setSuccessMessage] = useState<string | null>(null)
+  // Tag filter: only people carrying at least one chosen tag are listed
+  const [tagFilter, setTagFilter] = useState<string[]>([])
+  const { error: tagsError } = useTags()
+  const tagFilterOn = tagFilter.length > 0
+  // A tag can sit on a website lead, so filtering by tag pulls leads in too
+  const loadLeads = includeLeads || tagFilterOn
 
   // Students (or everyone) with an email address on file
   useEffect(() => {
@@ -55,7 +65,7 @@ export function SendTemplateModal({
         if (!includeStaff) params.set('role', 'student')
         const requests = [fetch(`/api/students/list-for-email?${params.toString()}`)]
         // Website leads: people who left an email on the site but have no account
-        if (includeLeads) requests.push(fetch('/api/students/list-for-email?audience=leads'))
+        if (loadLeads) requests.push(fetch('/api/students/list-for-email?audience=leads'))
         const responses = await Promise.all(requests)
         const results = await Promise.all(responses.map((r) => r.json()))
         if (!cancelled && responses.every((r) => r.ok)) {
@@ -72,14 +82,14 @@ export function SendTemplateModal({
     return () => {
       cancelled = true
     }
-  }, [includeStaff, includeLeads])
+  }, [includeStaff, loadLeads])
 
-  const filteredRecipients = searchQuery
-    ? recipients.filter((r) => {
-        const query = searchQuery.toLowerCase()
-        return recipientName(r).toLowerCase().includes(query) || (r.email || '').toLowerCase().includes(query)
-      })
-    : recipients
+  const filteredRecipients = recipients.filter((r) => {
+    if (tagFilterOn && !(r.tag_ids || []).some((id) => tagFilter.includes(id))) return false
+    if (!searchQuery) return true
+    const query = searchQuery.toLowerCase()
+    return recipientName(r).toLowerCase().includes(query) || (r.email || '').toLowerCase().includes(query)
+  })
 
   const toggleRecipient = (key: string) => {
     setSelectedIds((prev) => (prev.includes(key) ? prev.filter((x) => x !== key) : [...prev, key]))
@@ -326,6 +336,25 @@ export function SendTemplateModal({
                     Website leads
                   </label>
                 </div>
+
+                {/* Tag filter */}
+                {!tagsError && (
+                  <div className="flex items-start gap-2 mb-3">
+                    <TagIcon className="w-4 h-4 text-gray-400 mt-1.5 flex-shrink-0" />
+                    <TagMultiSelect value={tagFilter} onChange={setTagFilter} placeholder="Only people with a tag…" allowCreate={false} className="flex-1" />
+                    {tagFilterOn && (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setSelectedIds(filteredRecipients.map(selectionKey))
+                        }}
+                        className="text-xs text-yellow-400 hover:text-yellow-300 whitespace-nowrap mt-1.5"
+                      >
+                        Select all tagged ({filteredRecipients.length})
+                      </button>
+                    )}
+                  </div>
+                )}
 
                 {/* Recipient list */}
                 {loading ? (

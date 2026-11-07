@@ -1,9 +1,26 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { requireEmailAccess } from '@/lib/email-access-server'
 import { getSupabaseAdmin } from '@/lib/supabase-admin'
+import { tagsForRecipients, type EmailTag } from '@/lib/email-tags'
+import type { SupabaseClient } from '@supabase/supabase-js'
+
+/** Tag ids per person; empty maps when the tags migration is not applied. */
+async function tagIdsFor(admin: SupabaseClient, who: { leadIds?: string[]; profileIds?: string[] }) {
+  try {
+    const map = await tagsForRecipients(admin, who)
+    const ids = (list: EmailTag[] | undefined) => (list || []).map(t => t.id)
+    return {
+      lead: (id: string) => ids(map.leads.get(id)),
+      profile: (id: string) => ids(map.profiles.get(id)),
+    }
+  } catch {
+    return { lead: () => [] as string[], profile: () => [] as string[] }
+  }
+}
 
 /**
- * List people with email addresses for template sending.
+ * List people with email addresses for template sending. Each row carries
+ * `tag_ids` so pickers can filter by tag.
  * GET /api/students/list-for-email?hasEmail=true&role=student
  * GET /api/students/list-for-email?audience=leads
  *
@@ -38,6 +55,7 @@ export async function GET(request: NextRequest) {
       if (leadsError) {
         return NextResponse.json({ error: leadsError.message }, { status: 500 })
       }
+      const tags = await tagIdsFor(admin, { leadIds: (leads || []).map(l => l.id) })
       return NextResponse.json({
         data: (leads || []).map(l => ({
           id: l.id,
@@ -49,6 +67,7 @@ export async function GET(request: NextRequest) {
           kind: 'lead' as const,
           source: l.source,
           last_type: l.last_type,
+          tag_ids: tags.lead(l.id),
         })),
       })
     }
@@ -83,9 +102,11 @@ export async function GET(request: NextRequest) {
       }
     }
 
+    const tags = await tagIdsFor(admin, { profileIds: ids })
     let result = (profiles || []).map(p => ({
       ...p,
       email: emailById.get(p.id) || null,
+      tag_ids: tags.profile(p.id),
     }))
 
     if (hasEmailOnly) {

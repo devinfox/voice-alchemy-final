@@ -87,6 +87,14 @@ export default async function FunnelDetailPage({ params }: PageProps) {
   const audiences = (audienceRows || []) as EmailAudience[]
   const audienceName = audiences.find((a) => a.id === resolveAudienceId(funnel, audiences))?.name || null
 
+  // Tag hooks (tolerates the tags migration not being applied yet)
+  const { data: tagRows } = await supabase.from('email_tags').select('id, name').eq('is_deleted', false)
+  const tagNameById = new Map(((tagRows || []) as { id: string; name: string }[]).map((t) => [t.id, t.name]))
+  const tagNames = (ids: string[] | null | undefined) => (ids || []).map((id) => tagNameById.get(id)).filter(Boolean).join(', ')
+  const startTags = tagNames(funnel.trigger_tag_ids)
+  const stopTags = tagNames(funnel.exit_tag_ids)
+  const finishTags = tagNames(funnel.complete_tag_ids)
+
   const steps = ((funnel.phases || []) as FunnelStepLike[]).sort((a, b) => a.phase_order - b.phase_order)
   const enrollments = ((funnel.enrollments || []) as EnrollmentRow[]).sort(
     (a, b) => new Date(b.enrolled_at).getTime() - new Date(a.enrolled_at).getTime()
@@ -153,6 +161,9 @@ export default async function FunnelDetailPage({ params }: PageProps) {
               Starts automatically when: {triggerLabel(funnel.trigger_key)}
             </p>
           )}
+          {startTags && <p className="text-xs text-violet-300/90 mt-1">Starts on tag: {startTags}</p>}
+          {stopTags && <p className="text-xs text-amber-300/80 mt-1">Stops on tag: {stopTags}</p>}
+          {finishTags && <p className="text-xs text-emerald-300/80 mt-1">Tags when finished: {finishTags}</p>}
         </div>
         <FunnelDetailClient
           funnel={{
@@ -164,6 +175,9 @@ export default async function FunnelDetailPage({ params }: PageProps) {
             auto_enroll_enabled: funnel.auto_enroll_enabled ?? false,
             trigger_key: funnel.trigger_key ?? null,
             audience_id: funnel.audience_id ?? null,
+            trigger_tag_ids: funnel.trigger_tag_ids ?? [],
+            exit_tag_ids: funnel.exit_tag_ids ?? [],
+            complete_tag_ids: funnel.complete_tag_ids ?? [],
             phases: steps.map((p) => ({
               id: p.id,
               name: p.name,

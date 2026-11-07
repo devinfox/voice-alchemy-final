@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server'
 import { createClient, getCurrentUser } from '@/lib/supabase-server'
 import { createSupabaseAdmin } from '@/lib/supabase-admin'
+import { tagsForRecipients, type EmailTag } from '@/lib/email-tags'
 
 // ============================================================================
 // GET /api/admin/students - full student directory for the admin CRM view
@@ -31,6 +32,8 @@ export interface AdminStudentRow {
   trainingSessions: number
   lastActivityAt: string | null
   hasProfile: boolean
+  /** Contact tags (email_tags) on this account. */
+  tags: Pick<EmailTag, 'id' | 'name' | 'color'>[]
 }
 
 export async function GET() {
@@ -105,6 +108,15 @@ export async function GET() {
       contactById = new Map(
         contactRows.map(r => [r.id, { phone: r.phone ?? null, admin_notes: r.admin_notes ?? null }])
       )
+    }
+
+    // Contact tags. Optional: the directory still renders before migration
+    // 20261107000001_email_tags.sql is applied.
+    let tagsByProfile = new Map<string, EmailTag[]>()
+    try {
+      tagsByProfile = (await tagsForRecipients(admin, { profileIds: (profiles || []).map(p => p.id) })).profiles
+    } catch (tagError) {
+      console.error('[AdminStudents] tags unavailable:', tagError instanceof Error ? tagError.message : tagError)
     }
 
     // --- relationships and activity -----------------------------------------
@@ -234,6 +246,7 @@ export async function GET() {
         trainingSessions: a?.trainingSessions ?? 0,
         lastActivityAt: a?.lastActivityAt ?? null,
         hasProfile: true,
+        tags: (tagsByProfile.get(p.id) ?? []).map(t => ({ id: t.id, name: t.name, color: t.color })),
       }
     })
 
@@ -262,6 +275,7 @@ export async function GET() {
         trainingSessions: 0,
         lastActivityAt: null,
         hasProfile: false,
+        tags: [],
       }))
 
     const all = [...students, ...orphaned]

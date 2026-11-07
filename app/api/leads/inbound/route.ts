@@ -7,6 +7,7 @@ import {
   type FunnelTriggerKey,
 } from '@/lib/email-leads'
 import { normalizeEmail } from '@/lib/email-unsubscribe'
+import { addTags, getOrCreateTags } from '@/lib/email-tags'
 
 export const runtime = 'nodejs'
 
@@ -19,8 +20,10 @@ export const runtime = 'nodejs'
  *
  *   Authorization: Bearer <LEAD_INTAKE_SECRET>
  *
- * Body: { type, email, first_name, last_name, persona, source, page?, metadata? }
+ * Body: { type, email, first_name, last_name, persona, source, page?, metadata?, tags? }
  *   type: lead | lead_details | teacher_demo | teacher_demo_details | mentorship_application
+ *   tags: optional tag names; unknown ones are created. Tags wired to a funnel
+ *         start (or stop) it for this person, on top of the type trigger.
  */
 
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
@@ -84,9 +87,24 @@ export async function POST(request: NextRequest) {
       await admin.from('email_leads').update({ profile_id: userRow.id }).eq('id', lead.id)
     }
 
+    // Tags from the form (e.g. "Summer 2026 workshop"). Added before the type
+    // trigger so a tag-driven funnel and a type-driven funnel can both start.
+    let tagsApplied: string[] = []
+    const tagNames = Array.isArray(body.tags) ? body.tags.filter((t: unknown): t is string => typeof t === 'string') : []
+    if (tagNames.length > 0 && !lead.is_unsubscribed) {
+      try {
+        const tags = await getOrCreateTags(admin, tagNames)
+        await addTags(admin, { leadIds: [lead.id] }, tags.map(t => t.id), { via: 'website' })
+        tagsApplied = tags.map(t => t.name)
+      } catch (tagErr) {
+        // Tagging must never block the lead or its funnel.
+        console.error('[leads/inbound] tagging failed:', tagErr)
+      }
+    }
+
     const trigger = triggerFor(type, persona)
     if (!trigger) {
-      return NextResponse.json({ ok: true, lead_id: lead.id, enrolled: false, funnel: null, reason: 'details only' })
+      return NextResponse.json({ ok: true, lead_id: lead.id, enrolled: false, funnel: null, reason: 'details only', tags: tagsApplied })
     }
     if (lead.is_unsubscribed) {
       return NextResponse.json({ ok: true, lead_id: lead.id, enrolled: false, funnel: null, reason: 'unsubscribed' })
@@ -105,6 +123,7 @@ export async function POST(request: NextRequest) {
       funnel: result.funnelName || null,
       reason: result.enrolled ? undefined : result.reason,
       first_send_at: result.firstSendAt,
+      tags: tagsApplied,
     })
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err)

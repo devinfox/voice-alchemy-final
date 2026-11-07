@@ -21,6 +21,9 @@ interface FunnelDetailClientProps {
     auto_enroll_enabled: boolean
     trigger_key?: string | null
     audience_id?: string | null
+    trigger_tag_ids?: string[] | null
+    exit_tag_ids?: string[] | null
+    complete_tag_ids?: string[] | null
     phases: Array<{
       id: string
       name: string | null
@@ -151,7 +154,18 @@ export function FunnelDetailClient({ funnel, templates, audiences = [] }: Funnel
         <CreateFunnelModal
           templates={templates}
           audiences={audiences}
-          editingFunnel={{ id: funnel.id, name: funnel.name, description: funnel.description, status, trigger_key: funnel.trigger_key ?? null, audience_id: funnel.audience_id ?? null, phases: funnel.phases }}
+          editingFunnel={{
+            id: funnel.id,
+            name: funnel.name,
+            description: funnel.description,
+            status,
+            trigger_key: funnel.trigger_key ?? null,
+            audience_id: funnel.audience_id ?? null,
+            trigger_tag_ids: funnel.trigger_tag_ids ?? [],
+            exit_tag_ids: funnel.exit_tag_ids ?? [],
+            complete_tag_ids: funnel.complete_tag_ids ?? [],
+            phases: funnel.phases,
+          }}
           onClose={() => setShowEditModal(false)}
           onSuccess={() => {
             setShowEditModal(false)

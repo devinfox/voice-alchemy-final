@@ -4,9 +4,11 @@ import { UserPlus } from 'lucide-react'
 import { getSupabaseAdmin } from '@/lib/supabase-admin'
 import { DesktopOnly } from '@/components/desktop-only'
 import { FUNNEL_TRIGGERS, type FunnelTriggerKey } from '@/lib/email-leads'
+import { tagsForRecipients, type EmailTag } from '@/lib/email-tags'
 import { LeadsTable, type LeadRow } from './leads-table'
+import { ImportLeads } from './import-leads'
 
-export const metadata: Metadata = { title: 'Leads', description: 'Everyone who left an email on the website, where they came from, and which funnel picked them up.' }
+export const metadata: Metadata = { title: 'Leads', description: 'Your Voice Alchemy Academy community, from website signups to imported contacts.' }
 export const dynamic = 'force-dynamic'
 
 // Website form names → plain labels. Anything unknown is humanised.
@@ -27,6 +29,7 @@ const TYPE_LABELS: Record<string, string> = {
   teacher_demo: 'Requested a demo',
   teacher_demo_details: 'Requested a demo + details',
   mentorship_application: 'Applied for mentorship',
+  csv_import: 'Imported from CSV',
 }
 
 function humanise(s: string | null | undefined): string {
@@ -48,11 +51,14 @@ function triggerFor(type: string | null, persona: string): FunnelTriggerKey | nu
   }
 }
 
-export default async function LeadsPage() {
+export default async function LeadsPage({ searchParams }: { searchParams: Promise<{ page?: string }> }) {
+  const params = await searchParams
+  const page = Math.max(1, Math.floor(Number(params.page) || 1))
+  const pageSize = 500
   const admin = getSupabaseAdmin()
 
-  const [{ data: leads }, { data: funnels }, { data: phases }] = await Promise.all([
-    admin.from('email_leads').select('*').order('created_at', { ascending: false }).limit(500),
+  const [{ data: leads, count: totalLeads }, { data: funnels }, { data: phases }] = await Promise.all([
+    admin.from('email_leads').select('*', { count: 'exact' }).order('created_at', { ascending: false }).order('id').range((page - 1) * pageSize, page * pageSize - 1),
     admin.from('email_funnels').select('id, name, trigger_key, status').eq('is_deleted', false),
     admin.from('email_funnel_phases').select('funnel_id'),
   ])
@@ -65,6 +71,15 @@ export default async function LeadsPage() {
         .in('contact_id', leadIds)
         .order('enrolled_at', { ascending: false })
     : { data: [] as Array<Record<string, unknown>> }
+
+  // Contact tags. Tolerates migration 20261107000001_email_tags.sql not being applied.
+  let tagsByLead = new Map<string, EmailTag[]>()
+  let tagsError: string | null = null
+  try {
+    tagsByLead = (await tagsForRecipients(admin, { leadIds })).leads
+  } catch (e) {
+    tagsError = e instanceof Error ? e.message : 'Tags are unavailable'
+  }
 
   const enrollmentIds = (enrollments || []).map((e) => e.id as string)
   const { data: logs } = enrollmentIds.length
@@ -101,7 +116,8 @@ export default async function LeadsPage() {
 
     let note: string | null = null
     if (!e) {
-      if (l.is_unsubscribed) note = 'Unsubscribed, so no emails are sent.'
+      if (l.is_unsubscribed) note = 'Not eligible for marketing emails.'
+      else if (type === 'csv_import') note = 'Imported into your directory. No funnel started.'
       else if (!trigger) note = 'Extra details only. Their earlier submission decides the funnel.'
       else if (!wouldBe) note = `No funnel is set to start on “${triggerLabel.get(trigger) || trigger}”.`
       else if (wouldBe.status !== 'active') note = `“${wouldBe.name}” is turned off, so nothing started.`
@@ -114,7 +130,7 @@ export default async function LeadsPage() {
       email: l.email as string,
       persona,
       source: (l.source as string | null) || null,
-      sourceLabel: SOURCE_LABELS[(l.source as string) || ''] || humanise(l.source as string | null),
+      sourceLabel: SOURCE_LABELS[(l.source as string) || ''] || (type === 'csv_import' ? (l.source as string || 'CSV import') : humanise(l.source as string | null)),
       page: typeof meta.page === 'string' ? meta.page : null,
       type,
       typeLabel: TYPE_LABELS[type] || humanise(type),
@@ -122,6 +138,7 @@ export default async function LeadsPage() {
       updatedAt: (l.updated_at as string) || (l.created_at as string),
       hasAccount: !!l.profile_id,
       unsubscribed: !!l.is_unsubscribed,
+      tags: (tagsByLead.get(l.id as string) || []).map((t) => ({ id: t.id, name: t.name, color: t.color })),
       enrollment: e && funnel
         ? {
             id: e.id as string,
@@ -154,13 +171,26 @@ export default async function LeadsPage() {
             <div>
               <h1 className="text-2xl sm:text-3xl md:text-4xl font-bold text-white font-luxury">Leads</h1>
               <p className="text-xs sm:text-sm text-gray-300 mt-1 max-w-2xl">
-                Everyone who left an email on the website, where they came from, and which funnel picked them up.
+                Your singers and coaches, from website signups to imported contacts. See where they came from and follow their journey.
                 <Link href="/dashboard/email-templates?tab=funnels" className="ml-2 text-[#CEB466] hover:underline">Manage funnels</Link>
               </p>
             </div>
           </div>
         </div>
-        <LeadsTable rows={rows} />
+        <ImportLeads />
+        {(totalLeads || 0) > pageSize && <div className="flex items-center justify-between gap-3 text-sm text-gray-400">
+          <p>Showing {(page - 1) * pageSize + 1}–{Math.min(page * pageSize, totalLeads || 0)} of {(totalLeads || 0).toLocaleString()} leads. Filters apply to this page.</p>
+          <nav aria-label="Lead pages" className="flex gap-4">
+            {page > 1 && <Link className="text-[#CEB466] hover:underline" href={`/dashboard/leads?page=${page - 1}`}>Previous</Link>}
+            {page * pageSize < (totalLeads || 0) && <Link className="text-[#CEB466] hover:underline" href={`/dashboard/leads?page=${page + 1}`}>Next</Link>}
+          </nav>
+        </div>}
+        <LeadsTable
+          key={rows.map(r => `${r.id}:${r.updatedAt}`).join('|')}
+          rows={rows}
+          funnels={(funnels || []).map((f) => ({ id: f.id as string, name: f.name as string, status: f.status as string }))}
+          tagsError={tagsError}
+        />
       </div>
     </DesktopOnly>
   )

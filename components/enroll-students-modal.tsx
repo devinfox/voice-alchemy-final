@@ -1,7 +1,9 @@
 'use client'
 
 import { useEffect, useMemo, useState } from 'react'
-import { X, Users, Search, Check, AlertCircle, Loader2, UserPlus } from 'lucide-react'
+import { X, Users, Search, Check, AlertCircle, Loader2, UserPlus, Tag as TagIcon } from 'lucide-react'
+import { TagMultiSelect } from '@/components/tags/tag-multi-select'
+import { useTags } from '@/components/tags/use-tags'
 
 interface Candidate {
   id: string
@@ -11,6 +13,9 @@ interface Candidate {
   role: string | null
   email: string | null
   already_enrolled: boolean
+  /** 'lead' for website leads (email_leads); undefined for accounts */
+  kind?: 'lead'
+  tag_ids?: string[]
 }
 
 interface EnrollStudentsModalProps {
@@ -20,23 +25,33 @@ interface EnrollStudentsModalProps {
   onSuccess: (enrolled: number) => void
 }
 
+const selectionKey = (c: Candidate) => `${c.kind === 'lead' ? 'lead' : 'student'}:${c.id}`
+
 function displayName(c: Candidate): string {
   return `${c.first_name || ''} ${c.last_name || ''}`.trim() || c.name || c.email || 'Unnamed'
 }
 
 /**
- * Pick students to enroll in a funnel. Students already in the funnel are
- * shown but cannot be selected again.
+ * Pick people to enroll in a funnel: students, optionally staff and website
+ * leads, filtered by tag if you like. Anyone already in the funnel is shown
+ * but cannot be selected again.
  */
 export function EnrollStudentsModal({ funnelId, funnelName, onClose, onSuccess }: EnrollStudentsModalProps) {
   const [candidates, setCandidates] = useState<Candidate[]>([])
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
   const [includeStaff, setIncludeStaff] = useState(false)
+  const [includeLeads, setIncludeLeads] = useState(false)
+  const [tagFilter, setTagFilter] = useState<string[]>([])
   const [searchQuery, setSearchQuery] = useState('')
-  const [selectedIds, setSelectedIds] = useState<string[]>([])
+  const [selectedKeys, setSelectedKeys] = useState<string[]>([])
   const [error, setError] = useState<string | null>(null)
   const [success, setSuccess] = useState<string | null>(null)
+  const { error: tagsError } = useTags()
+
+  const tagFilterOn = tagFilter.length > 0
+  // Tags can sit on website leads, so a tag filter pulls leads in as well
+  const loadLeads = includeLeads || tagFilterOn
 
   useEffect(() => {
     let cancelled = false
@@ -46,12 +61,13 @@ export function EnrollStudentsModal({ funnelId, funnelName, onClose, onSuccess }
       try {
         const params = new URLSearchParams({ funnel_id: funnelId })
         if (includeStaff) params.set('include_staff', 'true')
+        if (loadLeads) params.set('include_leads', 'true')
         const response = await fetch(`/api/email-funnels/enroll?${params.toString()}`)
         const result = await response.json()
-        if (!response.ok) throw new Error(result.error || 'Could not load students')
+        if (!response.ok) throw new Error(result.error || 'Could not load people')
         if (!cancelled) setCandidates(result.data || [])
       } catch (err) {
-        if (!cancelled) setError(err instanceof Error ? err.message : 'Could not load students')
+        if (!cancelled) setError(err instanceof Error ? err.message : 'Could not load people')
       } finally {
         if (!cancelled) setLoading(false)
       }
@@ -60,23 +76,27 @@ export function EnrollStudentsModal({ funnelId, funnelName, onClose, onSuccess }
     return () => {
       cancelled = true
     }
-  }, [funnelId, includeStaff])
+  }, [funnelId, includeStaff, loadLeads])
 
   const filtered = useMemo(() => {
     const q = searchQuery.trim().toLowerCase()
-    if (!q) return candidates
-    return candidates.filter((c) => displayName(c).toLowerCase().includes(q) || (c.email || '').toLowerCase().includes(q))
-  }, [candidates, searchQuery])
+    return candidates.filter((c) => {
+      if (tagFilterOn && !(c.tag_ids || []).some((id) => tagFilter.includes(id))) return false
+      if (!q) return true
+      return displayName(c).toLowerCase().includes(q) || (c.email || '').toLowerCase().includes(q)
+    })
+  }, [candidates, searchQuery, tagFilter, tagFilterOn])
 
   const selectable = filtered.filter((c) => !c.already_enrolled)
+  const selected = new Set(selectedKeys)
 
-  const toggle = (id: string) => {
-    setSelectedIds((prev) => (prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id]))
+  const toggle = (key: string) => {
+    setSelectedKeys((prev) => (prev.includes(key) ? prev.filter((x) => x !== key) : [...prev, key]))
   }
 
   const handleEnroll = async () => {
-    if (selectedIds.length === 0) {
-      setError('Select at least one student')
+    if (selectedKeys.length === 0) {
+      setError('Select at least one person')
       return
     }
     setSaving(true)
@@ -85,20 +105,25 @@ export function EnrollStudentsModal({ funnelId, funnelName, onClose, onSuccess }
       const response = await fetch('/api/email-funnels/enroll', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ funnel_id: funnelId, student_ids: selectedIds }),
+        body: JSON.stringify({
+          funnel_id: funnelId,
+          student_ids: selectedKeys.filter((k) => k.startsWith('student:')).map((k) => k.slice('student:'.length)),
+          website_lead_ids: selectedKeys.filter((k) => k.startsWith('lead:')).map((k) => k.slice('lead:'.length)),
+        }),
       })
       const result = await response.json()
       if (!response.ok) {
-        setError(result.error || 'Could not enroll students')
+        setError(result.error || 'Could not enroll')
         return
       }
-      const parts = [`Enrolled ${result.enrolled} ${result.enrolled === 1 ? 'student' : 'students'}`]
+      const parts = [`Enrolled ${result.enrolled} ${result.enrolled === 1 ? 'person' : 'people'}`]
       if (result.skipped_already_enrolled) parts.push(`${result.skipped_already_enrolled} already enrolled`)
       if (result.skipped_no_email) parts.push(`${result.skipped_no_email} without an email`)
+      if (result.skipped_unsubscribed) parts.push(`${result.skipped_unsubscribed} unsubscribed`)
       setSuccess(parts.join(' · '))
       setTimeout(() => onSuccess(result.enrolled || 0), 1200)
     } catch (err) {
-      console.error('Error enrolling students:', err)
+      console.error('Error enrolling:', err)
       setError('Network error. Please try again.')
     } finally {
       setSaving(false)
@@ -116,7 +141,7 @@ export function EnrollStudentsModal({ funnelId, funnelName, onClose, onSuccess }
               <UserPlus className="w-5 h-5 text-blue-400" />
             </div>
             <div>
-              <h2 className="text-lg font-bold text-white">Enroll Students</h2>
+              <h2 className="text-lg font-bold text-white">Add people</h2>
               <p className="text-sm text-gray-400">{funnelName}</p>
             </div>
           </div>
@@ -142,17 +167,17 @@ export function EnrollStudentsModal({ funnelId, funnelName, onClose, onSuccess }
           {!success && (
             <>
               <p className="text-sm text-gray-400">
-                The first email goes out on the next delivery run, after the first phase&apos;s delay. Each student receives the sequence once.
+                The first email goes out on the next delivery run, after the first phase&apos;s delay. Each person receives the sequence once.
               </p>
 
-              <div className="flex items-center gap-3">
-                <div className="relative flex-1">
+              <div className="flex flex-wrap items-center gap-3">
+                <div className="relative flex-1 min-w-[200px]">
                   <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
                   <input
                     type="text"
                     value={searchQuery}
                     onChange={(e) => setSearchQuery(e.target.value)}
-                    placeholder="Search students..."
+                    placeholder="Search people..."
                     className="glass-input w-full pl-10 pr-4 py-2"
                   />
                 </div>
@@ -163,20 +188,37 @@ export function EnrollStudentsModal({ funnelId, funnelName, onClose, onSuccess }
                     onChange={(e) => setIncludeStaff(e.target.checked)}
                     className="w-4 h-4 rounded border-white/20 bg-white/5"
                   />
-                  Include teachers &amp; staff
+                  Teachers &amp; staff
+                </label>
+                <label className="flex items-center gap-2 text-xs text-gray-400 whitespace-nowrap cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={loadLeads}
+                    disabled={tagFilterOn}
+                    onChange={(e) => setIncludeLeads(e.target.checked)}
+                    className="w-4 h-4 rounded border-white/20 bg-white/5"
+                  />
+                  Website leads
                 </label>
               </div>
+
+              {!tagsError && (
+                <div className="flex items-start gap-2">
+                  <TagIcon className="w-4 h-4 text-gray-400 mt-1.5 flex-shrink-0" />
+                  <TagMultiSelect value={tagFilter} onChange={setTagFilter} placeholder="Only people with a tag…" allowCreate={false} className="flex-1" />
+                </div>
+              )}
 
               <div className="flex items-center justify-between text-xs">
                 <span className="text-gray-500">
                   {selectable.length} available · {filtered.length - selectable.length} already enrolled
                 </span>
                 <div className="flex items-center gap-2">
-                  <button onClick={() => setSelectedIds(selectable.map((c) => c.id))} className="text-yellow-400 hover:text-yellow-300">
-                    Select all
+                  <button onClick={() => setSelectedKeys(selectable.map(selectionKey))} className="text-yellow-400 hover:text-yellow-300">
+                    Select all{tagFilterOn ? ' tagged' : ''}
                   </button>
                   <span className="text-gray-600">|</span>
-                  <button onClick={() => setSelectedIds([])} className="text-gray-400 hover:text-gray-300">
+                  <button onClick={() => setSelectedKeys([])} className="text-gray-400 hover:text-gray-300">
                     Clear
                   </button>
                 </div>
@@ -189,16 +231,17 @@ export function EnrollStudentsModal({ funnelId, funnelName, onClose, onSuccess }
               ) : filtered.length === 0 ? (
                 <div className="text-center py-8">
                   <Users className="w-12 h-12 text-gray-500 mx-auto mb-3" />
-                  <p className="text-gray-400">No students with an email address match</p>
+                  <p className="text-gray-400">{tagFilterOn ? 'Nobody with those tags has an email address' : 'No one with an email address matches'}</p>
                 </div>
               ) : (
                 <div className="space-y-2 max-h-72 overflow-y-auto pr-1">
                   {filtered.map((c) => {
-                    const isSelected = selectedIds.includes(c.id)
+                    const key = selectionKey(c)
+                    const isSelected = selected.has(key)
                     return (
                       <button
-                        key={c.id}
-                        onClick={() => !c.already_enrolled && toggle(c.id)}
+                        key={key}
+                        onClick={() => !c.already_enrolled && toggle(key)}
                         disabled={c.already_enrolled}
                         className={`w-full text-left p-3 rounded-lg border transition-all ${
                           c.already_enrolled
@@ -243,7 +286,7 @@ export function EnrollStudentsModal({ funnelId, funnelName, onClose, onSuccess }
         {!success && (
           <div className="flex items-center justify-between p-4 border-t border-white/10">
             <p className="text-sm text-gray-400">
-              {selectedIds.length > 0 ? `${selectedIds.length} selected` : 'Select students to enroll'}
+              {selectedKeys.length > 0 ? `${selectedKeys.length} selected` : 'Select people to enroll'}
             </p>
             <div className="flex items-center gap-3">
               <button onClick={onClose} className="px-4 py-2 text-gray-400 hover:text-white hover:bg-white/10 rounded-lg transition-all">
@@ -251,7 +294,7 @@ export function EnrollStudentsModal({ funnelId, funnelName, onClose, onSuccess }
               </button>
               <button
                 onClick={handleEnroll}
-                disabled={saving || selectedIds.length === 0}
+                disabled={saving || selectedKeys.length === 0}
                 className="px-6 py-2 glass-button-gold rounded-lg font-medium disabled:opacity-50 flex items-center gap-2"
               >
                 {saving && <Loader2 className="w-4 h-4 animate-spin" />}

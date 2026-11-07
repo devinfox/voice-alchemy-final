@@ -250,6 +250,10 @@ export interface EmailFunnel {
   trigger_key?: string | null
   /** User type this funnel is filed under (email_audiences.id, see lib/email-audiences.ts) */
   audience_id?: string | null
+  /** Tag automation (email_tags.id arrays, see lib/email-tags.ts) */
+  trigger_tag_ids?: string[] | null
+  exit_tag_ids?: string[] | null
+  complete_tag_ids?: string[] | null
   total_enrolled: number
   total_completed: number
   total_emails_sent: number
