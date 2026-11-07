@@ -3,8 +3,10 @@
 import { useEffect, useMemo, useState } from 'react'
 import {
   Users, Search, Download, ArrowUpDown, Mail, Phone, Calendar, Activity,
-  AlertTriangle, CheckCircle2, RefreshCw, Music,
+  AlertTriangle, CheckCircle2, RefreshCw, Music, ChevronLeft, ChevronRight,
 } from 'lucide-react'
+
+const PAGE_SIZE = 25
 
 interface AdminStudentRow {
   id: string
@@ -63,6 +65,7 @@ export function StudentDirectory() {
   const [sortKey, setSortKey] = useState<SortKey>('joinedAt')
   const [sortAsc, setSortAsc] = useState(false)
   const [filter, setFilter] = useState<'all' | 'active' | 'inactive' | 'noProfile'>('all')
+  const [page, setPage] = useState(1)
 
   const load = async () => {
     setLoading(true)
@@ -109,6 +112,27 @@ export function StudentDirectory() {
       return sortAsc ? cmp : -cmp
     })
   }, [rows, query, sortKey, sortAsc, filter])
+
+  // Back to the first page whenever the result set changes shape.
+  useEffect(() => { setPage(1) }, [query, filter, sortKey, sortAsc, rows])
+
+  const pageCount = Math.max(1, Math.ceil(visible.length / PAGE_SIZE))
+  const currentPage = Math.min(page, pageCount)
+  const pageRows = useMemo(
+    () => visible.slice((currentPage - 1) * PAGE_SIZE, currentPage * PAGE_SIZE),
+    [visible, currentPage],
+  )
+  const firstIndex = visible.length === 0 ? 0 : (currentPage - 1) * PAGE_SIZE + 1
+  const lastIndex = Math.min(currentPage * PAGE_SIZE, visible.length)
+
+  // Page numbers to render: always first/last, plus a window around the current page.
+  const pageNumbers = useMemo(() => {
+    const nums = new Set<number>([1, pageCount])
+    for (let p = currentPage - 1; p <= currentPage + 1; p++) {
+      if (p >= 1 && p <= pageCount) nums.add(p)
+    }
+    return [...nums].sort((a, b) => a - b)
+  }, [currentPage, pageCount])
 
   const toggleSort = (key: SortKey) => {
     if (key === sortKey) setSortAsc(!sortAsc)
@@ -293,7 +317,7 @@ export function StudentDirectory() {
                   </td>
                 </tr>
               ) : (
-                visible.map(r => (
+                pageRows.map(r => (
                   <tr key={r.id} className="hover:bg-white/[0.03] transition-colors">
                     <td className="px-4 py-3">
                       <div className="flex items-center gap-3">
@@ -382,9 +406,55 @@ export function StudentDirectory() {
         </div>
       </div>
 
-      <p className="text-xs text-slate-500">
-        Showing {visible.length} of {rows.length} accounts.
-      </p>
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <p className="text-xs text-slate-500">
+          {visible.length === 0
+            ? `Showing 0 of ${rows.length} accounts.`
+            : `Showing ${firstIndex}–${lastIndex} of ${visible.length}${visible.length !== rows.length ? ` matching (${rows.length} total)` : ''} accounts.`}
+        </p>
+
+        {pageCount > 1 && (
+          <nav aria-label="Pagination" className="flex items-center gap-1">
+            <button
+              onClick={() => setPage(p => Math.max(1, p - 1))}
+              disabled={currentPage === 1}
+              aria-label="Previous page"
+              className="p-2 rounded-lg text-slate-400 hover:text-white hover:bg-white/[0.06] disabled:opacity-30 disabled:hover:bg-transparent transition-colors"
+            >
+              <ChevronLeft className="w-4 h-4" />
+            </button>
+
+            {pageNumbers.map((n, i) => {
+              const gap = i > 0 && n - pageNumbers[i - 1] > 1
+              return (
+                <span key={n} className="flex items-center gap-1">
+                  {gap && <span className="px-1 text-slate-600 text-sm">…</span>}
+                  <button
+                    onClick={() => setPage(n)}
+                    aria-current={n === currentPage ? 'page' : undefined}
+                    className={`min-w-[2.25rem] px-2 py-1.5 rounded-lg text-sm font-medium transition-all ${
+                      n === currentPage
+                        ? 'bg-gradient-to-r from-[#CEB466] to-[#9c8644] text-[#171229]'
+                        : 'text-slate-400 hover:text-white hover:bg-white/[0.06]'
+                    }`}
+                  >
+                    {n}
+                  </button>
+                </span>
+              )
+            })}
+
+            <button
+              onClick={() => setPage(p => Math.min(pageCount, p + 1))}
+              disabled={currentPage === pageCount}
+              aria-label="Next page"
+              className="p-2 rounded-lg text-slate-400 hover:text-white hover:bg-white/[0.06] disabled:opacity-30 disabled:hover:bg-transparent transition-colors"
+            >
+              <ChevronRight className="w-4 h-4" />
+            </button>
+          </nav>
+        )}
+      </div>
     </div>
   )
 }
