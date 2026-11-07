@@ -397,7 +397,7 @@ export async function GET(request: NextRequest) {
             thread_id: thread?.id,
             email_account_id: account.id,
             organization_id: account.organization_id,
-            message_id: `<${messageId}>`,
+            message_id: messageId,
             from_address: account.email_address,
             from_name: account.display_name,
             to_addresses: [{ email: recipient.email, name: recipientName(recipient) || null }],
@@ -418,7 +418,7 @@ export async function GET(request: NextRequest) {
               subject: rendered.subject,
               text: rendered.text || undefined,
               html: rendered.html,
-              headers: { 'Message-ID': `<${messageId}>`, ...listUnsubscribeHeaders(recipient.email) },
+              headers: { 'Message-ID': messageId, ...listUnsubscribeHeaders(recipient.email) },
             })
           } catch (sendErr) {
             const message = sendErr instanceof Error ? sendErr.message : String(sendErr)

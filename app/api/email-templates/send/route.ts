@@ -167,7 +167,7 @@ export async function POST(request: NextRequest) {
           thread_id: thread.id,
           email_account_id: emailAccount.id,
           organization_id: emailAccount.organization_id,
-          message_id: `<${messageId}>`,
+          message_id: messageId,
           from_address: emailAccount.email_address,
           from_name: emailAccount.display_name,
           to_addresses: [{ email: recipient.email, name: displayName || null }],
@@ -197,7 +197,7 @@ export async function POST(request: NextRequest) {
           subject: rendered.subject,
           text: rendered.text || undefined,
           html: rendered.html,
-          headers: { 'Message-ID': `<${messageId}>`, ...listUnsubscribeHeaders(recipient.email) },
+          headers: { 'Message-ID': messageId, ...listUnsubscribeHeaders(recipient.email) },
         })
 
         await admin
