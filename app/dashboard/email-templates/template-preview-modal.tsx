@@ -9,14 +9,18 @@ import {
   getCategoryLabel,
   getCategoryStyle,
 } from '@/lib/email-variables'
-import { X, Eye, Code } from 'lucide-react'
+import { X, Eye, Code, Pencil } from 'lucide-react'
 
 interface TemplatePreviewModalProps {
   template: EmailTemplate
   onClose: () => void
+  /** When given, shows an "Edit this email" button so the email can be changed right here. */
+  onEdit?: (template: EmailTemplate) => void
+  /** Context line under the title, e.g. "Step 2 of New Student Welcome". */
+  contextNote?: string
 }
 
-export function TemplatePreviewModal({ template, onClose }: TemplatePreviewModalProps) {
+export function TemplatePreviewModal({ template, onClose, onEdit, contextNote }: TemplatePreviewModalProps) {
   const [viewMode, setViewMode] = useState<'preview' | 'html'>('preview')
 
   // Same renderer the send route and funnel worker use, with sample values
@@ -28,11 +32,14 @@ export function TemplatePreviewModal({ template, onClose }: TemplatePreviewModal
 
       <div className="relative glass-card modal-solid w-full max-w-3xl mx-4 max-h-[90vh] overflow-hidden flex flex-col">
         <div className="flex items-center justify-between p-5 border-b border-white/10">
-          <div className="flex items-center gap-3">
-            <h2 className="text-lg font-semibold text-white uppercase tracking-wide">{template.name}</h2>
-            <span className={`px-2 py-0.5 text-xs rounded-full border ${getCategoryStyle(template.category)}`}>
-              {getCategoryLabel(template.category)}
-            </span>
+          <div className="min-w-0">
+            <div className="flex items-center gap-3">
+              <h2 className="text-lg font-semibold text-white uppercase tracking-wide truncate">{template.name}</h2>
+              <span className={`px-2 py-0.5 text-xs rounded-full border flex-shrink-0 ${getCategoryStyle(template.category)}`}>
+                {getCategoryLabel(template.category)}
+              </span>
+            </div>
+            {contextNote && <p className="text-xs text-gray-400 mt-0.5 truncate">{contextNote}</p>}
           </div>
           <button
             onClick={onClose}
@@ -100,10 +107,24 @@ export function TemplatePreviewModal({ template, onClose }: TemplatePreviewModal
           )}
         </div>
 
-        <div className="flex justify-end gap-3 p-5 border-t border-white/10">
-          <button onClick={onClose} className="px-5 py-2 glass-button rounded-xl text-sm font-medium">
-            Close
-          </button>
+        <div className="flex items-center justify-between gap-3 p-5 border-t border-white/10">
+          <p className="text-xs text-gray-500">
+            {onEdit ? 'Edits here update the email everywhere it is used, or save them as a new email.' : ''}
+          </p>
+          <div className="flex gap-3">
+            <button onClick={onClose} className="px-5 py-2 glass-button rounded-xl text-sm font-medium">
+              Close
+            </button>
+            {onEdit && (
+              <button
+                onClick={() => onEdit(template)}
+                className="flex items-center gap-2 px-5 py-2 glass-button-gold rounded-xl text-sm font-medium"
+              >
+                <Pencil className="w-4 h-4" />
+                Edit this email
+              </button>
+            )}
+          </div>
         </div>
       </div>
     </div>

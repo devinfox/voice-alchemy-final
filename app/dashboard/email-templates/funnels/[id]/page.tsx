@@ -6,7 +6,8 @@ import { ArrowLeft, Users } from 'lucide-react'
 import type { EmailTemplate } from '@/types/database.types'
 import { FunnelDetailClient } from './funnel-detail-client'
 import { EnrollmentRowActions } from './enrollment-row-actions'
-import { FunnelSteps, describeDelay, type FunnelStepLike } from '../../funnel-steps'
+import { describeDelay, type FunnelStepLike } from '../../funnel-steps'
+import { FunnelStepsInteractive } from './funnel-steps-interactive'
 import { triggerLabel } from '@/lib/email-leads'
 import { resolveAudienceId, type EmailAudience } from '@/lib/email-audiences'
 
@@ -71,12 +72,15 @@ export default async function FunnelDetailPage({ params }: PageProps) {
     notFound()
   }
 
-  const { data: templates } = await supabase
+  // All emails (so a step can be previewed even if its email is hidden from
+  // funnels); the step editor only offers the active ones.
+  const { data: templateRows } = await supabase
     .from('email_templates')
     .select('*')
     .eq('is_deleted', false)
-    .eq('is_active', true)
     .order('name', { ascending: true })
+  const allTemplates = (templateRows || []) as EmailTemplate[]
+  const templates = allTemplates.filter((t) => t.is_active)
 
   // User types (tolerates the audiences migration not being applied yet)
   const { data: audienceRows } = await supabase
@@ -186,15 +190,16 @@ export default async function FunnelDetailPage({ params }: PageProps) {
               delay_hours: p.delay_hours,
             })),
           }}
-          templates={(templates as EmailTemplate[]) || []}
+          templates={templates}
           audiences={audiences}
+          currentUserId={currentUser.id}
         />
       </div>
 
       {/* Steps */}
       <div className="glass-card p-5">
         <h2 className="text-sm font-medium text-gray-400 uppercase tracking-wide mb-3">What this funnel sends</h2>
-        <FunnelSteps steps={steps} />
+        <FunnelStepsInteractive funnelId={funnel.id} funnelName={funnel.name} steps={steps} templates={allTemplates} currentUserId={currentUser.id} />
         {steps.length > 0 && (
           <ul className="mt-4 space-y-1.5 text-sm text-gray-400">
             {steps.map((s, i) => (

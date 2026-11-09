@@ -1,10 +1,10 @@
 'use client'
 
-import { useState, useCallback, useEffect } from 'react'
+import { useState, useCallback } from 'react'
 import { createClient } from '@/lib/supabase'
 import { EmailTemplate, EmailTemplateCategory } from '@/types/database.types'
 import { TEMPLATE_CATEGORIES } from '@/lib/email-variables'
-import { X, Eye } from 'lucide-react'
+import { X, Eye, Copy } from 'lucide-react'
 import { EmailBuilder } from '@/components/email-builder/email-builder'
 import { TemplateVariablesHint } from './template-variables-hint'
 import { PreviewModal } from '@/components/email-builder/preview-modal'
@@ -15,19 +15,35 @@ interface EditTemplateModalProps {
   template: EmailTemplate
   onClose: () => void
   onSuccess: () => void
+  /**
+   * Called with the saved row. `mode` is 'updated' when the existing email was
+   * changed in place and 'created' when "Save as new email" made a copy.
+   */
+  onSaved?: (saved: EmailTemplate, mode: 'updated' | 'created') => void
+  /** Show the "Save as new email" button (copy instead of overwrite). */
+  allowSaveAsNew?: boolean
+  /** Owner recorded on a copy made with "Save as new email". */
+  currentUserId?: string | null
+  /** Context line under the title, e.g. which funnel step this email belongs to. */
+  contextNote?: string
 }
 
 export function EditTemplateModal({
   template,
   onClose,
   onSuccess,
+  onSaved,
+  allowSaveAsNew = false,
+  currentUserId,
+  contextNote,
 }: EditTemplateModalProps) {
-  const [loading, setLoading] = useState(false)
+  const [loading, setLoading] = useState<false | 'update' | 'create'>(false)
   const [error, setError] = useState<string | null>(null)
   const [showPreview, setShowPreview] = useState(false)
-  const [blocks, setBlocks] = useState<EmailBlock[]>([])
+  // The modal is mounted per template, so the body is parsed once on open.
+  const [initialBlocks] = useState<EmailBlock[]>(() => parseBodyToBlocks(template.body))
+  const [blocks, setBlocks] = useState<EmailBlock[]>(initialBlocks)
   const [emailSettings, setEmailSettings] = useState<EmailSettings | undefined>()
-  const [initialBlocks, setInitialBlocks] = useState<EmailBlock[]>([])
   const [formData, setFormData] = useState<{
     name: string
     subject: string
@@ -44,55 +60,52 @@ export function EditTemplateModal({
     is_active: template.is_active,
   })
 
-  // Parse existing body on mount
-  useEffect(() => {
-    const parsed = parseBodyToBlocks(template.body)
-    setInitialBlocks(parsed)
-    setBlocks(parsed)
-  }, [template.body])
-
   const handleBuilderChange = useCallback((newBlocks: EmailBlock[], html: string, settings: EmailSettings) => {
     setBlocks(newBlocks)
     setEmailSettings(settings)
   }, [])
 
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault()
+  const validate = (): boolean => {
     setError(null)
-
     if (!formData.name.trim()) {
       setError('Template name is required')
-      return
+      return false
     }
     if (!formData.subject.trim()) {
       setError('Subject line is required')
-      return
+      return false
     }
     if (blocks.length === 0) {
       setError('Please add at least one block to your email')
-      return
+      return false
     }
+    return true
+  }
 
-    setLoading(true)
+  const payload = () => ({
+    name: formData.name.trim(),
+    subject: formData.subject.trim(),
+    preheader: formData.preheader.trim() || null,
+    body: JSON.stringify(blocks),
+    body_html: blocksToHtml(blocks, emailSettings),
+    description: formData.description.trim() || null,
+    category: formData.category,
+    is_active: formData.is_active,
+  })
+
+  // Save over the existing email. Every funnel step that uses it picks up the change.
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault()
+    if (!validate()) return
+    setLoading('update')
 
     const supabase = createClient()
-    const body = JSON.stringify(blocks)
-    const bodyHtml = blocksToHtml(blocks, emailSettings)
-
-    const { error: updateError } = await supabase
+    const { data, error: updateError } = await supabase
       .from('email_templates')
-      .update({
-        name: formData.name.trim(),
-        subject: formData.subject.trim(),
-        preheader: formData.preheader.trim() || null,
-        body: body,
-        body_html: bodyHtml,
-        description: formData.description.trim() || null,
-        category: formData.category,
-        is_active: formData.is_active,
-        updated_at: new Date().toISOString(),
-      })
+      .update({ ...payload(), updated_at: new Date().toISOString() })
       .eq('id', template.id)
+      .select()
+      .single()
 
     if (updateError) {
       console.error('Error updating template:', updateError)
@@ -102,6 +115,35 @@ export function EditTemplateModal({
     }
 
     setLoading(false)
+    onSaved?.((data as EmailTemplate) || { ...template, ...payload() }, 'updated')
+    onSuccess()
+  }
+
+  // Save as a separate email and leave the original untouched.
+  const handleSaveAsNew = async () => {
+    if (!validate()) return
+    setLoading('create')
+
+    const supabase = createClient()
+    const fields = payload()
+    // A copy with the same name would be indistinguishable in the list.
+    if (fields.name === template.name) fields.name = `${fields.name} (copy)`
+
+    const { data, error: insertError } = await supabase
+      .from('email_templates')
+      .insert({ ...fields, created_by: currentUserId || template.created_by || null })
+      .select()
+      .single()
+
+    if (insertError || !data) {
+      console.error('Error creating template copy:', insertError)
+      setError(insertError?.message || 'Could not save the copy')
+      setLoading(false)
+      return
+    }
+
+    setLoading(false)
+    onSaved?.(data as EmailTemplate, 'created')
     onSuccess()
   }
 
@@ -118,9 +160,12 @@ export function EditTemplateModal({
         <div className="relative glass-card modal-solid w-full max-w-6xl mx-4 max-h-[95vh] overflow-hidden flex flex-col">
           {/* Header */}
           <div className="flex items-center justify-between p-4 border-b border-white/10">
-            <h2 className="text-lg font-semibold text-white uppercase tracking-wide">
-              Edit Email Template
-            </h2>
+            <div className="min-w-0">
+              <h2 className="text-lg font-semibold text-white uppercase tracking-wide">
+                Edit Email Template
+              </h2>
+              {contextNote && <p className="text-xs text-gray-400 mt-0.5 truncate">{contextNote}</p>}
+            </div>
             <div className="flex items-center gap-2">
               <button
                 onClick={() => setShowPreview(true)}
@@ -240,12 +285,25 @@ export function EditTemplateModal({
                 >
                   Cancel
                 </button>
+                {allowSaveAsNew && (
+                  <button
+                    type="button"
+                    onClick={handleSaveAsNew}
+                    disabled={!!loading}
+                    title="Keep the original and save these changes as a separate email"
+                    className="flex items-center gap-2 px-4 py-2 glass-button rounded-xl text-sm font-medium disabled:opacity-50"
+                  >
+                    <Copy className="w-4 h-4" />
+                    {loading === 'create' ? 'Saving copy...' : 'Save as new email'}
+                  </button>
+                )}
                 <button
                   type="submit"
-                  disabled={loading}
+                  disabled={!!loading}
+                  title={allowSaveAsNew ? 'Update this email everywhere it is used' : undefined}
                   className="px-5 py-2 glass-button-gold rounded-xl text-sm font-medium disabled:opacity-50"
                 >
-                  {loading ? 'Saving...' : 'Save Changes'}
+                  {loading === 'update' ? 'Saving...' : 'Save Changes'}
                 </button>
               </div>
             </div>

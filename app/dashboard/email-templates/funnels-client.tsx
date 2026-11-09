@@ -8,12 +8,13 @@ import {
 } from 'lucide-react'
 import { useTags } from '@/components/tags/use-tags'
 import { ManageTagsModal } from '@/components/tags/manage-tags-modal'
-import { EmailFunnel, EmailTemplate, Profile, FunnelStatus } from '@/types/database.types'
+import { EmailFunnel, EmailFunnelPhase, EmailTemplate, Profile, FunnelStatus } from '@/types/database.types'
 import { Switch } from '@/components/ui/switch'
 import { OverflowMenu } from '@/components/ui/overflow-menu'
 import { EnrollStudentsModal } from '@/components/enroll-students-modal'
 import { CreateFunnelModal } from './create-funnel-modal'
 import { FunnelSteps } from './funnel-steps'
+import { StepEmailViewer } from './step-email-viewer'
 import { UserTypeModal } from './user-type-modal'
 import { triggerLabel } from '@/lib/email-leads'
 import { resolveAudienceId, type EmailAudience } from '@/lib/email-audiences'
@@ -61,6 +62,8 @@ export function FunnelsClient({
   const [typeModal, setTypeModal] = useState<{ open: boolean; audience: EmailAudience | null }>({ open: false, audience: null })
   const [collapsed, setCollapsed] = useState<Record<string, boolean>>({})
   const [manageTags, setManageTags] = useState(false)
+  // Preview / edit of one step's email, opened by clicking the step in the strip
+  const [stepView, setStepView] = useState<{ funnel: EmailFunnel; phase: EmailFunnelPhase; index: number; template: EmailTemplate } | null>(null)
   const { tags: allTags, error: tagsError } = useTags()
   const tagName = (id: string) => allTags.find((t) => t.id === id)?.name
   const tagNames = (ids: string[] | null | undefined) => (ids || []).map(tagName).filter((n): n is string => !!n)
@@ -195,6 +198,42 @@ export function FunnelsClient({
     }
   }
 
+  const openStep = (funnel: EmailFunnel, phase: EmailFunnelPhase, index: number) => {
+    const template = templates.find((t) => t.id === phase.template_id)
+    if (template) setStepView({ funnel, phase, index, template })
+  }
+
+  // After an email is saved from the step preview. A copy ("Save as new
+  // email") is swapped into that step; the original stays on any other funnel.
+  const handleStepEmailSaved = async (saved: EmailTemplate, mode: 'updated' | 'created') => {
+    if (mode === 'created' && stepView) {
+      const { funnel, phase } = stepView
+      const phases = [...(funnel.phases || [])]
+        .sort((a, b) => a.phase_order - b.phase_order)
+        .map((p) => ({
+          id: p.id,
+          template_id: p.id === phase.id ? saved.id : p.template_id,
+          name: p.name,
+          delay_days: p.delay_days,
+          delay_hours: p.delay_hours,
+        }))
+      try {
+        const response = await fetch(`/api/email-funnels/${funnel.id}`, {
+          method: 'PATCH',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ phases }),
+        })
+        if (!response.ok) {
+          const result = await response.json()
+          alert(`The copy was saved, but the step could not be switched to it: ${result.error}`)
+        }
+      } catch {
+        alert('The copy was saved, but the step could not be switched to it. Please try again from Edit steps.')
+      }
+    }
+    router.refresh()
+  }
+
   const renderFunnel = (funnel: EmailFunnel) => {
     const isOn = funnel.status === 'active'
     const enrolled = funnel.total_enrolled || 0
@@ -248,7 +287,11 @@ export function FunnelsClient({
             </div>
 
             <div className="mt-3">
-              <FunnelSteps steps={funnel.phases || []} compact />
+              <FunnelSteps
+                steps={funnel.phases || []}
+                compact
+                onStepClick={(step, i) => openStep(funnel, step as EmailFunnelPhase, i)}
+              />
             </div>
 
             <div className="text-xs text-gray-500 mt-3 flex flex-wrap items-center gap-x-4 gap-y-1">
@@ -451,6 +494,19 @@ export function FunnelsClient({
           audiences={audiences}
           defaultAudienceId={createFor === false ? null : createFor}
           editingFunnel={editingFunnel}
+          currentUserId={currentUser?.id}
+          onTemplatesChanged={() => router.refresh()}
+        />
+      )}
+
+      {stepView && (
+        <StepEmailViewer
+          template={stepView.template}
+          contextNote={`Step ${stepView.index + 1} of ${stepView.funnel.name}`}
+          canEdit={canManage}
+          currentUserId={currentUser?.id}
+          onClose={() => setStepView(null)}
+          onSaved={handleStepEmailSaved}
         />
       )}
 

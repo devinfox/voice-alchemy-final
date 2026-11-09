@@ -34,10 +34,11 @@ interface FunnelDetailClientProps {
   }
   templates: EmailTemplate[]
   audiences?: EmailAudience[]
+  currentUserId?: string | null
 }
 
 /** Header controls for one funnel: on/off, add students, and a menu for the rest. */
-export function FunnelDetailClient({ funnel, templates, audiences = [] }: FunnelDetailClientProps) {
+export function FunnelDetailClient({ funnel, templates, audiences = [], currentUserId = null }: FunnelDetailClientProps) {
   const router = useRouter()
   const [status, setStatus] = useState<FunnelStatus>(funnel.status)
   const [updating, setUpdating] = useState(false)
@@ -166,6 +167,8 @@ export function FunnelDetailClient({ funnel, templates, audiences = [] }: Funnel
             complete_tag_ids: funnel.complete_tag_ids ?? [],
             phases: funnel.phases,
           }}
+          currentUserId={currentUserId}
+          onTemplatesChanged={() => router.refresh()}
           onClose={() => setShowEditModal(false)}
           onSuccess={() => {
             setShowEditModal(false)
