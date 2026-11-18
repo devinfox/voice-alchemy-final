@@ -131,7 +131,7 @@ export function Header({ user }: HeaderProps) {
     : 'Search teachers...'
 
   return (
-    <header className="hidden lg:flex h-16 glass-card mx-2 mt-2 rounded-2xl px-6 items-center justify-between border-white/[0.08]">
+    <header className="hidden lg:flex relative z-40 h-16 glass-card mx-2 mt-2 rounded-2xl px-6 items-center justify-between border-white/[0.08]">
       {/* Search */}
       <div className="flex-1 max-w-xl" ref={searchRef}>
         <div className="relative group">

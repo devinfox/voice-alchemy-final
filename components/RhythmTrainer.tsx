@@ -1,8 +1,11 @@
 'use client'
 
 import { useState, useEffect, useRef, useCallback } from 'react'
-import { createPortal } from 'react-dom'
-import { X, Maximize2, Minimize2, Play, Pause, Mic, MicOff, Save, TrendingUp, Settings2, Volume2 } from 'lucide-react'
+import { Play, Pause, Mic, MicOff, Save, TrendingUp, Settings2, Volume2 } from 'lucide-react'
+import { Button } from '@/components/ui/button'
+import { Panel, Stat } from '@/components/ui/panel'
+import { Segmented } from '@/components/ui/segmented'
+import { ToolDialog } from '@/components/ui/tool-dialog'
 import { SpotlightTour, SpotlightTriggerButton, SpotlightStep } from '@/components/spotlight-tour'
 
 const rhythmTourSteps: SpotlightStep[] = [
@@ -919,7 +922,7 @@ export default function RhythmTrainer({ variant = 'floating' }: RhythmTrainerPro
 
   // Render beat indicators
   const renderBeatIndicators = () => (
-    <div className="flex justify-center gap-3 mb-6">
+    <div className="flex justify-center gap-3 mb-4">
       {Array.from({ length: beatsPerMeasure }).map((_, i) => {
         const beatNum = i + 1
         const isActive = currentBeat === beatNum && isPlaying
@@ -931,9 +934,9 @@ export default function RhythmTrainer({ variant = 'floating' }: RhythmTrainerPro
             className={`rounded-full transition-all duration-75 ${
               isActive
                 ? isAccent
-                  ? 'bg-gradient-to-br from-amber-400 to-orange-500 shadow-lg shadow-amber-500/50 scale-110'
-                  : 'bg-gradient-to-br from-amber-500 to-orange-600 shadow-lg shadow-orange-500/40'
-                : 'bg-slate-700/50 border border-slate-600/50'
+                  ? 'bg-gold-300 shadow-lg shadow-gold-400/50 scale-110'
+                  : 'bg-gold-400 shadow-lg shadow-gold-400/40'
+                : 'bg-white/[0.06] border border-white/10'
             }`}
             style={{
               width: isAccent ? '52px' : '44px',
@@ -941,7 +944,7 @@ export default function RhythmTrainer({ variant = 'floating' }: RhythmTrainerPro
             }}
           >
             {isActive && (
-              <div className="w-full h-full rounded-full animate-ping bg-amber-400/30" />
+              <div className="w-full h-full rounded-full animate-ping bg-gold-400/30" />
             )}
           </div>
         )
@@ -957,12 +960,12 @@ export default function RhythmTrainer({ variant = 'floating' }: RhythmTrainerPro
           key={i}
           className={`w-3 h-3 rounded-full transition-all ${
             timing.result === 'on-beat'
-              ? 'bg-green-500'
+              ? 'bg-emerald-500'
               : timing.result === 'early'
                 ? 'bg-blue-500'
                 : timing.result === 'late'
-                  ? 'bg-orange-500'
-                  : 'bg-slate-600'
+                  ? 'bg-amber-500'
+                  : 'bg-white/20'
           }`}
           title={timing.offsetMs !== null ? `${timing.result}: ${timing.offsetMs.toFixed(0)}ms` : 'missed: no tap'}
         />
@@ -972,10 +975,10 @@ export default function RhythmTrainer({ variant = 'floating' }: RhythmTrainerPro
 
   // Render BPM slider + tap tempo
   const renderBpmControl = () => (
-    <div data-tour="rhythm-bpm-control" className="bg-slate-800/50 rounded-xl p-4 border border-slate-700/50 mb-4">
-      <div className="flex items-center justify-between mb-2">
-        <span className="text-sm text-slate-400">BPM</span>
-        <span className="text-2xl font-bold text-white">{bpm}</span>
+    <Panel data-tour="rhythm-bpm-control">
+      <div className="mb-2 flex items-center justify-between">
+        <span className="text-sm text-gray-400">Speed (beats per minute)</span>
+        <span className="text-xl font-bold tabular-nums text-white">{bpm}</span>
       </div>
       <input
         type="range"
@@ -984,9 +987,10 @@ export default function RhythmTrainer({ variant = 'floating' }: RhythmTrainerPro
         value={bpm}
         onChange={(e) => setBpm(parseInt(e.target.value))}
         disabled={isPlaying}
-        className="w-full h-2 bg-slate-700 rounded-full appearance-none cursor-pointer accent-amber-500 disabled:opacity-50"
+        aria-label="Beats per minute"
+        className="va-range w-full"
       />
-      <div className="flex justify-between text-xs text-slate-500 mt-1">
+      <div className="mt-1 flex justify-between text-xs text-gray-500">
         <span>40</span>
         <span>220</span>
       </div>
@@ -994,206 +998,142 @@ export default function RhythmTrainer({ variant = 'floating' }: RhythmTrainerPro
       {/* Tap tempo: derive BPM from tapping instead of hunting on the slider.
           Disabled while playing, matching the slider - changing tempo mid-run
           would invalidate the beat schedule the session is measured against. */}
-      <div className="flex items-center gap-2 mt-3">
-        <button
+      <div className="mt-3 flex items-center gap-2">
+        <Button
+          className="flex-1 touch-none"
           onPointerDown={(e) => {
             e.preventDefault()
             registerTempoTap()
           }}
           disabled={isPlaying}
-          className={`flex-1 py-2 rounded-lg text-sm font-semibold transition-all select-none touch-none ${
-            isPlaying
-              ? 'bg-slate-700/50 text-slate-500 cursor-not-allowed'
-              : 'bg-slate-700 hover:bg-slate-600 active:scale-[0.98] text-white'
-          }`}
         >
           {tapTempoCount === 0
-            ? 'Tap Tempo'
+            ? 'Tap the speed you want'
             : tapTempoCount < 3
               ? `Keep tapping (${tapTempoCount}/3)`
-              : `Tapping · ${bpm} BPM`}
-        </button>
+              : `Tapping · ${bpm}`}
+        </Button>
         {tapTempoCount > 0 && !isPlaying && (
-          <button
-            onClick={resetTapTempo}
-            className="px-3 py-2 rounded-lg text-xs text-slate-400 hover:text-white hover:bg-slate-700 transition-colors"
-            title="Clear tap tempo"
-          >
+          <Button variant="ghost" onClick={resetTapTempo} title="Clear tapped speed">
             Reset
-          </button>
+          </Button>
         )}
       </div>
-    </div>
+    </Panel>
   )
 
   // Render session stats
   const renderSessionStats = () => (
-    <div className="bg-slate-800/50 rounded-xl p-4 border border-slate-700/50 mb-4">
-      <div className="flex items-center justify-between mb-3">
-        <h3 className="text-sm font-semibold text-white flex items-center gap-2">
-          <TrendingUp className="w-4 h-4 text-amber-400" />
-          Session Stats
+    <Panel padding="sm">
+      <div className="mb-2 flex items-center justify-between gap-2">
+        <h3 className="flex items-center gap-2 font-sans text-sm font-semibold text-white">
+          <TrendingUp className="size-4 text-gold-400" />
+          Session stats
         </h3>
-        <button
+        <Button
+          size="sm"
+          variant="outline"
           onClick={saveSession}
           disabled={isSaving || session.beatTimings.length === 0}
-          className={`flex items-center gap-2 px-3 py-1.5 text-xs font-medium rounded-lg transition-all ${
-            isSaving || session.beatTimings.length === 0
-              ? 'bg-slate-700 text-slate-500 cursor-not-allowed'
-              : 'bg-amber-600 hover:bg-amber-500 text-white'
-          }`}
         >
-          <Save className="w-3 h-3" />
-          {isSaving ? 'Saving...' : 'Save Session'}
-        </button>
+          <Save />
+          {isSaving ? 'Saving…' : 'Save session'}
+        </Button>
       </div>
 
-      <div className="grid grid-cols-4 gap-3 text-center">
-        <div>
-          <p className="text-2xl font-bold text-green-400">{stats.onBeatCount}</p>
-          <p className="text-xs text-slate-400">On Beat</p>
-        </div>
-        <div>
-          <p className="text-2xl font-bold text-blue-400">{stats.earlyCount}</p>
-          <p className="text-xs text-slate-400">Early</p>
-        </div>
-        <div>
-          <p className="text-2xl font-bold text-orange-400">{stats.lateCount}</p>
-          <p className="text-xs text-slate-400">Late</p>
-        </div>
-        <div>
-          <p className="text-2xl font-bold text-white">{stats.onBeatPercent.toFixed(0)}%</p>
-          <p className="text-xs text-slate-400">Accuracy</p>
-        </div>
+      <div className="grid grid-cols-4 gap-3">
+        <Stat label="On beat" value={stats.onBeatCount} tone="success" />
+        <Stat label="Early" value={stats.earlyCount} tone="info" />
+        <Stat label="Late" value={stats.lateCount} tone="warning" />
+        <Stat label="Accuracy" value={`${stats.onBeatPercent.toFixed(0)}%`} />
       </div>
 
-      <div className="grid grid-cols-4 gap-3 mt-3 pt-3 border-t border-slate-700/50 text-center">
-        <div>
-          <p className="text-lg font-semibold text-white">{stats.avgOffsetMs.toFixed(0)}ms</p>
-          <p className="text-xs text-slate-400">Avg Offset</p>
-        </div>
-        <div>
-          <p className="text-lg font-semibold text-white">{stats.consistency.toFixed(0)}%</p>
-          <p className="text-xs text-slate-400">Consistency</p>
-        </div>
-        <div>
-          <p className="text-lg font-semibold text-white">{stats.bestStreak}</p>
-          <p className="text-xs text-slate-400">Best Streak</p>
-        </div>
-        <div>
-          <p className={`text-lg font-semibold ${
-            stats.rhythmTendency === 'early' ? 'text-blue-400' :
-            stats.rhythmTendency === 'late' ? 'text-orange-400' :
-            'text-green-400'
-          }`}>
-            {stats.rhythmTendency === 'early' ? 'Early' :
-             stats.rhythmTendency === 'late' ? 'Late' :
-             'On Time'}
-          </p>
-          <p className="text-xs text-slate-400">Tendency</p>
-        </div>
+      <div className="mt-2 grid grid-cols-3 gap-3 border-t border-white/10 pt-2">
+        <Stat size="sm" label="Steadiness" value={`${stats.consistency.toFixed(0)}%`} />
+        <Stat size="sm" label="Best streak" value={stats.bestStreak} />
+        <Stat
+          size="sm"
+          label="You tend to be"
+          value={stats.rhythmTendency === 'early' ? 'Early' : stats.rhythmTendency === 'late' ? 'Late' : 'On time'}
+          tone={stats.rhythmTendency === 'early' ? 'info' : stats.rhythmTendency === 'late' ? 'warning' : 'success'}
+        />
       </div>
 
       {saveMessage && (
-        <div className={`mt-3 text-center text-sm ${
-          saveMessage.includes('saved') ? 'text-green-400' : 'text-yellow-400'
-        }`}>
+        <p className={`mt-2 text-center text-sm ${saveMessage.includes('saved') ? 'text-emerald-400' : 'text-amber-400'}`}>
           {saveMessage}
-        </div>
+        </p>
       )}
-    </div>
+    </Panel>
   )
 
   // Render settings panel
   const renderSettings = () => (
-    <div className="bg-slate-800/50 rounded-xl p-4 border border-slate-700/50 mb-4 space-y-4">
+    <div className="space-y-4 rounded-2xl border border-white/10 bg-ink-800 p-4 shadow-2xl shadow-black/60">
       <div className="flex items-center justify-between">
-        <h3 className="text-sm font-semibold text-white flex items-center gap-2">
-          <Settings2 className="w-4 h-4 text-slate-400" />
-          Settings
+        <h3 className="flex items-center gap-2 font-sans text-base font-semibold text-white">
+          <Settings2 className="size-4 text-gold-400" />
+          More settings
         </h3>
-        <button
-          onClick={() => setShowSettings(false)}
-          className="p-1 hover:bg-slate-700 rounded transition-colors"
-        >
-          <X className="w-4 h-4 text-slate-400" />
-        </button>
+        <Button size="sm" variant="primary" onClick={() => setShowSettings(false)}>
+          Done
+        </Button>
       </div>
 
-      {/* Time Signature */}
       <div>
-        <label className="text-xs text-slate-400 mb-2 block">Time Signature</label>
-        <div className="flex gap-2">
-          {TIME_SIGNATURES.map(ts => (
-            <button
-              key={ts.value}
-              onClick={() => setTimeSignature(ts.value)}
-              disabled={isPlaying}
-              className={`px-4 py-2 rounded-lg text-sm font-medium transition-all ${
-                timeSignature === ts.value
-                  ? 'bg-amber-600 text-white'
-                  : 'bg-slate-700/50 text-slate-400 hover:bg-slate-700 disabled:opacity-50'
-              }`}
-            >
-              {ts.label}
-            </button>
-          ))}
-        </div>
+        <p className="mb-2 text-xs text-gray-400">Beats in a bar</p>
+        <Segmented
+          aria-label="Time signature"
+          value={timeSignature}
+          onChange={setTimeSignature}
+          disabled={isPlaying}
+          options={TIME_SIGNATURES.map((ts) => ({ value: ts.value, label: ts.label }))}
+        />
       </div>
 
-      {/* Sound Selection */}
       <div>
-        <label className="text-xs text-slate-400 mb-2 block">Metronome Sound</label>
-        <div className="flex flex-wrap gap-2">
-          {SOUND_OPTIONS.map(opt => (
-            <button
-              key={opt.value}
-              onClick={() => setMetronomeSound(opt.value)}
-              className={`px-3 py-1.5 rounded-lg text-xs font-medium transition-all ${
-                metronomeSound === opt.value
-                  ? 'bg-amber-600 text-white'
-                  : 'bg-slate-700/50 text-slate-400 hover:bg-slate-700'
-              }`}
-            >
-              {opt.label}
-            </button>
-          ))}
-        </div>
+        <p className="mb-2 text-xs text-gray-400">Click sound</p>
+        <Segmented
+          aria-label="Click sound"
+          value={metronomeSound}
+          onChange={setMetronomeSound}
+          options={SOUND_OPTIONS.map((opt) => ({ value: opt.value, label: opt.label }))}
+        />
       </div>
 
-      {/* Volume */}
       <div>
-        <div className="flex items-center justify-between mb-2">
-          <label className="text-xs text-slate-400 flex items-center gap-2">
-            <Volume2 className="w-3 h-3" /> Volume
+        <div className="mb-2 flex items-center justify-between text-xs">
+          <label htmlFor="rhythm-volume" className="flex items-center gap-2 text-gray-400">
+            <Volume2 className="size-3.5" /> Volume
           </label>
-          <span className="text-xs text-slate-300">{volume}%</span>
+          <span className="tabular-nums text-gray-300">{volume}%</span>
         </div>
         <input
+          id="rhythm-volume"
           type="range"
           min="0"
           max="100"
           value={volume}
           onChange={(e) => setVolume(parseInt(e.target.value))}
-          className="w-full h-2 bg-slate-700 rounded-full appearance-none cursor-pointer accent-amber-500"
+          className="va-range w-full"
         />
       </div>
 
-      {/* Mic Sensitivity */}
       <div>
-        <div className="flex items-center justify-between mb-2">
-          <label className="text-xs text-slate-400 flex items-center gap-2">
-            <Mic className="w-3 h-3" /> Mic Sensitivity
+        <div className="mb-2 flex items-center justify-between text-xs">
+          <label htmlFor="rhythm-sensitivity" className="flex items-center gap-2 text-gray-400">
+            <Mic className="size-3.5" /> Mic sensitivity
           </label>
-          <span className="text-xs text-slate-300">{sensitivity}%</span>
+          <span className="tabular-nums text-gray-300">{sensitivity}%</span>
         </div>
         <input
+          id="rhythm-sensitivity"
           type="range"
           min="10"
           max="100"
           value={sensitivity}
           onChange={(e) => setSensitivity(parseInt(e.target.value))}
-          className="w-full h-2 bg-slate-700 rounded-full appearance-none cursor-pointer accent-amber-500"
+          className="va-range w-full"
         />
       </div>
     </div>
@@ -1235,88 +1175,55 @@ export default function RhythmTrainer({ variant = 'floating' }: RhythmTrainerPro
         </button>
       )}
 
-      {isOpen && createPortal(
-        <div className="fixed inset-0 z-[99990] flex items-center justify-center bg-black/90">
-          <div
-            className="absolute inset-0 bg-black/90 backdrop-blur-sm"
-            onClick={() => {
-              setIsOpen(false)
-              setIsFullscreen(false)
-            }}
-          />
-
-          <div
-            role="dialog"
-            aria-modal="true"
-            aria-labelledby="rhythm-trainer-title"
-            className={`relative bg-gradient-to-br from-[#1b1233] via-[#171229] to-[#0f0b1e] shadow-2xl border border-[#CEB466]/30 overflow-hidden transition-all duration-300 ${
-              isFullscreen
-                ? 'w-full h-full rounded-none lg:w-[95vw] lg:h-[95vh] lg:rounded-3xl'
-                : 'w-full h-full rounded-none lg:w-[90vw] lg:max-w-2xl lg:h-[85vh] lg:max-h-[700px] lg:rounded-3xl'
-            }`}
-          >
-            {/* Header */}
-            <div className="flex items-center justify-between gap-3 px-4 py-3 sm:px-5 sm:py-4 bg-[#1b1233] border-b border-[#CEB466]/20">
-              <div className="flex items-center gap-4">
-                <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-amber-500 to-orange-500 flex items-center justify-center shadow-lg">
-                  <svg className="w-5 h-5 text-white" viewBox="0 0 24 24" fill="currentColor">
-                    <path d="M12 3v10.55c-.59-.34-1.27-.55-2-.55-2.21 0-4 1.79-4 4s1.79 4 4 4 4-1.79 4-4V7h4V3h-6z"/>
-                  </svg>
+      {isOpen && (
+        <ToolDialog
+          titleId="rhythm-trainer-title"
+          title="Rhythm Trainer"
+          subtitle="Tap, clap, or sing along with the beat."
+          icon={<Volume2 />}
+          onClose={() => {
+            setIsOpen(false)
+            setIsFullscreen(false)
+          }}
+          fullscreen={isFullscreen}
+          onToggleFullscreen={() => setIsFullscreen(!isFullscreen)}
+          actions={<SpotlightTriggerButton tourKey="rhythm_trainer_v4" label="How to" />}
+          beforeBody={<SpotlightTour tourKey="rhythm_trainer_v4" steps={rhythmTourSteps} />}
+        >
+              {/* Settings open over the tool instead of pushing it down the page */}
+              {showSettings && (
+                <div className="absolute inset-0 z-20 flex items-start justify-center overflow-y-auto bg-ink-950/85 p-4 backdrop-blur-sm sm:p-5">
+                  <div className="w-full max-w-md">{renderSettings()}</div>
                 </div>
+              )}
+
+              <div className="grid gap-4 lg:grid-cols-2">
                 <div className="min-w-0">
-                  <h2 id="rhythm-trainer-title" className="text-base sm:text-xl font-bold text-white truncate">Rhythm Trainer</h2>
-                  <p className="hidden sm:block text-sm text-purple-100/70">Tap, clap, or sing along with the beat!</p>
+                  {/* BPM Control */}
+                  {renderBpmControl()}
+
+                  <Button
+                    size="lg"
+                    variant="outline"
+                    block
+                    className="my-4 justify-start"
+                    onClick={() => setShowSettings(true)}
+                  >
+                    <Settings2 />
+                    <span className="flex flex-col items-start leading-tight">
+                      <span>More settings</span>
+                      <span className="text-xs font-normal text-gray-400">Bar length, click sound, volume and mic</span>
+                    </span>
+                  </Button>
+
+                  {/* Session Stats */}
+                  {session.beatTimings.length > 0 && renderSessionStats()}
                 </div>
-              </div>
-              <div className="flex shrink-0 items-center gap-1.5 sm:gap-2">
-                <SpotlightTriggerButton tourKey="rhythm_trainer_v4" label="How to" />
-                <button
-                  onClick={() => setShowSettings(!showSettings)}
-                  className={`p-2.5 rounded-xl transition-colors ${
-                    showSettings ? 'bg-amber-600/30 text-amber-400' : 'hover:bg-white/10 text-slate-400'
-                  }`}
-                  title="Settings"
-                >
-                  <Settings2 className="w-5 h-5" />
-                </button>
-                <button
-                  onClick={() => setIsFullscreen(!isFullscreen)}
-                  className="hidden sm:block p-2.5 hover:bg-white/10 rounded-xl transition-colors"
-                  title={isFullscreen ? 'Exit fullscreen' : 'Fullscreen'}
-                >
-                  {isFullscreen ? (
-                    <Minimize2 className="w-5 h-5 text-slate-400" />
-                  ) : (
-                    <Maximize2 className="w-5 h-5 text-slate-400" />
-                  )}
-                </button>
-                <button
-                  onClick={() => {
-                    setIsOpen(false)
-                    setIsFullscreen(false)
-                  }}
-                  className="p-2.5 hover:bg-white/10 rounded-xl transition-colors"
-                  title="Close"
-                >
-                  <X className="w-5 h-5 text-slate-400" />
-                </button>
-              </div>
-            </div>
 
-            {/* Real On-Page Spotlight Tour */}
-            <SpotlightTour tourKey="rhythm_trainer_v4" steps={rhythmTourSteps} />
-
-            {/* Main Content */}
-            <div className="p-6 h-[calc(100%-72px)] overflow-y-auto">
-              {/* Settings Panel */}
-              {showSettings && renderSettings()}
-
-              {/* BPM Control */}
-              {renderBpmControl()}
-
+                <div className="min-w-0">
               {/* Beat Indicators */}
               <div className="text-center mb-2">
-                <span className="text-sm text-slate-400">{timeSignature}</span>
+                <span className="text-sm text-gray-400">{timeSignature} time</span>
               </div>
               {renderBeatIndicators()}
 
@@ -1324,61 +1231,63 @@ export default function RhythmTrainer({ variant = 'floating' }: RhythmTrainerPro
               {renderTimingHistory()}
 
               {/* Legend */}
-              <div className="flex justify-center gap-4 mb-6 text-xs">
+              <div className="flex justify-center gap-4 mb-4 text-xs">
                 <span className="flex items-center gap-1.5">
                   <span className="w-2.5 h-2.5 rounded-full bg-green-500" />
-                  <span className="text-slate-400">On Beat</span>
+                  <span className="text-gray-400">On beat</span>
                 </span>
                 <span className="flex items-center gap-1.5">
                   <span className="w-2.5 h-2.5 rounded-full bg-blue-500" />
-                  <span className="text-slate-400">Early</span>
+                  <span className="text-gray-400">Early</span>
                 </span>
                 <span className="flex items-center gap-1.5">
-                  <span className="w-2.5 h-2.5 rounded-full bg-orange-500" />
-                  <span className="text-slate-400">Late</span>
+                  <span className="w-2.5 h-2.5 rounded-full bg-amber-500" />
+                  <span className="text-gray-400">Late</span>
                 </span>
               </div>
 
               {/* Play/Pause & Mic Controls */}
-              <div className="flex justify-center gap-4 mb-6">
+              <div className="flex justify-center gap-4 mb-4">
                 <button
                   data-tour="rhythm-play-btn"
                   onClick={togglePlay}
-                  className={`w-16 h-16 rounded-full flex items-center justify-center transition-all duration-200 shadow-lg ${
+                  aria-label={isPlaying ? 'Pause' : 'Play'}
+                  className={`size-16 rounded-full flex items-center justify-center transition-colors duration-150 shadow-lg shadow-black/30 ${
                     isPlaying
-                      ? 'bg-gradient-to-br from-red-500 to-red-600 hover:from-red-400 hover:to-red-500'
-                      : 'bg-gradient-to-br from-amber-500 to-orange-600 hover:from-amber-400 hover:to-orange-500'
+                      ? 'bg-red-500 text-white hover:bg-red-400'
+                      : 'bg-gold-400 text-ink-900 hover:bg-gold-300'
                   }`}
                 >
                   {isPlaying ? (
-                    <Pause className="w-8 h-8 text-white" />
+                    <Pause className="size-7" />
                   ) : (
-                    <Play className="w-8 h-8 text-white ml-1" />
+                    <Play className="size-7 ml-1" />
                   )}
                 </button>
 
                 <button
                   onClick={isListening ? stopListening : startListening}
-                  className={`w-16 h-16 rounded-full flex items-center justify-center transition-all duration-200 shadow-lg ${
+                  className={`size-16 rounded-full flex items-center justify-center transition-colors duration-150 shadow-lg shadow-black/30 ${
                     isListening
-                      ? 'bg-gradient-to-br from-green-500 to-emerald-600 hover:from-green-400 hover:to-emerald-500'
-                      : 'bg-gradient-to-br from-slate-600 to-slate-700 hover:from-slate-500 hover:to-slate-600'
+                      ? 'bg-emerald-600 text-white hover:bg-emerald-500'
+                      : 'border border-white/12 bg-white/[0.06] text-white hover:bg-white/[0.1]'
                   }`}
-                  title={isListening ? 'Stop listening' : 'Start listening'}
+                  title={isListening ? 'Turn the mic off' : 'Turn the mic on'}
+                  aria-label={isListening ? 'Turn the mic off' : 'Turn the mic on'}
                 >
                   {isListening ? (
                     <div className="relative">
-                      <Mic className="w-7 h-7 text-white" />
+                      <Mic className="size-7" />
                       <span className="absolute -top-1 -right-1 w-3 h-3 bg-white rounded-full animate-pulse" />
                     </div>
                   ) : (
-                    <MicOff className="w-7 h-7 text-white" />
+                    <MicOff className="size-7" />
                   )}
                 </button>
               </div>
 
               {/* Tap pad - primary input, works with or without the microphone */}
-              <div data-tour="rhythm-tap-pad" className="mb-6">
+              <div data-tour="rhythm-tap-pad" className="mb-3">
                 <button
                   onPointerDown={(e) => {
                     // pointerdown, not click: fires on contact rather than
@@ -1388,21 +1297,21 @@ export default function RhythmTrainer({ variant = 'floating' }: RhythmTrainerPro
                   }}
                   disabled={!isPlaying}
                   aria-label="Tap on the beat"
-                  className={`w-full h-32 rounded-2xl border-2 select-none touch-none transition-all duration-100 flex flex-col items-center justify-center gap-1 ${
+                  className={`w-full h-24 rounded-2xl border-2 select-none touch-none transition-all duration-100 flex flex-col items-center justify-center gap-1 ${
                     !isPlaying
-                      ? 'border-slate-700/50 bg-slate-800/30 cursor-not-allowed'
+                      ? 'border-white/10 bg-white/[0.03] cursor-not-allowed'
                       : tapFeedback?.result === 'on-beat'
-                        ? 'border-green-400 bg-green-500/30 scale-[0.98]'
+                        ? 'border-emerald-400 bg-emerald-500/30 scale-[0.98]'
                         : tapFeedback?.result === 'early'
                           ? 'border-blue-400 bg-blue-500/25 scale-[0.98]'
                           : tapFeedback?.result === 'late'
-                            ? 'border-orange-400 bg-orange-500/25 scale-[0.98]'
+                            ? 'border-amber-400 bg-amber-500/25 scale-[0.98]'
                             : tapFeedback?.result === 'no-match'
-                              ? 'border-slate-500 bg-slate-600/30 scale-[0.98]'
-                              : 'border-amber-500/50 bg-gradient-to-br from-amber-500/15 to-orange-600/10 hover:from-amber-500/25 hover:to-orange-600/20 active:scale-[0.98] cursor-pointer'
+                              ? 'border-white/30 bg-white/10 scale-[0.98]'
+                              : 'border-gold-400/50 bg-gold-400/10 hover:bg-gold-400/20 active:scale-[0.98] cursor-pointer'
                   }`}
                 >
-                  <span className={`text-lg font-bold ${!isPlaying ? 'text-slate-500' : 'text-white'}`}>
+                  <span className={`text-lg font-bold ${!isPlaying ? 'text-gray-500' : 'text-white'}`}>
                     {!isPlaying
                       ? 'Press play to begin'
                       : tapFeedback?.result === 'on-beat'
@@ -1415,14 +1324,14 @@ export default function RhythmTrainer({ variant = 'floating' }: RhythmTrainerPro
                               ? 'Off the beat'
                               : 'TAP'}
                   </span>
-                  <span className="text-xs text-slate-400">
+                  <span className="text-xs text-gray-400">
                     {isPlaying ? 'tap here or press spacebar' : ''}
                   </span>
                 </button>
               </div>
 
               {/* Instructions */}
-              <div className="text-center text-sm text-slate-400 mb-6">
+              <div className="text-center text-sm text-gray-400 min-h-[40px]">
                 {!isPlaying && (
                   <p>Press play to start the metronome, then tap the pad or spacebar on each beat.</p>
                 )}
@@ -1434,12 +1343,9 @@ export default function RhythmTrainer({ variant = 'floating' }: RhythmTrainerPro
                 )}
               </div>
 
-              {/* Session Stats */}
-              {session.beatTimings.length > 0 && renderSessionStats()}
-            </div>
-          </div>
-        </div>,
-        document.body
+                </div>
+              </div>
+        </ToolDialog>
       )}
     </>
   )

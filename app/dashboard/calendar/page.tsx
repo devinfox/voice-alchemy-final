@@ -18,17 +18,13 @@ export default async function CalendarPage() {
   const isTeacher = currentUser.role === 'teacher' || currentUser.role === 'instructor' || currentUser.role === 'admin'
 
   // Fetch bookings with schedule data (without join syntax to avoid schema cache issues)
-  const { data: rawBookings, error } = await supabase
+  const { data: rawBookings } = await supabase
     .from('bookings')
     .select('id, status, lesson_day_of_week, lesson_time, lesson_duration_minutes, lesson_timezone, student_id, instructor_id')
     .eq(isTeacher ? 'instructor_id' : 'student_id', currentUser.id)
     .eq('status', 'confirmed')
     .limit(200)
 
-  // Debug logging
-  console.log('[Calendar Debug] User ID:', currentUser.id, 'isTeacher:', isTeacher)
-  console.log('[Calendar Debug] Query error:', error)
-  console.log('[Calendar Debug] Bookings count:', rawBookings?.length)
 
   // Fetch related profiles separately
   const studentIds = rawBookings?.map(b => b.student_id).filter(Boolean) || []
@@ -55,12 +51,29 @@ export default async function CalendarPage() {
     instructor: profileMap[b.instructor_id] || null,
   })) || []
 
-  bookings.forEach((b, i) => {
-    console.log(`[Calendar Debug] Booking ${i}:`, b.id, 'day:', b.lesson_day_of_week, 'time:', b.lesson_time)
-  })
+
+  // One-off changes (a cancelled or moved date). The table may not exist yet
+  // on a database that has not had the migration applied: treat as "none".
+  const bookingIds = bookings.map((b) => b.id)
+  let exceptions: {
+    booking_id: string
+    original_date: string
+    kind: 'cancelled' | 'rescheduled'
+    new_date: string | null
+    new_time: string | null
+    new_duration_minutes: number | null
+  }[] = []
+  if (bookingIds.length > 0) {
+    const { data: exceptionRows } = await supabase
+      .from('lesson_exceptions')
+      .select('booking_id, original_date, kind, new_date, new_time, new_duration_minutes')
+      .in('booking_id', bookingIds)
+    exceptions = exceptionRows || []
+  }
 
   return (
     <CalendarView
+      exceptions={exceptions}
       bookings={bookings || []}
       currentUser={{
         id: currentUser.id,

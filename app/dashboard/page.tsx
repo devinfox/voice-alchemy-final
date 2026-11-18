@@ -1,7 +1,7 @@
 import type { Metadata } from 'next'
 import { redirect } from 'next/navigation'
 import Link from 'next/link'
-import { createClient, getCurrentUser } from '@/lib/supabase-server'
+import { createClient, getAuthUser, getCurrentUser } from '@/lib/supabase-server'
 import {
   Users,
   Video,
@@ -25,6 +25,8 @@ import RhythmTrainer from '@/components/RhythmTrainer'
 import ScaleTrainer from '@/components/ScaleTrainer'
 import { DashboardSpotlight } from '@/components/dashboard-spotlight'
 import { SpotlightTriggerButton } from '@/components/spotlight-tour'
+import { EditWeeklyLessonButton, type WeeklyLessonOption } from '@/components/weekly-lesson-editor'
+import { buttonVariants } from '@/components/ui/button'
 
 interface Teacher {
   id: string
@@ -73,7 +75,19 @@ function formatWeeklySchedule(lesson: ActiveLesson): string {
   if (day !== null) {
     return `${day}s at ${time || 'TBD'}`
   }
-  return time || 'Weekly Scheduled Lesson'
+  return time || 'No time set yet'
+}
+
+// Minutes from now until the next occurrence of a weekly slot (for sorting).
+function minutesUntilNext(dayOfWeek: number | null, time: string | null): number {
+  if (dayOfWeek === null) return Number.MAX_SAFE_INTEGER
+  const now = new Date()
+  const [h, m] = (time || '23:59').split(':').map(Number)
+  const slot = (Number.isFinite(h) ? h : 23) * 60 + (Number.isFinite(m) ? m : 59)
+  const current = now.getHours() * 60 + now.getMinutes()
+  let days = dayOfWeek - now.getDay()
+  if (days < 0 || (days === 0 && slot <= current)) days += 7
+  return days * 1440 + slot - current
 }
 
 interface TrainingSessionSummary {
@@ -167,16 +181,13 @@ function getWeekStart(date = new Date()): string {
 export const metadata: Metadata = { title: 'Dashboard', description: 'Your Voice Alchemy Academy home: lessons, practice and progress at a glance.' }
 
 export default async function DashboardPage() {
-  const supabase = await createClient()
-  const {
-    data: { user },
-  } = await supabase.auth.getUser()
+  const user = await getAuthUser()
 
   if (!user) {
     redirect('/login')
   }
 
-  const profile = await getCurrentUser()
+  const [supabase, profile] = await Promise.all([createClient(), getCurrentUser()])
   const isTeacher =
     profile?.role === 'teacher' ||
     profile?.role === 'instructor' ||
@@ -195,29 +206,26 @@ export default async function DashboardPage() {
   let courseResume: CourseResume | null = null
 
   if (isTeacher) {
-    const { count: studentCount } = await supabase
-      .from('bookings')
-      .select('id', { count: 'exact', head: true })
-      .eq('instructor_id', profile?.id)
-      .eq('status', 'confirmed')
+    // Every student confirmed with this teacher. The live bookings table has
+    // no FK constraint on student_id, so a PostgREST relationship embed fails
+    // silently: join profiles in code instead. Both queries run together.
+    const [{ count: pendingCount }, { data: confirmedBookings }] = await Promise.all([
+      supabase
+        .from('bookings')
+        .select('id', { count: 'exact', head: true })
+        .eq('instructor_id', profile?.id)
+        .eq('status', 'pending'),
+      supabase
+        .from('bookings')
+        .select('id, student_id, lesson_day_of_week, lesson_time, lesson_duration_minutes, lesson_timezone, created_at')
+        .eq('instructor_id', profile?.id)
+        .eq('status', 'confirmed')
+        .order('created_at', { ascending: false })
+        .limit(1000),
+    ])
 
-    const { count: pendingCount } = await supabase
-      .from('bookings')
-      .select('id', { count: 'exact', head: true })
-      .eq('instructor_id', profile?.id)
-      .eq('status', 'pending')
-
-    // The live bookings table has no FK constraint on student_id, so a
-    // PostgREST relationship embed fails silently — join in code instead.
-    const { data: lessons } = await supabase
-      .from('bookings')
-      .select('id, student_id, lesson_day_of_week, lesson_time, lesson_duration_minutes, lesson_timezone, created_at')
-      .eq('instructor_id', profile?.id)
-      .eq('status', 'confirmed')
-      .order('created_at', { ascending: false })
-      .limit(3)
-
-    const lessonStudentIds = [...new Set((lessons || []).map((l) => l.student_id).filter(Boolean))]
+    const myBookings = confirmedBookings || []
+    const lessonStudentIds = [...new Set(myBookings.map((l) => l.student_id).filter(Boolean))]
     let lessonStudentMap: Record<string, { id: string; first_name: string | null; last_name: string | null; name: string | null }> = {}
     if (lessonStudentIds.length > 0) {
       const { data: lessonStudents } = await supabase
@@ -229,16 +237,39 @@ export default async function DashboardPage() {
       }
     }
 
-    activeLessons = (lessons || []).map((l) => ({
-      ...l,
-      student: lessonStudentMap[l.student_id] || null,
-    }))
+    // Live Classes shows only students who actually have a weekly day set,
+    // soonest first. Everyone else is reachable through "Schedule a lesson".
+    activeLessons = myBookings
+      .filter((l) => l.lesson_day_of_week !== null)
+      .sort(
+        (a, b) =>
+          minutesUntilNext(a.lesson_day_of_week, a.lesson_time) -
+          minutesUntilNext(b.lesson_day_of_week, b.lesson_time)
+      )
+      .map((l) => ({
+        ...l,
+        student: lessonStudentMap[l.student_id] || undefined,
+      }))
+
+    const lessonOptions: WeeklyLessonOption[] = myBookings
+      .map((l) => ({
+        bookingId: l.id as string,
+        studentName: getDisplayName(lessonStudentMap[l.student_id]),
+        dayOfWeek: l.lesson_day_of_week as number | null,
+        time: l.lesson_time as string | null,
+        durationMinutes: l.lesson_duration_minutes as number | null,
+        timezone: l.lesson_timezone as string | null,
+      }))
+      .sort((a, b) => a.studentName.localeCompare(b.studentName))
 
     const displayName = profile?.name || profile?.first_name || 'Vocalist'
+    // One meaning per label, used the same way on every page:
+    //   My Students     = students confirmed with this teacher
+    //   Weekly Lessons  = of those, the ones with a weekly day set
     const stats = [
-      { label: 'Active Students', value: studentCount || 0, href: '/dashboard/students' },
+      { label: 'My Students', value: myBookings.length, href: '/dashboard/students' },
       { label: 'Pending Requests', value: pendingCount || 0, href: '/dashboard/students/requests' },
-      { label: 'Active Lessons', value: activeLessons.length, href: '/dashboard/students' },
+      { label: 'Weekly Lessons', value: activeLessons.length, href: '/dashboard/calendar' },
     ]
     const quickActions = [
       {
@@ -268,21 +299,16 @@ export default async function DashboardPage() {
     ]
 
     return (
-      <div className="space-y-6 sm:space-y-8 p-3 sm:p-6 lg:p-8 max-w-7xl mx-auto w-full">
+      <div className="mx-auto w-full max-w-7xl space-y-6 p-3 sm:p-6 lg:p-8">
         <DashboardSpotlight isTeacher={isTeacher} userName={displayName} />
 
-        <div data-tour="dashboard-welcome" className="glass-card-luxe p-4 sm:p-6 md:p-8 rounded-2xl sm:rounded-3xl border border-[#CEB466]/40 relative overflow-hidden">
+        <div data-tour="dashboard-welcome" className="glass-card-luxe relative overflow-hidden border border-gold-400/40 p-5 sm:p-6">
           <div className="absolute top-0 right-0 w-96 h-96 bg-gradient-to-br from-[#CEB466]/15 via-purple-500/10 to-transparent blur-3xl pointer-events-none" />
 
           <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 sm:gap-6 relative z-10">
             <div className="space-y-2">
-              <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-[#CEB466]/15 border border-[#CEB466]/30 text-[10px] sm:text-xs font-semibold text-[#CEB466]">
-                <Sparkles className="w-3.5 h-3.5" />
-                <span>Voice Alchemy Master Dashboard</span>
-              </div>
-
               <h1 className="text-2xl sm:text-3xl md:text-4xl font-bold text-white font-luxury">
-                Welcome back, {displayName}!
+                Welcome, {displayName}!
               </h1>
               <p className="text-xs sm:text-sm text-gray-300 max-w-xl leading-relaxed">
                 Manage your student roster, review homework recordings, and launch your live studio classroom.
@@ -291,28 +317,20 @@ export default async function DashboardPage() {
 
             <div className="flex flex-wrap items-center gap-2.5 shrink-0">
               <SpotlightTriggerButton tourKey="teacher_dashboard_v4" label="How to" />
-
-              <Link
-                href="/dashboard/training-center"
-                className="w-full sm:w-auto py-2.5 sm:py-3 px-4 sm:px-5 rounded-xl sm:rounded-2xl bg-gradient-to-r from-[#CEB466] to-[#9c8644] hover:from-[#e0c97d] hover:to-[#CEB466] text-[#171229] font-bold text-xs sm:text-sm shadow-xl shadow-[#CEB466]/20 transition-all flex items-center justify-center gap-2 active:scale-95"
-              >
-                <Zap className="w-4 h-4" />
-                <span>Launch Training Center</span>
-              </Link>
             </div>
           </div>
 
-          <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5 sm:gap-3 pt-4 sm:pt-6 mt-4 sm:mt-6 border-t border-white/[0.08] relative z-10">
+          <div className="relative z-10 mt-6 grid grid-cols-1 gap-4 border-t border-white/10 pt-6 sm:grid-cols-3">
             {stats.map((stat) => (
               <Link
                 key={stat.label}
                 href={stat.href}
-                className="p-3.5 sm:p-4 rounded-xl sm:rounded-2xl bg-white/[0.03] hover:bg-white/[0.07] border border-white/[0.06] hover:border-[#CEB466]/30 transition-all group active:scale-[0.98]"
+                className="group rounded-2xl border border-white/10 bg-white/[0.04] p-4 transition-colors hover:border-gold-400/40 hover:bg-white/[0.07]"
               >
-                <span className="text-[10px] uppercase font-semibold tracking-wider text-gray-400">
+                <span className="text-[11px] font-semibold uppercase tracking-wider text-gray-400">
                   {stat.label}
                 </span>
-                <p className="text-xl sm:text-2xl font-bold text-white font-mono mt-0.5 group-hover:text-[#CEB466] transition-colors">
+                <p className="mt-0.5 text-2xl font-bold tabular-nums text-white transition-colors group-hover:text-gold-400">
                   {stat.value}
                 </p>
               </Link>
@@ -320,83 +338,105 @@ export default async function DashboardPage() {
           </div>
         </div>
 
-        {activeLessons.length > 0 && (
+        {myBookings.length > 0 && (
           <div className="space-y-4">
-            <div className="flex items-center justify-between">
+            <div className="flex flex-wrap items-center justify-between gap-3">
               <h2 className="text-xl font-bold text-white flex items-center gap-2 font-luxury">
                 <Video className="w-5 h-5 text-[#CEB466]" />
-                <span>Go to Class & Live Studio</span>
+                <span>Live Classes</span>
               </h2>
-              <span className="text-xs text-gray-400">
-                {activeLessons.length} confirmed lesson{activeLessons.length !== 1 ? 's' : ''}
-              </span>
+              <div className="flex items-center gap-3">
+                <span className="text-xs text-gray-400">
+                  {activeLessons.length} weekly lesson{activeLessons.length !== 1 ? 's' : ''}
+                </span>
+                <EditWeeklyLessonButton
+                  lessons={lessonOptions}
+                  className={buttonVariants({ variant: 'outline', size: 'sm' })}
+                  title="Set or change a student's weekly lesson"
+                >
+                  <Calendar />
+                  <span>Schedule a lesson</span>
+                </EditWeeklyLessonButton>
+              </div>
             </div>
 
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-              {activeLessons.map((lesson) => {
-                const person = lesson.student
-                const lessonPath = `/dashboard/students/${lesson.id}`
+            {activeLessons.length === 0 ? (
+              <p className="glass-card-subtle rounded-2xl border border-white/10 px-5 py-4 text-sm text-gray-400">
+                No weekly lessons yet. Use &quot;Schedule a lesson&quot; to give a student a weekly day and time.
+              </p>
+            ) : (
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                {activeLessons.map((lesson) => {
+                  const person = lesson.student
+                  const lessonPath = `/dashboard/students/${lesson.id}`
 
-                return (
-                  <div
-                    key={lesson.id}
-                    className="glass-card-subtle p-5 rounded-3xl border border-[#CEB466]/30 hover:border-[#CEB466]/60 transition-all space-y-4 flex flex-col justify-between"
-                  >
-                    <div className="space-y-3">
-                      <div className="flex items-center justify-between">
-                        <div className="flex items-center gap-3">
-                          <div className="w-11 h-11 rounded-2xl bg-gradient-to-br from-[#CEB466] to-[#9c8644] flex items-center justify-center text-[#171229] font-bold text-sm shadow-md shadow-[#CEB466]/15">
-                            {getInitials(person)}
+                  return (
+                    <div
+                      key={lesson.id}
+                      className="glass-card-subtle flex flex-col justify-between space-y-4 border border-gold-400/30 p-5 transition-colors hover:border-gold-400/60"
+                    >
+                      <div className="space-y-3">
+                        <div className="flex items-center justify-between">
+                          <div className="flex items-center gap-3">
+                            <div className="w-11 h-11 rounded-2xl bg-gradient-to-br from-[#CEB466] to-[#9c8644] flex items-center justify-center text-[#171229] font-bold text-sm shadow-md shadow-[#CEB466]/15">
+                              {getInitials(person)}
+                            </div>
+                            <div>
+                              <h3 className="font-bold text-white text-base">{getDisplayName(person)}</h3>
+                              <p className="text-xs text-gray-400">Student</p>
+                            </div>
                           </div>
-                          <div>
-                            <h3 className="font-bold text-white text-base">{getDisplayName(person)}</h3>
-                            <p className="text-xs text-gray-400">Student</p>
-                          </div>
+
+                          <span className="rounded-full border border-emerald-500/30 bg-emerald-500/15 px-2.5 py-1 text-[11px] font-semibold text-emerald-300">
+                            {lesson.lesson_duration_minutes || 60} min
+                          </span>
                         </div>
 
-                        <span className="px-2.5 py-1 rounded-full bg-emerald-500/20 text-emerald-300 text-[10px] font-bold border border-emerald-500/30">
-                          {lesson.lesson_duration_minutes || 60} Min
-                        </span>
+                        <div className="flex items-center justify-between gap-2 pt-1">
+                          <div className="flex items-center gap-2 text-xs text-[#CEB466] font-medium">
+                            <Clock className="w-3.5 h-3.5" />
+                            <span>{formatWeeklySchedule(lesson)}</span>
+                          </div>
+                          <EditWeeklyLessonButton
+                            lessons={lessonOptions.filter((o) => o.bookingId === lesson.id)}
+                            initialBookingId={lesson.id}
+                            className={buttonVariants({ size: 'sm' })}
+                            title="Change this weekly lesson"
+                          />
+                        </div>
                       </div>
 
-                      <div className="flex items-center gap-2 text-xs text-[#CEB466] font-medium pt-1">
-                        <Clock className="w-3.5 h-3.5" />
-                        <span>{formatWeeklySchedule(lesson)}</span>
-                      </div>
+                      <Link
+                        href={lessonPath}
+                        prefetch={false}
+                        className={buttonVariants({ variant: 'primary', block: true })}
+                      >
+                        <Video />
+                        <span>Enter Live Classroom</span>
+                      </Link>
                     </div>
-
-                    <Link
-                      href={lessonPath}
-                      className="w-full py-3 px-4 rounded-xl bg-gradient-to-r from-[#CEB466] to-[#9c8644] hover:from-[#e0c97d] hover:to-[#CEB466] text-[#171229] font-bold text-xs flex items-center justify-center gap-2 shadow-lg shadow-[#CEB466]/20 transition-all"
-                    >
-                      <Video className="w-4 h-4" />
-                      <span>Enter Live Classroom</span>
-                    </Link>
-                  </div>
-                )
-              })}
-            </div>
+                  )
+                })}
+              </div>
+            )}
           </div>
         )}
 
         <div data-tour="dashboard-practice-arena" className="space-y-4">
           <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
             <div>
-              <h2 className="text-2xl font-bold text-white flex items-center gap-2 font-luxury">
-                <Music className="w-6 h-6 text-[#CEB466]" />
-                <span>Interactive Practice Arena</span>
+              <h2 className="text-xl font-bold text-white flex items-center gap-2 font-luxury">
+                <Music className="w-5 h-5 text-[#CEB466]" />
+                <span>Tools</span>
               </h2>
-              <p className="text-xs text-gray-400">
-                Real-time Aubio pitch detector, interactive scale matching, and rhythm tap game.
-              </p>
             </div>
 
             <Link
               href="/dashboard/training-center"
-              className="text-xs font-semibold text-[#CEB466] hover:text-[#e0c97d] flex items-center gap-1 transition-colors"
+              className={buttonVariants({ variant: 'ghost', size: 'sm' })}
             >
-              <span>Full Arena View</span>
-              <ArrowRight className="w-3.5 h-3.5" />
+              <span>All tools</span>
+              <ArrowRight />
             </Link>
           </div>
 
@@ -431,7 +471,7 @@ export default async function DashboardPage() {
                   key={action.label}
                   href={action.href}
                   data-tour={tourAttr}
-                  className="glass-card-subtle p-5 rounded-3xl border border-white/10 hover:border-[#CEB466]/40 transition-all hover:scale-[1.02] flex flex-col justify-between space-y-3 group"
+                  className="glass-card-subtle group flex flex-col justify-between space-y-3 border border-white/10 p-5 transition-colors hover:border-gold-400/40"
                 >
                   <div className="w-10 h-10 rounded-2xl bg-gradient-to-br from-[#CEB466] to-[#9c8644] flex items-center justify-center text-[#171229] shadow-md shadow-[#CEB466]/15 group-hover:scale-110 transition-transform">
                     <action.icon className="w-5 h-5" />
@@ -681,7 +721,7 @@ export default async function DashboardPage() {
             Today
           </h1>
           <p className="mt-1 text-sm text-gray-300">
-            Welcome back, {displayName}. Here is what matters next.
+            Welcome, {displayName}. Here is what matters next.
           </p>
         </div>
         <SpotlightTriggerButton

@@ -2,7 +2,7 @@ import type { Metadata } from 'next'
 import { NOINDEX } from '@/lib/seo'
 import { TrainingRoom } from '@/components/training/TrainingRoom'
 
-export const metadata: Metadata = { title: 'Training session', robots: NOINDEX }
+export const metadata: Metadata = { title: 'Group class', robots: NOINDEX }
 export const dynamic = 'force-dynamic'
 
 /** Public entrance for community training sessions (no account needed). */

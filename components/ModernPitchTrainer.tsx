@@ -1,12 +1,16 @@
 'use client'
 
 import { useState, useEffect, useRef, useCallback, useMemo } from 'react'
-import { createPortal } from 'react-dom'
-import { Music, X, Maximize2, Minimize2, Circle, Piano, Mic, MicOff, TrendingUp, Save } from 'lucide-react'
+import { Music, Circle, Piano, Mic, MicOff, TrendingUp, Save, Play, Pause, SkipForward, Volume2, CheckCircle2, RotateCcw } from 'lucide-react'
 import Script from 'next/script'
 import { getSharedMicStream, subscribeSharedMicStream } from '@/lib/shared-mic-stream'
 import { analyzeBuffer, getNoteFrequency } from '@/lib/pitch-detection'
 import { SpotlightTour, SpotlightTriggerButton, SpotlightStep } from '@/components/spotlight-tour'
+import { useDraggableFab } from '@/lib/use-draggable-fab'
+import { Button } from '@/components/ui/button'
+import { Panel, Stat } from '@/components/ui/panel'
+import { Segmented } from '@/components/ui/segmented'
+import { ToolDialog } from '@/components/ui/tool-dialog'
 
 const pitchTourSteps: SpotlightStep[] = [
   {
@@ -24,7 +28,7 @@ const pitchTourSteps: SpotlightStep[] = [
   {
     target: '[data-tour="pitch-wheel-keyboard"]',
     title: '3. Pick a Note',
-    content: 'Tap any note to hear it played. Then sing that same note back and try to get the "Match!"',
+    content: 'Tap any note to hear it played, then sing it back. Hold it for a second and the next note starts on its own. Pause or Skip are there if you need them.',
     placement: 'top',
   },
   {
@@ -52,6 +56,15 @@ const IN_TUNE_THRESHOLD = 15
 // Maximum semitone range to track (±4 semitones = major third)
 // Notes outside this range are likely mistakes, not actual attempts
 const TRACKING_RANGE_SEMITONES = 4
+
+// Guided practice: the reference note plays briefly, then the singer answers.
+// Holding the match this long moves on to the next note automatically.
+const REFERENCE_TONE_MS = 2000
+const MATCH_HOLD_MS = 1000
+// Detection flickers between buffers; a gap shorter than this keeps the hold.
+const MATCH_GAP_TOLERANCE_MS = 350
+
+type PracticeState = 'idle' | 'running' | 'paused' | 'done'
 
 declare global {
   interface Window {
@@ -403,7 +416,6 @@ export default function ModernPitchTrainer({ variant = 'floating' }: ModernPitch
   const [isPlaying, setIsPlaying] = useState(false)
   const [sensitivity, setSensitivity] = useState(50)
   const [detectedNote, setDetectedNote] = useState<DetectedNote | null>(null)
-  const [showProgress, setShowProgress] = useState(false)
   const [isSaving, setIsSaving] = useState(false)
   const [saveMessage, setSaveMessage] = useState<string | null>(null)
   const [sharedMicStream, setSharedMicStream] = useState<MediaStream | null>(() => getSharedMicStream())
@@ -416,6 +428,27 @@ export default function ModernPitchTrainer({ variant = 'floating' }: ModernPitch
     isActive: false
   })
   const [currentAttempt, setCurrentAttempt] = useState<NoteAttempt | null>(null)
+
+  // Guided practice (auto-advance) state
+  const [practice, setPracticeState] = useState<PracticeState>('idle')
+  const [holdProgress, setHoldProgress] = useState(0)
+  const [matchedNotes, setMatchedNotes] = useState<string[]>([])
+  const [skippedNotes, setSkippedNotes] = useState<string[]>([])
+  const practiceRef = useRef<PracticeState>('idle')
+  const targetRef = useRef<{ note: string; octave: number } | null>(null)
+  const tonePlayingRef = useRef(false)
+  const toneTokenRef = useRef(0)
+  const toneTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const holdStartRef = useRef<number | null>(null)
+  const lastMatchRef = useRef(0)
+  const advanceRef = useRef<(matched: boolean) => void>(() => {})
+  const pendingSaveRef = useRef(false)
+  const fab = useDraggableFab('va-fab-pitch')
+
+  const setPractice = useCallback((next: PracticeState) => {
+    practiceRef.current = next
+    setPracticeState(next)
+  }, [])
 
   const audioRef = useRef<HTMLAudioElement | null>(null)
   const sessionRef = useRef(session)
@@ -470,6 +503,37 @@ export default function ModernPitchTrainer({ variant = 'floating' }: ModernPitch
     })
   }, [currentAttempt, selectedNote, detectedNote, selectedOctave])
 
+  // Every detected pitch lands here. During guided practice it also runs the
+  // "hold the note for a second" timer that moves on to the next note.
+  const handleNoteDetected = useCallback((note: DetectedNote) => {
+    setDetectedNote(note)
+
+    const target = targetRef.current
+    // The reference note itself must not count as the singer's answer.
+    if (practiceRef.current !== 'running' || tonePlayingRef.current || !target) {
+      holdStartRef.current = null
+      return
+    }
+
+    const now = performance.now()
+    const matching = note.name === target.note.replace('#', '♯') && note.octave === target.octave
+    if (matching) {
+      if (holdStartRef.current === null || now - lastMatchRef.current > MATCH_GAP_TOLERANCE_MS) {
+        holdStartRef.current = now
+      }
+      lastMatchRef.current = now
+      const progress = Math.min(1, (now - holdStartRef.current) / MATCH_HOLD_MS)
+      setHoldProgress(progress)
+      if (progress >= 1) {
+        holdStartRef.current = null
+        advanceRef.current(true)
+      }
+    } else if (holdStartRef.current !== null && now - lastMatchRef.current > MATCH_GAP_TOLERANCE_MS) {
+      holdStartRef.current = null
+      setHoldProgress(0)
+    }
+  }, [])
+
   const {
     isListening,
     setAubioLoaded,
@@ -478,7 +542,7 @@ export default function ModernPitchTrainer({ variant = 'floating' }: ModernPitch
   } = usePitchDetection({
     sensitivity,
     externalMicStream: sharedMicStream,
-    onNoteDetected: setDetectedNote,
+    onNoteDetected: handleNoteDetected,
     onSampleRecorded: handleSampleRecorded,
   })
 
@@ -655,12 +719,18 @@ export default function ModernPitchTrainer({ variant = 'floating' }: ModernPitch
         audioRef.current.pause()
         audioRef.current.currentTime = 0
       }
+      if (toneTimeoutRef.current) clearTimeout(toneTimeoutRef.current)
+      tonePlayingRef.current = false
+      targetRef.current = null
+      holdStartRef.current = null
+      setHoldProgress(0)
+      setPractice('idle')
       setIsPlaying(false)
       setSelectedNote(null)
       stopListening()
       completeNoteAttempt()
     }
-  }, [isOpen, stopListening, completeNoteAttempt])
+  }, [isOpen, stopListening, completeNoteAttempt, setPractice])
 
   // Complete attempt when note changes
   useEffect(() => {
@@ -681,55 +751,175 @@ export default function ModernPitchTrainer({ variant = 'floating' }: ModernPitch
     }
   }
 
-  // Play selected note
-  const playNote = (note: string) => {
+  // Stop the reference note
+  const stopTone = () => {
+    if (toneTimeoutRef.current) {
+      clearTimeout(toneTimeoutRef.current)
+      toneTimeoutRef.current = null
+    }
+    toneTokenRef.current += 1
     if (audioRef.current) {
       audioRef.current.pause()
-      audioRef.current.currentTime = 0
     }
+    tonePlayingRef.current = false
+    setIsPlaying(false)
+  }
 
-    // Complete previous attempt before starting new one
-    if (currentAttempt && currentAttempt.noteName !== note) {
-      completeNoteAttempt()
-    }
+  // Play the reference note briefly, then hand over to the singer.
+  // One audio element is reused so Safari keeps allowing playback when the
+  // next note starts on its own (not from a tap).
+  const playTone = (note: string, octave: number) => {
+    stopTone()
+    const audio = audioRef.current ?? new Audio()
+    audioRef.current = audio
+    const token = ++toneTokenRef.current
+    audio.src = getAudioPath(note, octave)
+    audio.currentTime = 0
+    tonePlayingRef.current = true
+    setIsPlaying(true)
+    holdStartRef.current = null
+    setHoldProgress(0)
 
-    if (selectedNote === note && isPlaying) {
+    const finish = () => {
+      if (toneTokenRef.current !== token) return
+      audio.pause()
+      tonePlayingRef.current = false
       setIsPlaying(false)
-      setSelectedNote(null)
-      completeNoteAttempt()
+      if (toneTimeoutRef.current) {
+        clearTimeout(toneTimeoutRef.current)
+        toneTimeoutRef.current = null
+      }
+    }
+    audio.onended = finish
+    toneTimeoutRef.current = setTimeout(finish, REFERENCE_TONE_MS)
+    void audio.play().catch(finish)
+  }
+
+  // Turn the mic on for the singer, unless the pitch library is still loading
+  // (they can press "Start mic" a moment later instead of seeing an error).
+  const ensureMic = () => {
+    if (!isListening && typeof window !== 'undefined' && typeof window.aubio === 'function') {
+      void startListening()
+    }
+  }
+
+  // Move the practice to a note: play it, then listen for the singer
+  const goToNote = (note: string, octave: number) => {
+    if (currentAttempt) completeNoteAttempt()
+    targetRef.current = { note, octave }
+    setSelectedNote(note)
+    setPractice('running')
+    startNoteAttempt(note, octave)
+    playTone(note, octave)
+    ensureMic()
+  }
+
+  // Tap a note (or press Play): start the guided practice from that note
+  const playNote = (note: string) => {
+    if (practice === 'idle' || practice === 'done') {
+      setMatchedNotes([])
+      setSkippedNotes([])
+      if (practice === 'done') {
+        // A finished run was already saved; begin a fresh session.
+        setSession({ startedAt: new Date(), endedAt: null, noteAttempts: new Map(), isActive: true })
+      }
+    }
+    goToNote(note, selectedOctave)
+  }
+
+  // Finish the run: stop, show the summary and save the session
+  const finishPractice = () => {
+    stopTone()
+    if (currentAttempt) completeNoteAttempt()
+    targetRef.current = null
+    holdStartRef.current = null
+    setHoldProgress(0)
+    setSelectedNote(null)
+    pendingSaveRef.current = true
+    setPractice('done')
+  }
+
+  // Leave the current note (matched or skipped) for the next one in sequence
+  const advance = (matched: boolean) => {
+    const target = targetRef.current
+    if (!target || practiceRef.current === 'idle' || practiceRef.current === 'done') return
+    const label = `${target.note}${target.octave}`
+    if (matched) setMatchedNotes((prev) => [...prev, label])
+    else setSkippedNotes((prev) => [...prev, label])
+
+    const index = NOTE_STRINGS_DISPLAY.indexOf(target.note)
+    const next = NOTE_STRINGS_DISPLAY[index + 1]
+    if (!next) {
+      finishPractice()
       return
     }
+    goToNote(next, target.octave)
+  }
+  advanceRef.current = advance
 
-    const audio = new Audio(getAudioPath(note, selectedOctave))
-    audioRef.current = audio
-    audio.play()
-    setSelectedNote(note)
-    setIsPlaying(true)
-
-    // Start tracking this note attempt
-    startNoteAttempt(note, selectedOctave)
-
-    audio.onended = () => {
-      setIsPlaying(false)
-    }
+  const pausePractice = () => {
+    stopTone()
+    holdStartRef.current = null
+    setHoldProgress(0)
+    setPractice('paused')
   }
 
-  // Toggle play/pause
+  const resumePractice = () => {
+    const target = targetRef.current
+    if (!target) return
+    setPractice('running')
+    playTone(target.note, target.octave)
+    ensureMic()
+  }
+
+  const hearAgain = () => {
+    const target = targetRef.current
+    if (!target) return
+    if (practiceRef.current === 'paused') setPractice('running')
+    playTone(target.note, target.octave)
+  }
+
+  // Centre button: start, pause or resume
   const togglePlay = () => {
-    if (!selectedNote) return
+    if (practice === 'running') pausePractice()
+    else if (practice === 'paused') resumePractice()
+    else playNote(selectedNote || NOTE_STRINGS_DISPLAY[0])
+  }
 
-    if (isPlaying && audioRef.current) {
-      audioRef.current.pause()
-      audioRef.current.currentTime = 0
-      setIsPlaying(false)
-    } else if (selectedNote) {
-      const audio = new Audio(getAudioPath(selectedNote, selectedOctave))
-      audioRef.current = audio
-      audio.play()
-      setIsPlaying(true)
-      audio.onended = () => setIsPlaying(false)
+  // Changing octave mid-practice restarts the current note in the new octave
+  const changeOctave = (octave: number) => {
+    setSelectedOctave(octave)
+    const target = targetRef.current
+    if (target && (practice === 'running' || practice === 'paused')) {
+      goToNote(target.note, octave)
     }
   }
+
+  // If the singer goes quiet, let a half-filled hold bar drop back to empty
+  useEffect(() => {
+    if (practice !== 'running') return
+    const interval = setInterval(() => {
+      if (holdStartRef.current !== null && performance.now() - lastMatchRef.current > MATCH_GAP_TOLERANCE_MS) {
+        holdStartRef.current = null
+        setHoldProgress(0)
+      }
+    }, 200)
+    return () => clearInterval(interval)
+  }, [practice])
+
+  // Save automatically once a finished run's last note has been scored
+  useEffect(() => {
+    if (practice === 'done' && pendingSaveRef.current && !currentAttempt) {
+      pendingSaveRef.current = false
+      void saveSession()
+    }
+  }, [practice, currentAttempt, saveSession])
+
+  useEffect(() => {
+    return () => {
+      if (toneTimeoutRef.current) clearTimeout(toneTimeoutRef.current)
+    }
+  }, [])
 
   // Check if detected note matches selected note
   const isNoteMatching = () => {
@@ -775,7 +965,7 @@ export default function ModernPitchTrainer({ variant = 'floating' }: ModernPitch
 
   // Render the pitch meter
   const renderMeter = () => (
-    <div className="relative w-48 h-24 mx-auto mb-4">
+    <div className="relative w-40 h-20 mx-auto">
       <div className="absolute inset-0 flex items-end justify-center">
         <div className="w-full h-full relative">
           {[...Array(11)].map((_, i) => {
@@ -785,28 +975,28 @@ export default function ModernPitchTrainer({ variant = 'floating' }: ModernPitch
               <div
                 key={i}
                 className={`absolute bottom-0 left-1/2 origin-bottom ${
-                  isStrong ? 'w-0.5 h-5 bg-slate-400' : 'w-px h-3 bg-slate-600'
+                  isStrong ? 'w-0.5 h-5 bg-gray-400' : 'w-px h-3 bg-gray-600'
                 }`}
                 style={{ transform: `translateX(-50%) rotate(${deg}deg)` }}
               />
             )
           })}
           <div
-            className="absolute bottom-0 left-1/2 w-0.5 h-20 bg-red-500 origin-bottom transition-transform duration-150"
+            className="absolute bottom-0 left-1/2 w-0.5 h-16 bg-red-500 origin-bottom transition-transform duration-150"
             style={{ transform: `translateX(-50%) rotate(${meterDegree}deg)` }}
           />
-          <div className="absolute bottom-0 left-1/2 w-3 h-3 bg-slate-300 rounded-full -translate-x-1/2 translate-y-1/2" />
+          <div className="absolute bottom-0 left-1/2 w-3 h-3 bg-gray-300 rounded-full -translate-x-1/2 translate-y-1/2" />
         </div>
       </div>
-      <div className="absolute bottom-0 left-4 text-xs text-slate-500">♭</div>
-      <div className="absolute bottom-0 right-4 text-xs text-slate-500">♯</div>
+      <div className="absolute bottom-0 left-4 text-xs text-gray-500">♭</div>
+      <div className="absolute bottom-0 right-4 text-xs text-gray-500">♯</div>
     </div>
   )
 
   // Render circular wheel mode
   const renderWheel = () => (
     <div className="relative w-64 h-64 mx-auto">
-      <div className="absolute inset-0 rounded-full bg-gradient-to-br from-slate-800 to-slate-900 border-2 border-slate-700" />
+      <div className="absolute inset-0 rounded-full border border-white/10 bg-white/[0.04]" />
 
       {NOTE_STRINGS_DISPLAY.map((note, index) => {
         const angle = (index * 30 - 90) * (Math.PI / 180)
@@ -825,14 +1015,14 @@ export default function ModernPitchTrainer({ variant = 'floating' }: ModernPitch
             onClick={() => playNote(note)}
             className={`absolute w-10 h-10 -ml-5 -mt-5 rounded-full flex items-center justify-center text-sm font-semibold transition-all duration-200
               ${isSelected
-                ? 'bg-gradient-to-br from-blue-500 to-blue-600 text-white scale-110 shadow-lg shadow-blue-500/50'
+                ? 'bg-gold-400 text-ink-900 scale-110 shadow-lg shadow-gold-400/30'
                 : isDetected
-                  ? 'bg-gradient-to-br from-red-500 to-red-600 text-white scale-105'
+                  ? 'bg-red-500 text-white scale-105'
                   : hasAttempt
-                    ? 'bg-gradient-to-br from-green-600 to-green-700 text-white'
+                    ? 'bg-emerald-600 text-white'
                     : isSharp
-                      ? 'bg-slate-700 text-slate-300 hover:bg-slate-600'
-                      : 'bg-slate-600 text-white hover:bg-slate-500'
+                      ? 'bg-white/[0.08] text-gray-300 hover:bg-white/[0.14]'
+                      : 'bg-white/[0.16] text-white hover:bg-white/[0.22]'
               }`}
             style={{ left: x, top: y }}
           >
@@ -843,26 +1033,23 @@ export default function ModernPitchTrainer({ variant = 'floating' }: ModernPitch
 
       <button
         onClick={togglePlay}
-        className={`absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 w-20 h-20 rounded-full flex items-center justify-center transition-all duration-200
-          ${selectedNote
-            ? 'bg-gradient-to-br from-blue-500 to-purple-600 hover:scale-105 cursor-pointer'
-            : 'bg-slate-700 cursor-not-allowed'
-          }`}
+        aria-label={practice === 'running' ? 'Pause' : practice === 'paused' ? 'Resume' : 'Start'}
+        className="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 w-20 h-20 rounded-full flex items-center justify-center transition-colors duration-150 bg-gold-400 text-ink-900 hover:bg-gold-300 shadow-lg shadow-gold-400/25"
       >
-        {isPlaying ? (
-          <svg className="w-8 h-8 text-white" fill="currentColor" viewBox="0 0 24 24">
+        {practice === 'running' ? (
+          <svg className="w-8 h-8" fill="currentColor" viewBox="0 0 24 24">
             <rect x="6" y="4" width="4" height="16" />
             <rect x="14" y="4" width="4" height="16" />
           </svg>
         ) : (
-          <svg className="w-8 h-8 text-white ml-1" fill="currentColor" viewBox="0 0 24 24">
+          <svg className="w-8 h-8 ml-1" fill="currentColor" viewBox="0 0 24 24">
             <path d="M8 5v14l11-7z" />
           </svg>
         )}
       </button>
 
       {isNoteMatching() && (
-        <div className="absolute inset-0 rounded-full border-4 border-green-500 animate-pulse pointer-events-none" />
+        <div className="absolute inset-0 rounded-full border-4 border-emerald-500 animate-pulse pointer-events-none" />
       )}
     </div>
   )
@@ -893,7 +1080,7 @@ export default function ModernPitchTrainer({ variant = 'floating' }: ModernPitch
                 onClick={() => playNote(note)}
                 className={`relative w-12 h-full rounded-b-lg border border-slate-600 transition-all duration-100
                   ${isSelected
-                    ? 'bg-gradient-to-b from-blue-400 to-blue-500 shadow-inner'
+                    ? 'bg-gold-400 shadow-inner'
                     : isDetected
                       ? 'bg-gradient-to-b from-red-400 to-red-500'
                       : hasAttempt
@@ -902,7 +1089,7 @@ export default function ModernPitchTrainer({ variant = 'floating' }: ModernPitch
                   }`}
               >
                 <span className={`absolute bottom-2 left-1/2 -translate-x-1/2 text-xs font-medium
-                  ${isSelected || isDetected ? 'text-white' : hasAttempt ? 'text-green-800' : 'text-slate-600'}`}>
+                  ${isSelected ? 'text-ink-900' : isDetected ? 'text-white' : hasAttempt ? 'text-green-800' : 'text-slate-600'}`}>
                   {note}
                 </span>
               </button>
@@ -922,7 +1109,7 @@ export default function ModernPitchTrainer({ variant = 'floating' }: ModernPitch
               onClick={() => playNote(note)}
               className={`absolute top-0 w-8 h-24 rounded-b-lg z-10 transition-all duration-100
                 ${isSelected
-                  ? 'bg-gradient-to-b from-blue-600 to-blue-700 shadow-lg'
+                  ? 'bg-gold-500 shadow-lg'
                   : isDetected
                     ? 'bg-gradient-to-b from-red-600 to-red-700'
                     : hasAttempt
@@ -939,134 +1126,80 @@ export default function ModernPitchTrainer({ variant = 'floating' }: ModernPitch
         })}
 
         {isNoteMatching() && (
-          <div className="absolute -inset-2 rounded-xl border-4 border-green-500 animate-pulse pointer-events-none" />
+          <div className="absolute -inset-2 rounded-2xl border-4 border-emerald-500 animate-pulse pointer-events-none" />
         )}
       </div>
     )
   }
 
   // Render session stats panel
+  const accuracyTone = (value: number) => (value >= 70 ? 'success' : value >= 40 ? 'warning' : 'default')
   const renderSessionStats = () => (
-    <div className="bg-slate-800/50 rounded-xl p-4 mb-6 border border-slate-700/50">
-      <div className="flex items-center justify-between mb-3">
-        <h3 className="text-sm font-semibold text-white flex items-center gap-2">
-          <TrendingUp className="w-4 h-4 text-indigo-400" />
-          Session Stats
+    <Panel padding="sm">
+      <div className="mb-2 flex items-center justify-between gap-2">
+        <h3 className="flex items-center gap-2 font-sans text-sm font-semibold text-white">
+          <TrendingUp className="size-4 text-gold-400" />
+          Session stats
         </h3>
-        <button
+        <Button
+          size="sm"
+          variant="outline"
           onClick={saveSession}
           disabled={isSaving || session.noteAttempts.size === 0}
-          className={`flex items-center gap-2 px-3 py-1.5 text-xs font-medium rounded-lg transition-all ${
-            isSaving || session.noteAttempts.size === 0
-              ? 'bg-slate-700 text-slate-500 cursor-not-allowed'
-              : 'bg-indigo-600 hover:bg-indigo-500 text-white'
-          }`}
         >
-          <Save className="w-3 h-3" />
-          {isSaving ? 'Saving...' : 'Save Session'}
-        </button>
+          <Save />
+          {isSaving ? 'Saving…' : 'Save session'}
+        </Button>
       </div>
 
       <div className="grid grid-cols-4 gap-3">
-        <div className="text-center">
-          <p className="text-2xl font-bold text-white">{sessionStats.notesAttempted}</p>
-          <p className="text-xs text-slate-400">Notes</p>
-        </div>
-        <div className="text-center">
-          <p className={`text-2xl font-bold ${sessionStats.avgTargetAccuracy >= 70 ? 'text-green-400' : sessionStats.avgTargetAccuracy >= 40 ? 'text-yellow-400' : 'text-white'}`}>
-            {sessionStats.avgTargetAccuracy.toFixed(0)}%
-          </p>
-          <p className="text-xs text-slate-400">Target Acc</p>
-        </div>
-        <div className="text-center">
-          <p className={`text-2xl font-bold ${sessionStats.avgVoiceStability >= 70 ? 'text-green-400' : sessionStats.avgVoiceStability >= 40 ? 'text-yellow-400' : 'text-white'}`}>
-            {sessionStats.avgVoiceStability.toFixed(0)}%
-          </p>
-          <p className="text-xs text-slate-400">Stability</p>
-        </div>
-        <div className="text-center">
-          <p className="text-2xl font-bold text-white">
-            {Math.floor(sessionStats.totalDuration / 60)}:{(sessionStats.totalDuration % 60).toString().padStart(2, '0')}
-          </p>
-          <p className="text-xs text-slate-400">Time</p>
-        </div>
+        <Stat label="Notes" value={sessionStats.notesAttempted} />
+        <Stat
+          label="On target"
+          value={`${sessionStats.avgTargetAccuracy.toFixed(0)}%`}
+          tone={accuracyTone(sessionStats.avgTargetAccuracy)}
+        />
+        <Stat
+          label="Steadiness"
+          value={`${sessionStats.avgVoiceStability.toFixed(0)}%`}
+          tone={accuracyTone(sessionStats.avgVoiceStability)}
+        />
+        <Stat
+          label="Time"
+          value={`${Math.floor(sessionStats.totalDuration / 60)}:${(sessionStats.totalDuration % 60).toString().padStart(2, '0')}`}
+        />
       </div>
 
-      {/* Pitch Tendency Indicator */}
       {sessionStats.notesAttempted > 0 && sessionStats.overallDirection !== 'on-target' && (
-        <div className={`mt-3 text-center text-xs px-3 py-1.5 rounded-lg ${
-          sessionStats.overallDirection === 'sharp' ? 'bg-orange-500/20 text-orange-300' : 'bg-blue-500/20 text-blue-300'
+        <p className={`mt-2 rounded-lg px-3 py-1.5 text-center text-xs ${
+          sessionStats.overallDirection === 'sharp' ? 'bg-amber-500/15 text-amber-300' : 'bg-blue-500/15 text-blue-300'
         }`}>
-          Tendency: singing {sessionStats.overallDirection === 'sharp' ? '↑ sharp' : '↓ flat'}
-        </div>
+          You tend to sing a little {sessionStats.overallDirection === 'sharp' ? 'high' : 'low'}
+        </p>
       )}
 
       {saveMessage && (
-        <div className={`mt-3 text-center text-sm ${
-          saveMessage.includes('saved') ? 'text-green-400' : 'text-yellow-400'
-        }`}>
+        <p className={`mt-2 text-center text-sm ${saveMessage.includes('saved') ? 'text-emerald-400' : 'text-amber-400'}`}>
           {saveMessage}
-        </div>
+        </p>
       )}
-
-      {currentAttempt && currentAttempt.samples.length > 0 && (
-        <div className="mt-3 pt-3 border-t border-slate-700/50">
-          <div className="flex items-center justify-between mb-2">
-            <p className="text-xs text-slate-400">Target: <span className="text-white font-medium">{currentAttempt.noteName}{currentAttempt.octave}</span></p>
-            {(() => {
-              // Calculate live stats from current samples
-              const samples = currentAttempt.samples
-              if (samples.length === 0) return null
-
-              // Find most sung note
-              const noteCount: Record<string, number> = {}
-              samples.forEach(s => {
-                const key = `${s.detectedNoteName}${s.detectedOctave}`
-                noteCount[key] = (noteCount[key] || 0) + 1
-              })
-              const mostSung = Object.entries(noteCount).sort((a, b) => b[1] - a[1])[0]?.[0]
-
-              // Calculate average semitone deviation
-              const avgSemitones = samples.reduce((sum, s) => sum + s.semitoneDeviationFromTarget, 0) / samples.length
-
-              const isOnTarget = Math.abs(avgSemitones) < 0.5
-              const direction = avgSemitones > 0.5 ? 'sharp' : avgSemitones < -0.5 ? 'flat' : 'on-target'
-
-              return (
-                <div className="text-xs">
-                  {isOnTarget ? (
-                    <span className="text-green-400 font-medium">On target!</span>
-                  ) : (
-                    <span className={direction === 'sharp' ? 'text-orange-400' : 'text-blue-400'}>
-                      Singing {mostSung} ({Math.abs(avgSemitones).toFixed(1)} semitones {direction})
-                    </span>
-                  )}
-                </div>
-              )
-            })()}
-          </div>
-          <div className="flex gap-4 text-xs">
-            <span className="text-slate-300">Samples: {currentAttempt.samples.length}</span>
-            <span className="text-green-400">
-              In-tune: {currentAttempt.samples.filter(s => s.isInTune).length}
-            </span>
-            <span className="text-slate-300">
-              In range: {currentAttempt.samples.filter(s => Math.abs(s.semitoneDeviationFromTarget) <= 1).length}
-            </span>
-          </div>
-        </div>
-      )}
-    </div>
+    </Panel>
   )
 
   return (
     <>
       {variant === 'floating' ? (
         <button
-          onClick={() => setIsOpen(true)}
+          ref={fab.ref}
+          {...fab.bind}
+          onClick={() => {
+            if (fab.consumeDrag()) return
+            setIsOpen(true)
+          }}
           className="fixed bottom-4 right-[76px] w-12 h-12 lg:bottom-6 lg:right-24 lg:w-14 lg:h-14 bg-gradient-to-br from-indigo-600 to-violet-600 rounded-full shadow-lg flex items-center justify-center text-white hover:scale-110 active:scale-95 transition-all duration-300 z-50"
-          style={{ boxShadow: '0 8px 24px rgba(99, 102, 241, 0.4)' }}
-          title="Pitch Perfect"
+          style={{ boxShadow: '0 8px 24px rgba(99, 102, 241, 0.4)', ...fab.style }}
+          title="Pitch Perfect (drag to move)"
+          aria-label="Pitch Perfect"
         >
           <Music className="w-5 h-5 lg:w-6 lg:h-6" />
         </button>
@@ -1091,244 +1224,203 @@ export default function ModernPitchTrainer({ variant = 'floating' }: ModernPitch
         </button>
       )}
 
-      {isOpen && createPortal(
-        <div className="fixed inset-0 z-[99990] flex items-center justify-center bg-black/90">
-          <div
-            className="absolute inset-0 bg-black/90 backdrop-blur-sm"
-            onClick={() => {
-              setIsOpen(false)
-              setIsFullscreen(false)
-            }}
-          />
+      {isOpen && (
+        <ToolDialog
+          titleId="pitch-trainer-title"
+          title="Pitch Perfect"
+          subtitle="Tap a note, sing it back, and the next one starts on its own."
+          icon={<Music />}
+          onClose={() => {
+            setIsOpen(false)
+            setIsFullscreen(false)
+          }}
+          fullscreen={isFullscreen}
+          onToggleFullscreen={() => setIsFullscreen(!isFullscreen)}
+          actions={<SpotlightTriggerButton tourKey="pitch_trainer_v4" label="How to" />}
+          beforeBody={<SpotlightTour tourKey="pitch_trainer_v4" steps={pitchTourSteps} />}
+        >
+          {/* Top bar: view, mic, sensitivity */}
+          <div className="mb-4 flex flex-wrap items-center justify-center gap-x-4 gap-y-2">
+            <Segmented
+              aria-label="Note layout"
+              value={mode}
+              onChange={setMode}
+              options={[
+                { value: 'wheel', label: 'Wheel', icon: <Circle /> },
+                { value: 'keyboard', label: 'Keyboard', icon: <Piano /> },
+              ]}
+            />
 
-          <div
-            role="dialog"
-            aria-modal="true"
-            aria-labelledby="pitch-trainer-title"
-            className={`relative bg-gradient-to-br from-[#1b1233] via-[#171229] to-[#0f0b1e] shadow-2xl border border-[#CEB466]/30 overflow-hidden transition-all duration-300 ${
-              isFullscreen
-                ? 'w-full h-full rounded-none lg:w-[95vw] lg:h-[95vh] lg:rounded-3xl'
-                : 'w-full h-full rounded-none lg:w-[90vw] lg:max-w-3xl lg:h-[85vh] lg:max-h-[750px] lg:rounded-3xl'
-            }`}
-          >
-            {/* Header */}
-            <div className="flex items-center justify-between gap-3 px-4 py-3 sm:px-5 sm:py-4 bg-[#1b1233] border-b border-[#CEB466]/20">
-              <div className="flex items-center gap-4">
-                <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-indigo-500 to-violet-500 flex items-center justify-center shadow-lg">
-                  <Music className="w-5 h-5 text-white" />
-                </div>
-                <div className="min-w-0">
-                  <h2 id="pitch-trainer-title" className="text-base sm:text-xl font-bold text-white truncate">Pitch Perfect</h2>
-                  <p className="hidden sm:block text-sm text-purple-100/70">Click a note, play it, and match your voice!</p>
-                </div>
-              </div>
-              <div className="flex shrink-0 items-center gap-1.5 sm:gap-2">
-                <SpotlightTriggerButton tourKey="pitch_trainer_v4" label="How to" />
-                <button
-                  onClick={() => setShowProgress(!showProgress)}
-                  className={`p-2.5 rounded-xl transition-colors ${
-                    showProgress ? 'bg-indigo-600/30 text-indigo-400' : 'hover:bg-white/10 text-slate-400'
-                  }`}
-                  title="View Progress"
-                >
-                  <TrendingUp className="w-5 h-5" />
-                </button>
-                <button
-                  onClick={() => setIsFullscreen(!isFullscreen)}
-                  className="hidden sm:block p-2.5 hover:bg-white/10 rounded-xl transition-colors"
-                  title={isFullscreen ? 'Exit fullscreen' : 'Fullscreen'}
-                >
-                  {isFullscreen ? (
-                    <Minimize2 className="w-5 h-5 text-slate-400" />
-                  ) : (
-                    <Maximize2 className="w-5 h-5 text-slate-400" />
-                  )}
-                </button>
-                <button
-                  onClick={() => {
-                    setIsOpen(false)
-                    setIsFullscreen(false)
-                  }}
-                  className="p-2.5 hover:bg-white/10 rounded-xl transition-colors"
-                  title="Close"
-                >
-                  <X className="w-5 h-5 text-slate-400" />
-                </button>
-              </div>
-            </div>
+            <Button
+              data-tour="pitch-mic-btn"
+              variant={isListening ? 'success' : 'secondary'}
+              onClick={isListening ? stopListening : startListening}
+            >
+              {isListening ? <Mic /> : <MicOff />}
+              {isListening ? 'Listening' : 'Start mic'}
+            </Button>
 
-            {/* Real On-Page Spotlight Tour */}
-            <SpotlightTour tourKey="pitch_trainer_v4" steps={pitchTourSteps} />
+            <label className="flex items-center gap-2 text-sm text-gray-400">
+              <span>Mic sensitivity</span>
+              <input
+                type="range"
+                min="0"
+                max="100"
+                value={sensitivity}
+                onChange={(e) => setSensitivity(parseInt(e.target.value))}
+                className="va-range w-28"
+              />
+            </label>
 
-            {/* Main Content */}
-            <div className="p-6 h-[calc(100%-72px)] overflow-y-auto">
-              {/* Session Stats */}
-              {session.isActive && renderSessionStats()}
+            {sharedMicStream && (
+              <span className="rounded-full border border-emerald-500/30 bg-emerald-500/10 px-2.5 py-1 text-xs font-medium text-emerald-300">
+                Class mic linked
+              </span>
+            )}
+          </div>
 
-              {/* Mode Toggle */}
-              <div className="flex justify-center mb-6">
-                <div className="inline-flex bg-slate-800/50 rounded-2xl p-1.5 border border-slate-700/50">
-                  <button
-                    onClick={() => setMode('wheel')}
-                    className={`flex items-center gap-2 px-5 py-2.5 rounded-xl text-sm font-medium transition-all duration-200 ${
-                      mode === 'wheel'
-                        ? 'bg-gradient-to-r from-indigo-500 to-violet-500 text-white shadow-lg'
-                        : 'text-slate-400 hover:text-white'
-                    }`}
-                  >
-                    <Circle className="w-4 h-4" />
-                    Wheel
-                  </button>
-                  <button
-                    onClick={() => setMode('keyboard')}
-                    className={`flex items-center gap-2 px-5 py-2.5 rounded-xl text-sm font-medium transition-all duration-200 ${
-                      mode === 'keyboard'
-                        ? 'bg-gradient-to-r from-indigo-500 to-violet-500 text-white shadow-lg'
-                        : 'text-slate-400 hover:text-white'
-                    }`}
-                  >
-                    <Piano className="w-4 h-4" />
-                    Keyboard
-                  </button>
-                </div>
-              </div>
-
-              {/* Mic Sensitivity */}
-              <div className="flex items-center justify-center gap-4 mb-6 flex-wrap">
-                <span className="text-sm text-slate-400">Mic Sensitivity:</span>
-                <input
-                  type="range"
-                  min="0"
-                  max="100"
-                  value={sensitivity}
-                  onChange={(e) => setSensitivity(parseInt(e.target.value))}
-                  className="w-48 h-2 bg-slate-700 rounded-full appearance-none cursor-pointer accent-indigo-500"
-                />
-                <span className="text-sm text-slate-300 w-8">{sensitivity}</span>
-                <button
-                  data-tour="pitch-mic-btn"
-                  onClick={isListening ? stopListening : startListening}
-                  className={`flex items-center gap-2 px-4 py-2 text-sm font-medium rounded-xl transition-all ${
-                    isListening
-                      ? 'bg-green-600 hover:bg-green-500 text-white'
-                      : 'bg-indigo-600 hover:bg-indigo-500 text-white'
-                  }`}
-                >
-                  {isListening ? (
-                    <>
-                      <Mic className="w-4 h-4" />
-                      <span className="w-2 h-2 bg-white rounded-full animate-pulse" />
-                      Listening
-                    </>
-                  ) : (
-                    <>
-                      <MicOff className="w-4 h-4" />
-                      Start Mic
-                    </>
-                  )}
-                </button>
-                {sharedMicStream && (
-                  <span className="text-xs text-emerald-300 bg-emerald-500/10 border border-emerald-500/30 px-2 py-1 rounded-lg">
-                    Class mic linked
-                  </span>
-                )}
-              </div>
-
-              {/* Pitch Meter */}
-              {isListening && renderMeter()}
-
-              {/* Detected Note Display */}
-              <div data-tour="pitch-note-display" className="text-center mb-6">
-                <div className="inline-flex items-baseline gap-2 min-h-[60px]">
-                  {detectedNote ? (
-                    <>
-                      {NOTE_STRINGS.map((note, index) => {
-                        const isActive = detectedNote.name === note
-                        const detectedIndex = NOTE_STRINGS.indexOf(detectedNote.name)
-                        const isAdjacent = (
-                          index === (detectedIndex + 1) % 12 ||
-                          index === (detectedIndex - 1 + 12) % 12
-                        )
-
-                        if (!isActive && !isAdjacent) return null
-
-                        return (
-                          <span
-                            key={note}
-                            className={`transition-all duration-200 ${
-                              isActive
-                                ? 'text-5xl font-bold text-red-500'
-                                : 'text-2xl text-slate-600'
-                            }`}
-                          >
-                            {note}
-                            <sub className="text-lg ml-0.5">{detectedNote.octave}</sub>
-                          </span>
-                        )
-                      })}
-                    </>
-                  ) : (
-                    <span className="text-4xl text-slate-600">--</span>
-                  )}
-                </div>
-
-                {detectedNote && (
-                  <div className="mt-2 text-sm space-x-4">
-                    <span className="text-slate-400">
-                      {detectedNote.frequency.toFixed(1)} <span className="text-xs">Hz</span>
-                    </span>
-                    <span className={
-                      detectedNote.cents > 0
-                        ? 'text-orange-400'
-                        : detectedNote.cents < 0
-                          ? 'text-blue-400'
-                          : 'text-green-400'
-                    }>
-                      {detectedNote.cents > 0 ? '+' : ''}{detectedNote.cents} cents
-                    </span>
-                    {isNoteMatching() && (
-                      <span className="text-green-400 font-medium">Match!</span>
-                    )}
-                  </div>
-                )}
-              </div>
-
-              {/* Note Selector */}
-              <div data-tour="pitch-wheel-keyboard" className="mb-8">
+          <div className="grid gap-4 lg:grid-cols-2 lg:items-center">
+            {/* Left: pick a note and a range */}
+            <div className="min-w-0">
+              <div data-tour="pitch-wheel-keyboard" className="overflow-x-auto py-1">
                 {mode === 'wheel' ? renderWheel() : renderKeyboard()}
               </div>
 
-              {/* Octave Selector */}
-              <div data-tour="pitch-octave-selector" className="flex justify-center">
-                <div className="inline-flex bg-slate-800/50 rounded-2xl p-2 border border-slate-700/50 gap-1">
-                  {availableOctaves.map((octave) => (
-                    <button
-                      key={octave}
-                      onClick={() => setSelectedOctave(octave)}
-                      className={`w-10 h-10 rounded-xl text-sm font-semibold transition-all duration-200 ${
-                        selectedOctave === octave
-                          ? 'bg-gradient-to-r from-indigo-500 to-violet-500 text-white shadow-lg scale-105'
-                          : 'text-slate-400 hover:text-white hover:bg-slate-700/50'
-                      }`}
-                    >
-                      {octave}
-                    </button>
-                  ))}
-                </div>
+              <div data-tour="pitch-octave-selector" className="mt-3 flex flex-col items-center gap-1.5">
+                <Segmented
+                  aria-label="Octave"
+                  compact
+                  value={selectedOctave}
+                  onChange={changeOctave}
+                  options={availableOctaves.map((octave) => ({ value: octave, label: octave }))}
+                />
+                <p className="text-xs text-gray-400">Octave: lower numbers are deeper</p>
               </div>
+            </div>
 
-              {/* Selected Note Info */}
-              {selectedNote && (
-                <div className="mt-6 text-center">
-                  <p className="text-slate-400">
-                    Playing: <span className="text-white font-semibold">{selectedNote}{selectedOctave}</span>
+            {/* Right: what to do now, what we hear, how it is going */}
+            <div className="min-w-0 space-y-3">
+              {practice === 'done' ? (
+                <Panel tone="success" className="text-center">
+                  <div className="flex items-center justify-center gap-2">
+                    <CheckCircle2 className="size-5 text-emerald-400" />
+                    <p className="text-base font-semibold text-white">Sequence complete!</p>
+                  </div>
+                  <p className="mt-1 text-sm text-gray-300">
+                    You matched{' '}
+                    <span className="font-bold text-white">
+                      {matchedNotes.length} of {matchedNotes.length + skippedNotes.length}
+                    </span>{' '}
+                    note{matchedNotes.length + skippedNotes.length === 1 ? '' : 's'}
+                    {skippedNotes.length > 0 ? ` (skipped ${skippedNotes.join(', ')})` : ''}.
+                  </p>
+                  <Button variant="primary" className="mt-3" onClick={() => playNote(NOTE_STRINGS_DISPLAY[0])}>
+                    <RotateCcw />
+                    Practice again
+                  </Button>
+                </Panel>
+              ) : (
+                <Panel padding="sm">
+                  <p className="min-h-5 text-center text-sm font-semibold text-white">
+                    {practice === 'idle' && 'Tap a note or press Start to begin.'}
+                    {practice === 'paused' && `Paused on ${selectedNote}${selectedOctave}`}
+                    {practice === 'running' && isPlaying && `Listen… ${selectedNote}${selectedOctave}`}
+                    {practice === 'running' && !isPlaying && `Your turn: sing ${selectedNote}${selectedOctave} and hold it`}
+                  </p>
+                  <p className="mt-0.5 text-center text-xs text-gray-400">
+                    Hold the note for a second and the next one starts on its own.
+                  </p>
+
+                  <div
+                    className="mt-3 h-2 w-full overflow-hidden rounded-full bg-white/10"
+                    role="progressbar"
+                    aria-label="Hold progress"
+                    aria-valuemin={0}
+                    aria-valuemax={100}
+                    aria-valuenow={Math.round(holdProgress * 100)}
+                  >
+                    <div
+                      className="h-full rounded-full bg-emerald-500 transition-[width] duration-100"
+                      style={{ width: `${Math.round(holdProgress * 100)}%` }}
+                    />
+                  </div>
+
+                  <div className="mt-3 grid grid-cols-3 gap-2">
+                    <Button size="sm" onClick={hearAgain} disabled={practice === 'idle'}>
+                      <Volume2 />
+                      Hear again
+                    </Button>
+                    <Button size="sm" variant="primary" onClick={togglePlay}>
+                      {practice === 'running' ? <Pause /> : <Play />}
+                      {practice === 'running' ? 'Pause' : practice === 'paused' ? 'Resume' : 'Start'}
+                    </Button>
+                    <Button size="sm" onClick={() => advance(false)} disabled={practice === 'idle'}>
+                      <SkipForward />
+                      Skip note
+                    </Button>
+                  </div>
+                </Panel>
+              )}
+
+              {/* What we hear */}
+              <Panel padding="sm" data-tour="pitch-note-display" className="flex items-center justify-center gap-4">
+                <div className="text-center">
+                  <p className="text-xs text-gray-400">{isListening ? 'We hear' : 'Turn the mic on to see your note'}</p>
+                  <div className="inline-flex min-h-[52px] items-baseline gap-2">
+                    {detectedNote ? (
+                      <>
+                        {NOTE_STRINGS.map((note, index) => {
+                          const isActive = detectedNote.name === note
+                          const detectedIndex = NOTE_STRINGS.indexOf(detectedNote.name)
+                          const isAdjacent = (
+                            index === (detectedIndex + 1) % 12 ||
+                            index === (detectedIndex - 1 + 12) % 12
+                          )
+
+                          if (!isActive && !isAdjacent) return null
+
+                          return (
+                            <span
+                              key={note}
+                              className={`transition-colors duration-150 ${
+                                isActive
+                                  ? `text-4xl font-bold ${isNoteMatching() ? 'text-emerald-400' : 'text-red-400'}`
+                                  : 'text-xl text-gray-600'
+                              }`}
+                            >
+                              {note}
+                              <sub className="ml-0.5 text-base">{detectedNote.octave}</sub>
+                            </span>
+                          )
+                        })}
+                      </>
+                    ) : (
+                      <span className="text-3xl text-gray-600">--</span>
+                    )}
+                  </div>
+
+                  <p className="min-h-4 text-xs">
+                    {detectedNote &&
+                      (isNoteMatching() ? (
+                        <span className="font-semibold text-emerald-400">Match!</span>
+                      ) : detectedNote.cents > 0 ? (
+                        <span className="text-amber-400">A little high</span>
+                      ) : detectedNote.cents < 0 ? (
+                        <span className="text-blue-400">A little low</span>
+                      ) : (
+                        <span className="text-gray-400">Keep going</span>
+                      ))}
                   </p>
                 </div>
-              )}
+
+                {isListening && <div className="shrink-0">{renderMeter()}</div>}
+              </Panel>
+
+              {/* Session Stats */}
+              {session.isActive && renderSessionStats()}
             </div>
           </div>
-        </div>,
-        document.body
+        </ToolDialog>
       )}
 
       <Script

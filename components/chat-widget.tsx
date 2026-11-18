@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useRef } from 'react'
 import { MessageCircle, X, Send, ChevronLeft, Users, GraduationCap, UserCircle } from 'lucide-react'
+import { useDraggableFab } from '@/lib/use-draggable-fab'
 
 interface User {
   id: string
@@ -55,11 +56,16 @@ export function ChatWidget({ currentUserId }: ChatWidgetProps) {
   const [isTeacher, setIsTeacher] = useState(false)
   const [contactsLoading, setContactsLoading] = useState(true)
   const messagesEndRef = useRef<HTMLDivElement>(null)
+  const fab = useDraggableFab('va-fab-chat')
 
-  // Fetch contacts on mount
+  // Load the contact list the first time the chat is opened, not on every
+  // page view: it is the widget's largest request and most visits never open it.
+  const contactsRequested = useRef(false)
   useEffect(() => {
+    if (!isOpen || contactsRequested.current) return
+    contactsRequested.current = true
     fetchContacts()
-  }, [])
+  }, [isOpen])
 
   // Fetch unread count on mount
   useEffect(() => {
@@ -197,11 +203,19 @@ export function ChatWidget({ currentUserId }: ChatWidgetProps) {
     <>
       {/* Chat Button */}
       <button
-        onClick={() => setIsOpen(true)}
+        ref={fab.ref}
+        {...fab.bind}
+        onClick={() => {
+          if (fab.consumeDrag()) return
+          setIsOpen(true)
+        }}
         className="fixed bottom-4 right-4 w-12 h-12 lg:bottom-6 lg:right-6 lg:w-14 lg:h-14 bg-gradient-to-br from-[#CEB466] to-[#9c8644] rounded-full shadow-lg flex items-center justify-center text-[#171229] hover:scale-110 active:scale-95 transition-all duration-300 z-50 fab-button"
         style={{
           boxShadow: '0 8px 24px rgba(206, 180, 102, 0.4), 0 0 0 0 rgba(206, 180, 102, 0.4)',
+          ...fab.style,
         }}
+        title="Messages (drag to move)"
+        aria-label="Messages"
       >
         <MessageCircle className="w-5 h-5 lg:w-6 lg:h-6" />
         {unreadCount > 0 && (

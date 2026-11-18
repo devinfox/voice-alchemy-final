@@ -250,7 +250,7 @@ export function TrainingLobby({ code, summary, onJoined }: Props) {
           <div className="flex-1 min-w-0 flex flex-col">
             <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-[#CEB466]/15 border border-[#CEB466]/30 text-[10px] sm:text-xs font-semibold text-[#CEB466] mb-2 self-start">
               <Presentation className="w-3.5 h-3.5" />
-              <span>Voice Alchemy · Training Session</span>
+              <span>Voice Alchemy · Group Class</span>
             </div>
             <h1 className="text-2xl sm:text-3xl font-bold text-white font-luxury">{summary.session.title}</h1>
             <p className="text-xs sm:text-sm text-gray-300 mt-1">Hosted by <span className="text-[#e0c97d]">{summary.hostName}</span></p>
@@ -285,7 +285,7 @@ export function TrainingLobby({ code, summary, onJoined }: Props) {
                 disabled={joining || mediaState === 'requesting' || summary.session.status === 'ended'}
                 className="flex-1 sm:flex-none px-6 py-3 rounded-xl bg-gradient-to-r from-[#CEB466] via-[#e2c974] to-[#CEB466] text-[#171229] text-sm font-bold shadow-lg shadow-[#CEB466]/20 hover:brightness-110 active:scale-95 transition-all disabled:opacity-50 disabled:cursor-not-allowed"
               >
-                {joining ? 'One moment…' : summary.viewer?.isHost ? 'Start hosting' : summary.session.waitingRoom ? 'Ask to join' : 'Join session'}
+                {joining ? 'One moment…' : summary.viewer?.isHost ? 'Start hosting' : summary.session.waitingRoom ? 'Ask to join' : 'Join class'}
               </button>
               {mediaState === 'blocked' && (
                 <button type="button" onClick={() => window.location.reload()} className="px-4 py-3 rounded-xl bg-white/[0.06] hover:bg-white/[0.12] border border-white/10 text-gray-200 text-xs font-semibold transition-colors">Try again</button>

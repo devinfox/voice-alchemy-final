@@ -130,7 +130,7 @@ export function ManageTrainingClient({ sessionId }: { sessionId: string }) {
           <div>
             <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-[#CEB466]/15 border border-[#CEB466]/30 text-[10px] sm:text-xs font-semibold text-[#CEB466] mb-2">
               <Presentation className="w-3.5 h-3.5" />
-              <span>{session.status === 'live' ? 'Live now' : session.status === 'ended' ? 'Ended' : 'Upcoming session'}</span>
+              <span>{session.status === 'live' ? 'Live now' : session.status === 'ended' ? 'Ended' : 'Upcoming class'}</span>
             </div>
             <h1 className="text-2xl sm:text-3xl md:text-4xl font-bold text-white font-luxury">{session.title}</h1>
             <p className="text-xs sm:text-sm text-gray-300 mt-1 inline-flex items-center gap-1.5"><CalendarClock className="w-3.5 h-3.5 text-[#CEB466]" />{whenLabel(session.scheduled_at)} · {session.duration_minutes} min</p>
@@ -212,7 +212,7 @@ export function ManageTrainingClient({ sessionId }: { sessionId: string }) {
       </section>
 
       <section className="glass-card p-5">
-        <h2 className="text-lg font-bold text-white font-luxury">Session options</h2>
+        <h2 className="text-lg font-bold text-white font-luxury">Class options</h2>
         <div className="mt-3 divide-y divide-white/10">
           {settingRows.map((row) => (
             <div key={row.key} className="flex items-center gap-4 py-3">
@@ -227,11 +227,11 @@ export function ManageTrainingClient({ sessionId }: { sessionId: string }) {
       </section>
 
       <section className="flex items-center justify-between gap-4 glass-card-subtle p-4">
-        <p className="text-xs text-gray-400">Deleting removes the session, its link and the invite list.</p>
+        <p className="text-xs text-gray-400">Deleting removes the class, its link and the invite list.</p>
         <button type="button" onClick={() => setConfirmDelete(true)} className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-red-500/10 hover:bg-red-500/20 border border-red-500/30 text-red-200 text-xs font-semibold transition-colors shrink-0"><Trash2 className="w-3.5 h-3.5" /> Delete session</button>
       </section>
 
-      <ConfirmDialog isOpen={confirmDelete} title="Delete this session?" message="The link stops working and the invite list is removed. This cannot be undone." confirmText="Delete session" destructive onConfirm={() => void deleteSession()} onCancel={() => setConfirmDelete(false)} />
+      <ConfirmDialog isOpen={confirmDelete} title="Delete this class?" message="The link stops working and the invite list is removed. This cannot be undone." confirmText="Delete session" destructive onConfirm={() => void deleteSession()} onCancel={() => setConfirmDelete(false)} />
     </div>
   )
 }

@@ -3,6 +3,7 @@
  * For use in Server Components, Server Actions, and Route Handlers
  */
 
+import { cache } from 'react'
 import { createServerClient } from '@supabase/ssr'
 import { cookies } from 'next/headers'
 import type { Profile } from '@/types/database.types'
@@ -38,11 +39,13 @@ export async function createClient() {
  * In this schema, profiles.id matches auth.users.id directly
  * Auto-creates profile if it doesn't exist
  */
-export async function getCurrentUser(): Promise<Profile | null> {
-  const supabase = await createClient()
-  const { data: { user } } = await supabase.auth.getUser()
-
+export const getCurrentUser = cache(async (): Promise<Profile | null> => {
+  // Cached per request: the layout and the page both ask for the profile, and
+  // without this each call cost two more round trips to Supabase.
+  const user = await getAuthUser()
   if (!user) return null
+
+  const supabase = await createClient()
 
   // Try to get existing profile
   let { data: profile } = await supabase
@@ -77,24 +80,23 @@ export async function getCurrentUser(): Promise<Profile | null> {
   }
 
   return profile
-}
+})
 
 /**
- * Auth user only (no profile). Used by ported email folder pages.
+ * Auth user only (no profile). Cached per request, so layouts, pages and
+ * helpers share one verification call instead of each making their own.
  */
-export async function getAuthUser() {
+export const getAuthUser = cache(async () => {
   const supabase = await createClient()
   const { data: { user } } = await supabase.auth.getUser()
   return user
-}
+})
 
 /**
  * Check if user is authenticated (for middleware/guards)
  */
 export async function isAuthenticated() {
-  const supabase = await createClient()
-  const { data: { user } } = await supabase.auth.getUser()
-  return !!user
+  return !!(await getAuthUser())
 }
 
 /**

@@ -3,6 +3,9 @@ import { getAuthedUser } from '@/lib/recital/server'
 import { verifyRecitalSession } from '@/lib/recital/session-token'
 import { FALLBACK_ICE_SERVERS, mergeIceServers, normalizeIceServers } from '@/lib/recital/ice'
 
+// Long enough for a long class or recital: TURN refreshes need the credential to stay valid.
+const TURN_TTL_SECONDS = 4 * 60 * 60
+
 export const dynamic = 'force-dynamic'
 export const runtime = 'nodejs'
 
@@ -13,9 +16,11 @@ export const runtime = 'nodejs'
  * credentials aren't handed to anonymous scrapers.
  *
  * Resolution order:
- *  1. Twilio Network Traversal Service (TWILIO_* env, plain REST — no SDK)
- *  2. TURN_URLS + TURN_USERNAME + TURN_CREDENTIAL env
- *  3. STUN + public OpenRelay TURN fallback
+ *  1. Cloudflare Realtime TURN (CLOUDFLARE_TURN_KEY_ID + CLOUDFLARE_TURN_API_TOKEN):
+ *     anycast, UDP/TCP/TLS on 443. Same as ../crm.
+ *  2. Twilio Network Traversal Service (TWILIO_* env, plain REST, no SDK)
+ *  3. TURN_URLS + TURN_USERNAME + TURN_CREDENTIAL env
+ *  4. STUN only. Peers that need a relay cannot connect.
  */
 export async function GET(request: NextRequest) {
   const header = request.headers.get('authorization') || ''
@@ -26,7 +31,35 @@ export async function GET(request: NextRequest) {
     if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
   }
 
-  // 1) Twilio NTS
+  // 1) Cloudflare Realtime TURN
+  const cfKeyId = process.env.CLOUDFLARE_TURN_KEY_ID
+  const cfToken = process.env.CLOUDFLARE_TURN_API_TOKEN
+  if (cfKeyId && cfToken) {
+    try {
+      const res = await fetch(
+        `https://rtc.live.cloudflare.com/v1/turn/keys/${cfKeyId}/credentials/generate-ice-servers`,
+        {
+          method: 'POST',
+          headers: { Authorization: `Bearer ${cfToken}`, 'Content-Type': 'application/json' },
+          body: JSON.stringify({ ttl: TURN_TTL_SECONDS }),
+          cache: 'no-store',
+        }
+      )
+      if (!res.ok) throw new Error(`Cloudflare TURN ${res.status}`)
+      const data = (await res.json()) as { iceServers?: unknown }
+      // The API returns an array of servers (older keys: a single object).
+      const raw = Array.isArray(data.iceServers) ? data.iceServers : [data.iceServers]
+      return NextResponse.json({
+        iceServers: mergeIceServers(normalizeIceServers(raw), FALLBACK_ICE_SERVERS),
+        source: 'cloudflare-turn',
+        ttl: TURN_TTL_SECONDS,
+      })
+    } catch (err) {
+      console.warn('[recitals/ice] Cloudflare TURN failed, trying the next provider:', err instanceof Error ? err.message : err)
+    }
+  }
+
+  // 2) Twilio NTS
   const accountSid = process.env.TWILIO_ACCOUNT_SID
   const authToken = process.env.TWILIO_AUTH_TOKEN
   const apiKeySid = process.env.TWILIO_API_KEY_SID
@@ -55,7 +88,7 @@ export async function GET(request: NextRequest) {
     }
   }
 
-  // 2) Explicit env TURN
+  // 3) Explicit env TURN
   const turnUrls = process.env.TURN_URLS || process.env.NEXT_PUBLIC_TURN_URL
   const turnUsername = process.env.TURN_USERNAME || process.env.NEXT_PUBLIC_TURN_USERNAME
   const turnCredential = process.env.TURN_CREDENTIAL || process.env.NEXT_PUBLIC_TURN_CREDENTIAL
@@ -72,6 +105,7 @@ export async function GET(request: NextRequest) {
     })
   }
 
-  // 3) Fallback
-  return NextResponse.json({ iceServers: FALLBACK_ICE_SERVERS, source: 'fallback', ttl: 3600 })
+  // 4) STUN only
+  console.warn('[recitals/ice] No TURN server configured; relay-dependent peers will not connect')
+  return NextResponse.json({ iceServers: FALLBACK_ICE_SERVERS, source: 'stun-only', ttl: 3600 })
 }

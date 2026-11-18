@@ -8,6 +8,8 @@ import {
   Video,
   Calendar as CalendarIcon,
   User,
+  Pencil,
+  Plus,
 } from 'lucide-react'
 import {
   format,
@@ -23,6 +25,8 @@ import {
   isToday,
 } from 'date-fns'
 import Link from 'next/link'
+import { EditWeeklyLessonButton, type LessonException, type WeeklyLessonOption } from '@/components/weekly-lesson-editor'
+import { buttonVariants } from '@/components/ui/button'
 
 interface User {
   id: string
@@ -42,14 +46,29 @@ interface Booking {
   instructor: User | User[]
 }
 
+interface ExceptionRow {
+  booking_id: string
+  original_date: string
+  kind: 'cancelled' | 'rescheduled'
+  new_date: string | null
+  new_time: string | null
+  new_duration_minutes: number | null
+}
+
 interface CalendarEvent {
   booking: Booking
   date: Date
   time: string
+  durationMinutes: number | null
+  /** The date this lesson normally falls on (differs from `date` when moved). */
+  originalDate: string
+  exception: LessonException | null
+  cancelled: boolean
 }
 
 interface CalendarViewProps {
   bookings: Booking[]
+  exceptions?: ExceptionRow[]
   currentUser: { id: string; first_name: string; last_name: string; name: string; role: string }
   userTimezone: string
   isTeacher: boolean
@@ -71,13 +90,26 @@ function getUserDisplayName(user: User | null): string {
   return 'Unknown'
 }
 
-export function CalendarView({ bookings, currentUser, userTimezone, isTeacher }: CalendarViewProps) {
+export function CalendarView({ bookings, exceptions = [], isTeacher }: CalendarViewProps) {
   const [currentDate, setCurrentDate] = useState(new Date())
   const [selectedDate, setSelectedDate] = useState<Date | null>(new Date())
   const [view, setView] = useState<'month' | 'week'>('month')
 
-  // Debug: log bookings on client
-  console.log('[Calendar Client] Received bookings:', bookings.length, bookings)
+  // Teachers can set, change or remove any of their students' weekly lessons.
+  const lessonOptions = useMemo<WeeklyLessonOption[]>(
+    () =>
+      bookings
+        .map((b) => ({
+          bookingId: b.id,
+          studentName: getUserDisplayName(getUser(b.student)),
+          dayOfWeek: b.lesson_day_of_week,
+          time: b.lesson_time,
+          durationMinutes: b.lesson_duration_minutes,
+          timezone: b.lesson_timezone,
+        }))
+        .sort((a, b) => a.studentName.localeCompare(b.studentName)),
+    [bookings]
+  )
 
   // Generate recurring events for the visible date range
   const eventsByDate = useMemo(() => {
@@ -89,6 +121,21 @@ export function CalendarView({ bookings, currentUser, userTimezone, isTeacher }:
     const rangeStart = startOfWeek(addDays(monthStart, -7))
     const rangeEnd = endOfWeek(addDays(monthEnd, 7))
 
+    const exceptionMap = new Map<string, LessonException>()
+    exceptions.forEach((row) => {
+      exceptionMap.set(`${row.booking_id}|${row.original_date}`, {
+        originalDate: row.original_date,
+        kind: row.kind,
+        newDate: row.new_date,
+        newTime: row.new_time,
+        newDurationMinutes: row.new_duration_minutes,
+      })
+    })
+    const push = (dateKey: string, event: CalendarEvent) => {
+      if (!grouped[dateKey]) grouped[dateKey] = []
+      grouped[dateKey].push(event)
+    }
+
     bookings.forEach((booking) => {
       // Skip bookings without recurring schedule
       if (booking.lesson_day_of_week === null || !booking.lesson_time) return
@@ -96,23 +143,39 @@ export function CalendarView({ bookings, currentUser, userTimezone, isTeacher }:
       // Generate events for each occurrence in the date range
       let day = rangeStart
       while (day <= rangeEnd) {
-        // Check if this day matches the lesson day of week
         if (day.getDay() === booking.lesson_day_of_week) {
           const dateKey = format(day, 'yyyy-MM-dd')
-          if (!grouped[dateKey]) {
-            grouped[dateKey] = []
+          const exception = exceptionMap.get(`${booking.id}|${dateKey}`) ?? null
+
+          if (exception?.kind === 'rescheduled' && exception.newDate && exception.newTime) {
+            // A moved lesson shows on its new date only.
+            const [y, m, d] = exception.newDate.split('-').map(Number)
+            push(exception.newDate, {
+              booking,
+              date: new Date(y, m - 1, d),
+              time: exception.newTime,
+              durationMinutes: exception.newDurationMinutes ?? booking.lesson_duration_minutes,
+              originalDate: dateKey,
+              exception,
+              cancelled: false,
+            })
+          } else {
+            push(dateKey, {
+              booking,
+              date: day,
+              time: booking.lesson_time,
+              durationMinutes: booking.lesson_duration_minutes,
+              originalDate: dateKey,
+              exception,
+              cancelled: exception?.kind === 'cancelled',
+            })
           }
-          grouped[dateKey].push({
-            booking,
-            date: day,
-            time: booking.lesson_time,
-          })
         }
         day = addDays(day, 1)
       }
     })
     return grouped
-  }, [bookings, currentDate])
+  }, [bookings, exceptions, currentDate])
 
   // Get events for selected date
   const selectedDateEvents = useMemo(() => {
@@ -190,7 +253,7 @@ export function CalendarView({ bookings, currentUser, userTimezone, isTeacher }:
             <button
               onClick={() => setView('month')}
               className={`px-4 py-2 text-sm rounded-lg transition-all ${
-                view === 'month' ? 'bg-blue-600 text-white' : 'text-gray-400 hover:text-white'
+                view === 'month' ? 'bg-gold-400 text-ink-900' : 'text-gray-400 hover:text-white'
               }`}
             >
               Month
@@ -198,7 +261,7 @@ export function CalendarView({ bookings, currentUser, userTimezone, isTeacher }:
             <button
               onClick={() => setView('week')}
               className={`px-4 py-2 text-sm rounded-lg transition-all ${
-                view === 'week' ? 'bg-blue-600 text-white' : 'text-gray-400 hover:text-white'
+                view === 'week' ? 'bg-gold-400 text-ink-900' : 'text-gray-400 hover:text-white'
               }`}
             >
               Week
@@ -220,7 +283,7 @@ export function CalendarView({ bookings, currentUser, userTimezone, isTeacher }:
           <div className="flex items-center justify-between mb-4">
             <button
               onClick={navigatePrev}
-              className="p-2.5 hover:bg-white/10 rounded-xl transition-colors text-gray-400 hover:text-blue-400"
+              className="p-2.5 hover:bg-white/10 rounded-xl transition-colors text-gray-400 hover:text-gold-400"
             >
               <ChevronLeft className="w-5 h-5" />
             </button>
@@ -231,7 +294,7 @@ export function CalendarView({ bookings, currentUser, userTimezone, isTeacher }:
             </h2>
             <button
               onClick={navigateNext}
-              className="p-2.5 hover:bg-white/10 rounded-xl transition-colors text-gray-400 hover:text-blue-400"
+              className="p-2.5 hover:bg-white/10 rounded-xl transition-colors text-gray-400 hover:text-gold-400"
             >
               <ChevronRight className="w-5 h-5" />
             </button>
@@ -260,13 +323,13 @@ export function CalendarView({ bookings, currentUser, userTimezone, isTeacher }:
                     key={index}
                     onClick={() => setSelectedDate(day)}
                     className={`min-h-[80px] p-1.5 rounded-xl text-left transition-all ${
-                      isSelected ? 'bg-blue-500/20 border border-blue-500/50' : 'hover:bg-white/5'
+                      isSelected ? 'bg-gold-400/15 border border-gold-400/50' : 'hover:bg-white/5'
                     } ${!isCurrentMonth ? 'opacity-40' : ''}`}
                   >
                     <div
                       className={`text-sm font-medium mb-1 ${
                         isToday(day)
-                          ? 'bg-blue-600 text-white w-6 h-6 rounded-full flex items-center justify-center'
+                          ? 'bg-gold-400 text-ink-900 font-semibold w-6 h-6 rounded-full flex items-center justify-center'
                           : 'text-gray-300 px-1'
                       }`}
                     >
@@ -276,7 +339,7 @@ export function CalendarView({ bookings, currentUser, userTimezone, isTeacher }:
                       {dayEvents.slice(0, 3).map((event, idx) => (
                         <div
                           key={`${event.booking.id}-${idx}`}
-                          className="text-xs px-1.5 py-0.5 rounded truncate bg-green-500/20 text-green-300"
+                          className={`text-xs px-1.5 py-0.5 rounded-md truncate ${event.cancelled ? 'bg-white/5 text-gray-500 line-through' : event.exception ? 'bg-amber-500/20 text-amber-300' : 'bg-green-500/20 text-green-300'}`}
                         >
                           {formatLessonTime(event.time)}
                         </div>
@@ -302,19 +365,19 @@ export function CalendarView({ bookings, currentUser, userTimezone, isTeacher }:
                     key={index}
                     onClick={() => setSelectedDate(day)}
                     className={`min-h-[300px] p-2 rounded-xl text-left transition-all ${
-                      isSelected ? 'bg-blue-500/20 border border-blue-500/50' : 'hover:bg-white/5'
+                      isSelected ? 'bg-gold-400/15 border border-gold-400/50' : 'hover:bg-white/5'
                     }`}
                   >
                     <div
                       className={`text-sm font-medium mb-2 ${
-                        isToday(day) ? 'bg-blue-600 text-white px-2 py-1 rounded-lg inline-block' : 'text-gray-300'
+                        isToday(day) ? 'bg-gold-400 text-ink-900 px-2 py-1 rounded-lg inline-block' : 'text-gray-300'
                       }`}
                     >
                       {format(day, 'EEE d')}
                     </div>
                     <div className="space-y-1">
                       {dayEvents.map((event, idx) => (
-                        <div key={`${event.booking.id}-${idx}`} className="text-xs p-1.5 rounded-lg bg-green-500/20 text-green-300">
+                        <div key={`${event.booking.id}-${idx}`} className={`text-xs p-1.5 rounded-lg ${event.cancelled ? 'bg-white/5 text-gray-500 line-through' : event.exception ? 'bg-amber-500/20 text-amber-300' : 'bg-green-500/20 text-green-300'}`}>
                           <div className="font-medium truncate">{formatLessonTime(event.time)}</div>
                           <div className="truncate">
                             {isTeacher
@@ -334,11 +397,22 @@ export function CalendarView({ bookings, currentUser, userTimezone, isTeacher }:
         {/* Selected Day Lessons */}
         <div className="bg-white/5 backdrop-blur-sm rounded-xl border border-white/10 p-5">
           <h3 className="text-lg font-semibold text-white mb-4 flex items-center gap-2">
-            <div className="w-8 h-8 rounded-xl bg-blue-500/20 flex items-center justify-center">
-              <CalendarIcon className="w-4 h-4 text-blue-400" />
+            <div className="w-8 h-8 rounded-xl bg-gold-400/15 flex items-center justify-center">
+              <CalendarIcon className="w-4 h-4 text-gold-400" />
             </div>
             {selectedDate ? format(selectedDate, 'EEEE, MMMM d') : 'Select a day'}
           </h3>
+
+          {isTeacher && lessonOptions.length > 0 && (
+            <EditWeeklyLessonButton
+              lessons={lessonOptions}
+              className={buttonVariants({ variant: 'outline', block: true, className: 'mb-4' })}
+              title="Set or change a student's weekly lesson"
+            >
+              <Plus />
+              <span>Add or change a weekly lesson</span>
+            </EditWeeklyLessonButton>
+          )}
 
           {selectedDateEvents.length === 0 ? (
             <div className="text-center py-8 text-gray-500">
@@ -358,10 +432,23 @@ export function CalendarView({ bookings, currentUser, userTimezone, isTeacher }:
                     : `/dashboard/my-lessons/${event.booking.id}`
 
                   return (
-                    <Link key={`${event.booking.id}-${idx}`} href={lessonPath} className="block">
-                      <div className="bg-white/5 hover:bg-white/10 transition-colors p-4 rounded-xl">
+                    <div key={`${event.booking.id}-${idx}`} className="relative">
+                    {isTeacher && (
+                      <EditWeeklyLessonButton
+                        lessons={lessonOptions.filter((o) => o.bookingId === event.booking.id)}
+                        initialBookingId={event.booking.id}
+                        occurrence={{ originalDate: event.originalDate, exception: event.exception }}
+                        className={buttonVariants({ size: 'sm', className: 'absolute right-3 top-3 z-10' })}
+                        title="Change this lesson"
+                      >
+                        <Pencil />
+                        <span>Edit</span>
+                      </EditWeeklyLessonButton>
+                    )}
+                    <Link href={lessonPath} className="block">
+                      <div className={`bg-white/5 hover:bg-white/10 transition-colors p-4 rounded-xl ${isTeacher ? 'pr-20' : ''}`}>
                         <div className="flex items-start gap-3">
-                          <div className="w-10 h-10 rounded-full bg-gradient-to-br from-green-500 to-teal-600 flex items-center justify-center text-white font-bold">
+                          <div className="w-10 h-10 rounded-full bg-gold-400 flex items-center justify-center text-ink-900 text-sm font-bold">
                             {getUserDisplayName(otherUser).slice(0, 2).toUpperCase()}
                           </div>
                           <div className="flex-1 min-w-0">
@@ -373,18 +460,31 @@ export function CalendarView({ bookings, currentUser, userTimezone, isTeacher }:
                               <Clock className="w-3 h-3" />
                               <span>
                                 {formatLessonTime(event.time)}
-                                {event.booking.lesson_duration_minutes && ` (${event.booking.lesson_duration_minutes} min)`}
+                                {event.durationMinutes && ` (${event.durationMinutes} min)`}
                               </span>
                             </div>
 
-                            <div className="flex items-center gap-2 text-xs text-green-400">
-                              <Video className="w-3 h-3" />
-                              <span>Weekly Lesson</span>
-                            </div>
+                            {event.cancelled ? (
+                              <div className="flex items-center gap-2 text-xs text-red-300">
+                                <Video className="w-3 h-3" />
+                                <span>Cancelled this week</span>
+                              </div>
+                            ) : event.exception ? (
+                              <div className="flex items-center gap-2 text-xs text-amber-300">
+                                <Video className="w-3 h-3" />
+                                <span>Moved from its usual time</span>
+                              </div>
+                            ) : (
+                              <div className="flex items-center gap-2 text-xs text-green-400">
+                                <Video className="w-3 h-3" />
+                                <span>Weekly Lesson</span>
+                              </div>
+                            )}
                           </div>
                         </div>
                       </div>
                     </Link>
+                    </div>
                   )
                 })}
             </div>

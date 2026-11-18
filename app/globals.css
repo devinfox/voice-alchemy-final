@@ -37,11 +37,41 @@
   --neon-pink: #ec4899;
 }
 
+/* ==========================================================================
+   DESIGN TEMPLATE  (the rules every screen follows; see components/ui/README.md)
+   Colour   gold-* is the one accent, ink-* the surfaces. Green/red/amber/blue
+            are reserved for meaning (success, danger, warning, info).
+   Shape    controls 12px (rounded-xl) · cards and panels 16px (rounded-2xl) ·
+            dialogs 24px (rounded-3xl) · pills, avatars, floating buttons full.
+            A shape nested inside padding uses the next radius down.
+   Size     controls are 32 / 40 / 48px tall (sm / md / lg). Icons 14 / 16 / 20px.
+   Space    4px grid. Panels pad 16px, cards 20-24px, gaps between cards 16px,
+            gaps between page sections 24px.
+   Type     Inter for everything, Cormorant Garamond for h1-h3. Sizes: 12 caption,
+            14 body, 16 card title, 20 section title, 30-36 page title.
+            Nothing smaller than 11px.
+   ========================================================================== */
 @theme inline {
   --color-background: var(--background);
   --color-foreground: var(--foreground);
-  --font-sans: var(--font-geist-sans);
-  --font-mono: var(--font-geist-mono);
+
+  --color-gold-300: #e0c97d;
+  --color-gold-400: #ceb466;
+  --color-gold-500: #b59d52;
+  --color-gold-600: #9c8644;
+
+  --color-ink-950: #0f0b1e;
+  --color-ink-900: #171229;
+  --color-ink-800: #1b1233;
+  --color-ink-700: #1f1839;
+  /* Two typefaces only: Inter for everything, Cormorant Garamond for headings.
+     font-mono is used for figures, so it stays Inter with aligned digits. */
+  --font-sans: var(--font-inter), 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  --font-mono: var(--font-inter), 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+}
+
+.font-mono {
+  font-variant-numeric: tabular-nums;
 }
 
 body {
@@ -489,8 +519,9 @@ h1, h2, h3, .font-luxury {
   backdrop-filter: blur(10px);
   -webkit-backdrop-filter: blur(10px);
   border: 1px solid rgba(255, 255, 255, 0.1);
-  border-radius: 8px;
+  border-radius: 12px;
   color: white;
+  min-height: 2.5rem;
   padding: 0.5rem 2.5rem 0.5rem 0.75rem;
   transition: all 0.2s ease;
   background-image: url("data:image/svg+xml,%3csvg xmlns='http://www.w3.org/2000/svg' fill='none' viewBox='0 0 20 20'%3e%3cpath stroke='%23CEB466' stroke-linecap='round' stroke-linejoin='round' stroke-width='1.5' d='m6 8 4 4 4-4'/%3e%3c/svg%3e");
@@ -795,4 +826,55 @@ select.glass-input option {
 }
 .recital-float {
   animation: recital-float-up 3.6s ease-out forwards;
+}
+
+
+/* ---- Design template: shared behaviours ---------------------------------- */
+
+/* One visible keyboard-focus style everywhere. */
+:where(a, button, input, select, textarea, [role='button'], [tabindex]):focus-visible {
+  outline: 2px solid rgba(var(--accent-rgb), 0.8);
+  outline-offset: 2px;
+}
+
+/* Sliders share one look. */
+.va-range {
+  appearance: none;
+  -webkit-appearance: none;
+  height: 0.5rem;
+  border-radius: 9999px;
+  background: rgba(255, 255, 255, 0.12);
+  accent-color: var(--accent);
+  cursor: pointer;
+}
+.va-range:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+.va-range::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  width: 1rem;
+  height: 1rem;
+  border-radius: 9999px;
+  background: var(--accent);
+  border: 2px solid var(--background);
+}
+.va-range::-moz-range-thumb {
+  width: 1rem;
+  height: 1rem;
+  border-radius: 9999px;
+  background: var(--accent);
+  border: 2px solid var(--background);
+}
+
+/* Respect the system "reduce motion" setting. */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
 }

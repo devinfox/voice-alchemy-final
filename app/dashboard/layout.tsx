@@ -1,7 +1,7 @@
 import type { Metadata } from 'next'
 import { redirect } from 'next/navigation'
 import { NOINDEX } from '@/lib/seo'
-import { createClient, getCurrentUser } from '@/lib/supabase-server'
+import { getAuthUser, getCurrentUser } from '@/lib/supabase-server'
 import { Sidebar } from '@/components/sidebar'
 import { Header } from '@/components/header'
 import { MobileNav } from '@/components/mobile-nav'
@@ -15,8 +15,7 @@ export default async function DashboardLayout({
 }: {
   children: React.ReactNode
 }) {
-  const supabase = await createClient()
-  const { data: { user } } = await supabase.auth.getUser()
+  const user = await getAuthUser()
 
   if (!user) {
     redirect('/login')
@@ -55,7 +54,8 @@ export default async function DashboardLayout({
         <Header user={profile} />
 
         {/* Page Content */}
-        <main className="flex-1 p-3 sm:p-4 lg:p-6 w-full max-w-full">
+        {/* Extra bottom room so page footers (pagination etc.) clear the floating buttons */}
+        <main className="flex-1 p-3 sm:p-4 lg:p-6 pb-24 sm:pb-24 lg:pb-24 w-full max-w-full">
           {children}
         </main>
       </div>

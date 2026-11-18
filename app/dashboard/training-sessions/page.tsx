@@ -3,7 +3,7 @@ import { redirect } from 'next/navigation'
 import { getCurrentUser } from '@/lib/supabase-server'
 import { TrainingSessionsClient } from './training-client'
 
-export const metadata: Metadata = { title: 'Training Sessions', description: 'Host community training sessions.' }
+export const metadata: Metadata = { title: 'Group Classes', description: 'Host live group classes.' }
 
 export default async function TrainingSessionsPage() {
   const user = await getCurrentUser()

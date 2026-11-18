@@ -53,7 +53,7 @@ const teacherNavigation: NavItem[] = [
     group: true,
     children: [
       { name: 'Recitals', href: '/dashboard/recitals', icon: Theater },
-      { name: 'Training Sessions', href: '/dashboard/training-sessions', icon: Presentation },
+      { name: 'Group Classes', href: '/dashboard/training-sessions', icon: Presentation },
     ],
   },
   { name: 'My Students', href: '/dashboard/students', icon: Users },

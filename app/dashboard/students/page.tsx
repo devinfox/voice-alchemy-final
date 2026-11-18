@@ -239,7 +239,7 @@ export default function StudentsPage() {
       setError(null)
       try {
         const [rosterRes, statsRes] = await Promise.all([
-          fetch('/api/teachers/students?limit=100&sortBy=name'),
+          fetch('/api/teachers/students?limit=1000&sortBy=name&scope=mine'),
           fetch('/api/teachers/students/stats'),
         ])
         const rosterData = await rosterRes.json()
@@ -402,7 +402,7 @@ export default function StudentsPage() {
         <section className="grid grid-cols-2 lg:grid-cols-4 gap-3">
           <div className="glass-card-subtle rounded-2xl border border-white/[0.1] p-4 flex items-center justify-between">
             <div>
-              <p className="text-[10px] font-bold uppercase tracking-wider text-gray-500">Active Students</p>
+              <p className="text-[10px] font-bold uppercase tracking-wider text-gray-500">My Students</p>
               <p className="text-2xl font-bold text-white font-mono mt-0.5">{roster.length}</p>
             </div>
             <Users className="w-5 h-5 text-[#CEB466]" />

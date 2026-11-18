@@ -37,10 +37,10 @@ export function TrainingSessionsClient() {
     try {
       const res = await fetch('/api/training-sessions', { cache: 'no-store' })
       const data = await res.json()
-      if (!res.ok) throw new Error(data.error || 'Failed to load sessions')
+      if (!res.ok) throw new Error(data.error || 'Failed to load group classes')
       setSessions(data.sessions || [])
     } catch (e) {
-      setError(e instanceof Error ? e.message : 'Failed to load sessions')
+      setError(e instanceof Error ? e.message : 'Failed to load group classes')
     } finally {
       setLoading(false)
     }
@@ -65,10 +65,10 @@ export function TrainingSessionsClient() {
     setDeleting(true)
     try {
       const res = await fetch(`/api/training-sessions/${pendingDelete.id}`, { method: 'DELETE' })
-      if (!res.ok) throw new Error('Could not delete session')
+      if (!res.ok) throw new Error('Could not delete the class')
       setSessions((prev) => prev.filter((s) => s.id !== pendingDelete.id))
     } catch (e) {
-      setError(e instanceof Error ? e.message : 'Could not delete session')
+      setError(e instanceof Error ? e.message : 'Could not delete the class')
     } finally {
       setDeleting(false)
       setPendingDelete(null)
@@ -104,7 +104,7 @@ export function TrainingSessionsClient() {
         <Link href={`/dashboard/training-sessions/${s.id}`} className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-white/[0.06] hover:bg-white/[0.12] border border-white/10 text-gray-200 text-xs font-semibold transition-colors">
           <Settings2 className="w-3.5 h-3.5 text-[#CEB466]" /> Manage
         </Link>
-        <button type="button" onClick={() => setPendingDelete(s)} className="ml-auto p-2 rounded-xl bg-white/[0.04] hover:bg-red-500/15 border border-white/10 hover:border-red-500/30 text-gray-400 hover:text-red-200 transition-colors" title="Delete session" aria-label={`Delete ${s.title}`}>
+        <button type="button" onClick={() => setPendingDelete(s)} className="ml-auto p-2 rounded-xl bg-white/[0.04] hover:bg-red-500/15 border border-white/10 hover:border-red-500/30 text-gray-400 hover:text-red-200 transition-colors" title="Delete class" aria-label={`Delete ${s.title}`}>
           <Trash2 className="w-3.5 h-3.5" />
         </button>
       </div>
@@ -119,13 +119,13 @@ export function TrainingSessionsClient() {
             <Presentation className="w-3.5 h-3.5" />
             <span>Voice Alchemy · Community</span>
           </div>
-          <h1 className="text-2xl sm:text-3xl md:text-4xl font-bold text-white font-luxury">Training Sessions</h1>
+          <h1 className="text-2xl sm:text-3xl md:text-4xl font-bold text-white font-luxury">Group Classes</h1>
           <p className="text-xs sm:text-sm text-gray-300 mt-1 max-w-2xl leading-relaxed">
-            Host a community session anyone can join with a link. Invite people ahead of time or admit them from the waiting room, then talk, share your screen and take questions.
+            Host a group class anyone can join with a link. Invite people ahead of time or admit them from the waiting room, then talk, share your screen and take questions.
           </p>
         </div>
         <button type="button" onClick={() => setCreating(true)} className="inline-flex items-center gap-2 px-4 py-2.5 rounded-xl bg-gradient-to-r from-[#CEB466] via-[#e2c974] to-[#CEB466] text-[#171229] text-xs font-bold shadow-lg shadow-[#CEB466]/20 hover:brightness-110 active:scale-95 transition-all self-start md:self-auto">
-          <Plus className="w-4 h-4" /> New session
+          <Plus className="w-4 h-4" /> New group class
         </button>
       </div>
 
@@ -136,8 +136,8 @@ export function TrainingSessionsClient() {
       ) : sessions.length === 0 ? (
         <div className="glass-card p-10 text-center">
           <div className="w-14 h-14 mx-auto rounded-2xl bg-[#CEB466]/15 border border-[#CEB466]/30 flex items-center justify-center mb-4"><Presentation className="w-6 h-6 text-[#CEB466]" /></div>
-          <h2 className="text-xl font-bold text-white font-luxury">No sessions yet</h2>
-          <p className="text-sm text-gray-400 mt-1 max-w-md mx-auto">Create your first community session and share the link anywhere.</p>
+          <h2 className="text-xl font-bold text-white font-luxury">No group classes yet</h2>
+          <p className="text-sm text-gray-400 mt-1 max-w-md mx-auto">Create your first group class and share the link anywhere.</p>
         </div>
       ) : (
         <>
@@ -149,7 +149,7 @@ export function TrainingSessionsClient() {
           )}
           {past.length > 0 && (
             <section>
-              <h2 className="text-[10px] font-bold uppercase tracking-wider text-gray-500 mb-3">Past sessions</h2>
+              <h2 className="text-[10px] font-bold uppercase tracking-wider text-gray-500 mb-3">Past classes</h2>
               <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">{past.map(card)}</div>
             </section>
           )}
@@ -157,7 +157,7 @@ export function TrainingSessionsClient() {
       )}
 
       {creating && <CreateSessionModal onClose={() => setCreating(false)} onCreated={() => { setCreating(false); void load() }} />}
-      <ConfirmDialog isOpen={!!pendingDelete} title={`Delete "${pendingDelete?.title ?? ''}"?`} message="The link stops working and the invite list is removed. This cannot be undone." confirmText={deleting ? 'Deleting…' : 'Delete session'} destructive onConfirm={() => void deleteSession()} onCancel={() => !deleting && setPendingDelete(null)} />
+      <ConfirmDialog isOpen={!!pendingDelete} title={`Delete "${pendingDelete?.title ?? ''}"?`} message="The link stops working and the invite list is removed. This cannot be undone." confirmText={deleting ? 'Deleting…' : 'Delete class'} destructive onConfirm={() => void deleteSession()} onCancel={() => !deleting && setPendingDelete(null)} />
     </div>
   )
 }
@@ -183,7 +183,7 @@ function CreateSessionModal({ onClose, onCreated }: { onClose: () => void; onCre
   }, [onClose])
 
   const submit = async () => {
-    if (!title.trim()) return setError('Give the session a name.')
+    if (!title.trim()) return setError('Give the class a name.')
     setBusy(true)
     setError(null)
     try {
@@ -193,10 +193,10 @@ function CreateSessionModal({ onClose, onCreated }: { onClose: () => void; onCre
         body: JSON.stringify({ title: title.trim(), description: description.trim(), scheduledAt: new Date(when).toISOString(), durationMinutes: duration, settings: { waitingRoom } }),
       })
       const data = await res.json()
-      if (!res.ok) throw new Error(data.error || 'Could not create session')
+      if (!res.ok) throw new Error(data.error || 'Could not create the class')
       onCreated()
     } catch (e) {
-      setError(e instanceof Error ? e.message : 'Could not create session')
+      setError(e instanceof Error ? e.message : 'Could not create the class')
       setBusy(false)
     }
   }
@@ -204,11 +204,11 @@ function CreateSessionModal({ onClose, onCreated }: { onClose: () => void; onCre
   return (
     <div className="fixed inset-0 z-[9990] flex items-center justify-center p-4">
       <div className="fixed inset-0 bg-black/75 backdrop-blur-[2px]" onClick={onClose} />
-      <div role="dialog" aria-modal="true" aria-label="New session" className="relative modal-solid rounded-2xl border-2 border-[#CEB466]/50 shadow-2xl shadow-black/80 w-full max-w-lg p-5 sm:p-6 animate-slide-up">
+      <div role="dialog" aria-modal="true" aria-label="New group class" className="relative modal-solid rounded-2xl border-2 border-[#CEB466]/50 shadow-2xl shadow-black/80 w-full max-w-lg p-5 sm:p-6 animate-slide-up">
         <div className="flex items-start gap-3 mb-5">
           <div className="w-9 h-9 rounded-xl flex items-center justify-center shrink-0 bg-[#CEB466]/15 text-[#CEB466] border border-[#CEB466]/30"><Presentation className="w-5 h-5" /></div>
           <div>
-            <h3 className="text-base font-bold text-white font-luxury">New training session</h3>
+            <h3 className="text-base font-bold text-white font-luxury">New group class</h3>
             <p className="text-xs text-gray-300 mt-0.5">You&apos;ll get a share link right away.</p>
           </div>
         </div>

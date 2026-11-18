@@ -1,26 +1,43 @@
 /**
- * ICE server configuration for the recital mesh. Media stays peer-to-peer;
- * these servers only help NAT traversal. Safe to import on client and server.
+ * ICE server configuration for the recital / group-class mesh. Media stays
+ * peer-to-peer; these servers only help NAT traversal. Safe to import on
+ * client and server.
+ *
+ * The real servers come from /api/recitals/ice (Cloudflare TURN, Twilio, or
+ * TURN_* env). These static entries are the no-network fallback and the STUN
+ * that is always merged in. There is deliberately no public TURN here: the
+ * free OpenRelay service this used to list is gone, and a dead relay in the
+ * list only slows connection setup down. (Same setup as ../crm.)
  */
 
 export const FALLBACK_ICE_SERVERS: RTCIceServer[] = [
   { urls: 'stun:stun.l.google.com:19302' },
   { urls: 'stun:stun1.l.google.com:19302' },
   { urls: 'stun:stun.cloudflare.com:3478' },
-  // Public OpenRelay TURN keeps symmetric-NAT / corporate guests connectable
-  // when no private TURN is configured. Configure TURN_* or Twilio for prod.
-  { urls: 'turn:openrelay.metered.ca:80', username: 'openrelayproject', credential: 'openrelayproject' },
-  { urls: 'turn:openrelay.metered.ca:443', username: 'openrelayproject', credential: 'openrelayproject' },
-  { urls: 'turn:openrelay.metered.ca:443?transport=tcp', username: 'openrelayproject', credential: 'openrelayproject' },
 ]
+
+/**
+ * How many ICE candidate sets the browser pre-gathers before negotiation.
+ * Every connection is bundled onto one transport, so one is all a call uses;
+ * a larger pool only opens extra relay allocations per peer for nothing.
+ */
+export const ICE_CANDIDATE_POOL_SIZE = 1
 
 export function defaultIceConfiguration(): RTCConfiguration {
   return {
     iceServers: FALLBACK_ICE_SERVERS,
-    iceCandidatePoolSize: 4,
+    iceCandidatePoolSize: ICE_CANDIDATE_POOL_SIZE,
     bundlePolicy: 'max-bundle',
     rtcpMuxPolicy: 'require',
   }
+}
+
+/** True when at least one server in the list is a TURN relay. */
+export function hasTurnServer(servers: RTCIceServer[]): boolean {
+  return servers.some((s) => {
+    const urls = Array.isArray(s.urls) ? s.urls : [s.urls]
+    return urls.some((u) => /^turns?:/i.test(u))
+  })
 }
 
 export function normalizeIceServers(raw: unknown): RTCIceServer[] {
@@ -43,7 +60,7 @@ export function mergeIceServers(primary: RTCIceServer[], extra: RTCIceServer[]):
   const seen = new Set<string>()
   const out: RTCIceServer[] = []
   for (const s of [...primary, ...extra]) {
-    const key = JSON.stringify(s.urls)
+    const key = JSON.stringify({ urls: s.urls, username: s.username || '' })
     if (seen.has(key)) continue
     seen.add(key)
     out.push(s)

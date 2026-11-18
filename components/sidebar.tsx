@@ -52,7 +52,7 @@ const teacherNavigation: NavItem[] = [
     group: true,
     children: [
       { name: 'Recitals', href: '/dashboard/recitals', icon: Theater },
-      { name: 'Training Sessions', href: '/dashboard/training-sessions', icon: Presentation },
+      { name: 'Group Classes', href: '/dashboard/training-sessions', icon: Presentation },
     ],
   },
   { name: 'My Students', href: '/dashboard/students', icon: Users },
@@ -197,6 +197,9 @@ export function Sidebar({ user, userEmail }: SidebarProps) {
       <Link
         key={item.name}
         href={item.href}
+        // The email pages carry the large message editor; fetch that code when
+        // someone actually goes there, not on every dashboard page view.
+        prefetch={item.href.startsWith('/dashboard/email') ? false : undefined}
         className={`flex items-center gap-3 px-3.5 py-3 ${hasToggle ? 'pr-11' : ''} rounded-2xl text-xs sm:text-sm font-semibold transition-all duration-300 ${
           isActive
             ? 'bg-gradient-to-r from-[#CEB466]/20 via-[#CEB466]/10 to-transparent text-[#CEB466] border border-[#CEB466]/40 shadow-lg shadow-[#CEB466]/10'

@@ -1,9 +1,10 @@
 'use client'
 
 import { useState, useEffect, useRef, useCallback } from 'react'
-import { createPortal } from 'react-dom'
 import Script from 'next/script'
-import { Music, Play, Square, Save, RotateCcw, ChevronUp, ChevronDown, Mic, MicOff, Check, X, ArrowUp, ArrowDown, ArrowUpDown, Maximize2, Minimize2, Volume2, VolumeX } from 'lucide-react'
+import { Music, Play, Square, Save, RotateCcw, ChevronUp, ChevronDown, Mic, MicOff, Check, ArrowUp, ArrowDown, ArrowUpDown, Volume2, VolumeX } from 'lucide-react'
+import { Button, buttonVariants } from '@/components/ui/button'
+import { ToolDialog } from '@/components/ui/tool-dialog'
 import { analyzeBuffer } from '@/lib/pitch-detection'
 import { SpotlightTour, SpotlightTriggerButton, SpotlightStep } from '@/components/spotlight-tour'
 
@@ -17,19 +18,19 @@ const scaleTourSteps: SpotlightStep[] = [
   {
     target: '[data-tour="listen-scale-btn"]',
     title: '2. Listen First',
-    content: 'Tap "1. Listen to Scale" to hear the whole scale played for you, so your ear knows what the notes should sound like before you sing.',
+    content: 'Tap "Play Scale" to hear the whole scale played once for you, so your ear knows what the notes should sound like before you sing.',
     placement: 'bottom',
   },
   {
     target: '[data-tour="start-practice-btn"]',
     title: '3. Sing the Scale',
-    content: 'Tap "2. Start Practice" and sing each note one at a time. When you finish, you get a score for the whole scale.',
+    content: 'Tap "Start Practice" and sing each note one at a time. When you finish, you get a score for the whole scale.',
     placement: 'bottom',
   },
   {
     target: '[data-tour="scale-notes-strip"]',
     title: '4. Follow the Notes',
-    content: 'These boxes are the notes of your scale — tap any box to hear its note. Once you press "2. Start Practice", the pink box is the note to sing. Hold it steady for a moment and it turns green, then the next box lights up pink.',
+    content: 'These boxes are the notes of your scale — tap any box to hear its note. Once you press "Start Practice", the pink box is the note to sing. Hold it steady for a moment and it turns green, then the next box lights up pink.',
     placement: 'top',
   },
 ]
@@ -627,50 +628,12 @@ export default function ScaleTrainer({ variant = 'floating' }: ScaleTrainerProps
 
   // Render the trainer content
   const renderTrainer = () => (
-    <div className={`${isFullscreen ? 'fixed inset-0 z-[60] bg-[#0d0d1a]' : ''}`}>
-      <div className={`${isFullscreen ? 'h-full overflow-y-auto p-6' : ''}`}>
-        {/* Header */}
-        <div className="flex items-center justify-between gap-3 mb-6">
-          <div className="flex min-w-0 items-center gap-3">
-            <div className="w-10 h-10 flex-shrink-0 rounded-xl bg-gradient-to-br from-pink-500/20 to-purple-500/20 flex items-center justify-center">
-              <Music className="w-5 h-5 text-pink-400" />
-            </div>
-            <div className="min-w-0">
-              <h2 id="scale-trainer-title" className="text-lg font-semibold text-white truncate">Scale Trainer</h2>
-              <p className="hidden sm:block text-sm text-white/50">Practice scales with real-time feedback</p>
-            </div>
-          </div>
-
-          <div className="flex shrink-0 items-center gap-1.5 sm:gap-2">
-            <SpotlightTriggerButton tourKey="scale_trainer_v4" label="How to" />
-            {isListening && (
-              <div className="flex items-center gap-2 text-sm text-green-400 sm:mr-2">
-                <Mic size={16} />
-                <span className="hidden sm:inline">Listening</span>
-              </div>
-            )}
-            <button
-              onClick={() => setIsFullscreen(!isFullscreen)}
-              className="hidden sm:block p-2 hover:bg-white/10 rounded-lg transition-colors"
-            >
-              {isFullscreen ? <Minimize2 size={18} className="text-white/70" /> : <Maximize2 size={18} className="text-white/70" />}
-            </button>
-            <button
-              onClick={handleClose}
-              className="p-2 hover:bg-white/10 rounded-lg transition-colors"
-            >
-              <X size={18} className="text-white/70" />
-            </button>
-          </div>
-        </div>
-
-        {/* Real On-Page Spotlight Tour */}
-        <SpotlightTour tourKey="scale_trainer_v4" steps={scaleTourSteps} />
-
+    <div>
+      <div>
         {/* Settings */}
-        <div data-tour="scale-settings" className="grid grid-cols-2 md:grid-cols-5 gap-4 mb-6">
+        <div data-tour="scale-settings" className="grid grid-cols-2 md:grid-cols-5 gap-4 mb-4">
           <div>
-            <label className="block text-xs text-white/50 mb-1">Scale</label>
+            <label className="mb-1.5 block text-xs text-gray-400">Scale</label>
             <select
               value={scaleType}
               onChange={(e) => setScaleType(e.target.value)}
@@ -684,7 +647,7 @@ export default function ScaleTrainer({ variant = 'floating' }: ScaleTrainerProps
           </div>
 
           <div>
-            <label className="block text-xs text-white/50 mb-1">Root Note</label>
+            <label className="mb-1.5 block text-xs text-gray-400">Root Note</label>
             <select
               value={rootNote}
               onChange={(e) => setRootNote(e.target.value)}
@@ -698,20 +661,20 @@ export default function ScaleTrainer({ variant = 'floating' }: ScaleTrainerProps
           </div>
 
           <div>
-            <label className="block text-xs text-white/50 mb-1">Octave</label>
+            <label className="mb-1.5 block text-xs text-gray-400">Octave</label>
             <div className="flex items-center gap-2">
               <button
                 onClick={() => setOctave(o => Math.max(2, o - 1))}
                 disabled={isPracticing || octave <= 2}
-                className="glass-button p-2 rounded-lg disabled:opacity-50"
+                className={buttonVariants({ size: 'icon' })}
               >
                 <ChevronDown size={16} />
               </button>
-              <span className="text-white font-mono w-8 text-center">{octave}</span>
+              <span className="w-8 text-center font-semibold tabular-nums text-white">{octave}</span>
               <button
                 onClick={() => setOctave(o => Math.min(6, o + 1))}
                 disabled={isPracticing || octave >= 6}
-                className="glass-button p-2 rounded-lg disabled:opacity-50"
+                className={buttonVariants({ size: 'icon' })}
               >
                 <ChevronUp size={16} />
               </button>
@@ -719,20 +682,20 @@ export default function ScaleTrainer({ variant = 'floating' }: ScaleTrainerProps
           </div>
 
           <div>
-            <label className="block text-xs text-white/50 mb-1">Speed (BPM)</label>
+            <label className="mb-1.5 block text-xs text-gray-400">Speed</label>
             <div className="flex items-center gap-2">
               <button
                 onClick={() => setTempo(t => Math.max(40, t - 10))}
                 disabled={isPracticing || tempo <= 40}
-                className="glass-button p-2 rounded-lg disabled:opacity-50"
+                className={buttonVariants({ size: 'icon' })}
               >
                 <ChevronDown size={16} />
               </button>
-              <span className="text-white font-mono w-10 text-center">{tempo}</span>
+              <span className="w-10 text-center font-semibold tabular-nums text-white">{tempo}</span>
               <button
                 onClick={() => setTempo(t => Math.min(200, t + 10))}
                 disabled={isPracticing || tempo >= 200}
-                className="glass-button p-2 rounded-lg disabled:opacity-50"
+                className={buttonVariants({ size: 'icon' })}
               >
                 <ChevronUp size={16} />
               </button>
@@ -740,11 +703,11 @@ export default function ScaleTrainer({ variant = 'floating' }: ScaleTrainerProps
           </div>
 
           <div>
-            <label className="block text-xs text-white/50 mb-1">Direction</label>
+            <label className="mb-1.5 block text-xs text-gray-400">Direction</label>
             <button
               onClick={() => setDirection(d => d === 'ascending' ? 'descending' : d === 'descending' ? 'both' : 'ascending')}
               disabled={isPracticing}
-              className="glass-button px-4 py-2 rounded-lg flex items-center gap-2 text-sm w-full justify-center"
+              className={buttonVariants({ block: true })}
             >
               {getDirectionIcon()}
               <span className="capitalize">{direction}</span>
@@ -754,14 +717,14 @@ export default function ScaleTrainer({ variant = 'floating' }: ScaleTrainerProps
 
         {/* Sensitivity */}
         <div className="mb-6">
-          <label className="block text-xs text-white/50 mb-2">Mic Sensitivity: {sensitivity}%</label>
+          <label className="mb-1.5 block text-xs text-gray-400">Mic sensitivity: {sensitivity}%</label>
           <input
             type="range"
             min="0"
             max="100"
             value={sensitivity}
             onChange={(e) => setSensitivity(Number(e.target.value))}
-            className="w-full accent-pink-500"
+            className="va-range w-full"
           />
         </div>
 
@@ -770,36 +733,13 @@ export default function ScaleTrainer({ variant = 'floating' }: ScaleTrainerProps
           <div className="flex items-center justify-between mb-3">
             <div className="flex items-center gap-2">
               <span className="text-sm text-white/70">Scale: </span>
-              <span className="text-pink-400 font-medium">
+              <span className="text-gold-400 font-medium">
                 {rootNote} {SCALE_DEFINITIONS[scaleType]?.name}
               </span>
               <span className="text-white/40 text-xs">
                 ({SCALE_DEFINITIONS[scaleType]?.description})
               </span>
             </div>
-
-            {/* Play Scale Button */}
-            <button
-              onClick={isPlayingScale ? stopScalePlayback : playEntireScale}
-              disabled={isPracticing}
-              className={`flex items-center gap-2 px-3 py-1.5 rounded-lg text-sm font-medium transition-all ${
-                isPlayingScale
-                  ? 'bg-pink-500/20 text-pink-400 border border-pink-500/50'
-                  : 'glass-button hover:bg-white/10'
-              } ${isPracticing ? 'opacity-50 cursor-not-allowed' : ''}`}
-            >
-              {isPlayingScale ? (
-                <>
-                  <Square size={14} />
-                  Stop
-                </>
-              ) : (
-                <>
-                  <Volume2 size={14} />
-                  Play Scale
-                </>
-              )}
-            </button>
           </div>
 
           {/* Volume Control */}
@@ -811,7 +751,7 @@ export default function ScaleTrainer({ variant = 'floating' }: ScaleTrainerProps
               max="100"
               value={volume * 100}
               onChange={(e) => setVolume(Number(e.target.value) / 100)}
-              className="w-24 accent-pink-500"
+              className="va-range w-24"
             />
             <Volume2 size={14} className="text-white/40" />
           </div>
@@ -831,17 +771,17 @@ export default function ScaleTrainer({ variant = 'floating' }: ScaleTrainerProps
                   className={`
                     relative px-4 py-3 rounded-xl border transition-all duration-300 cursor-pointer
                     ${isPlaying ? 'border-yellow-500 bg-yellow-500/20 scale-105 shadow-lg shadow-yellow-500/30' : ''}
-                    ${isCurrentNote && !isPlaying ? 'border-pink-500 bg-pink-500/20 scale-110' : ''}
-                    ${isCompleted && !isPlaying ? 'border-green-500/50 bg-green-500/10' : ''}
+                    ${isCurrentNote && !isPlaying ? 'border-gold-400 bg-gold-400/15 scale-110' : ''}
+                    ${isCompleted && !isPlaying ? 'border-emerald-500/50 bg-emerald-500/10' : ''}
                     ${!isCurrentNote && !isCompleted && !isPlaying ? 'border-white/10 bg-white/5 hover:bg-white/10 hover:border-white/20' : ''}
                     ${isPracticing ? 'cursor-default' : ''}
                   `}
                 >
                   <div className="text-center">
                     <div className={`text-lg font-bold ${
-                      isPlaying ? 'text-yellow-400' :
-                      isCurrentNote ? 'text-pink-400' :
-                      isCompleted ? 'text-green-400' :
+                      isPlaying ? 'text-amber-400' :
+                      isCurrentNote ? 'text-gold-400' :
+                      isCompleted ? 'text-emerald-400' :
                       'text-white/70'
                     }`}>
                       {note.noteName}
@@ -850,19 +790,19 @@ export default function ScaleTrainer({ variant = 'floating' }: ScaleTrainerProps
                   </div>
 
                   {isPlaying && (
-                    <div className="absolute -top-2 -right-2 w-5 h-5 rounded-full bg-yellow-500 flex items-center justify-center animate-pulse">
+                    <div className="absolute -top-2 -right-2 w-5 h-5 rounded-full bg-amber-500 flex items-center justify-center animate-pulse">
                       <Volume2 size={10} className="text-white" />
                     </div>
                   )}
 
                   {isCompleted && !isPlaying && (
-                    <div className="absolute -top-2 -right-2 w-5 h-5 rounded-full bg-green-500 flex items-center justify-center">
+                    <div className="absolute -top-2 -right-2 w-5 h-5 rounded-full bg-emerald-500 flex items-center justify-center">
                       <Check size={12} className="text-white" />
                     </div>
                   )}
 
                   {isCompleted && metric && (
-                    <div className="absolute -bottom-1 left-1/2 -translate-x-1/2 text-[10px] text-green-400">
+                    <div className="absolute -bottom-1 left-1/2 -translate-x-1/2 text-[11px] text-emerald-400">
                       {Math.round(metric.pitchAccuracy)}%
                     </div>
                   )}
@@ -874,30 +814,30 @@ export default function ScaleTrainer({ variant = 'floating' }: ScaleTrainerProps
           {/* Hint */}
           {!isPracticing && (
             <p className="text-xs text-white/40 mt-2">
-              Click any note to hear it, or click &quot;Play Scale&quot; to hear the entire scale
+              Click any note to hear it, or use &quot;Play Scale&quot; below to hear the whole scale once
             </p>
           )}
         </div>
 
         {/* Live Detection */}
         {isPracticing && (
-          <div className="mb-6 p-4 rounded-xl bg-white/5 border border-white/10">
+          <div className="mb-4 p-4 rounded-2xl bg-white/[0.04] border border-white/10">
             <div className="flex items-center justify-between">
               <div>
                 <span className="text-xs text-white/50">Detected Note</span>
-                <div className="text-2xl font-bold text-white">
+                <div className="text-xl font-bold tabular-nums text-white">
                   {detectedNote ? `${detectedNote}${detectedOctave}` : '—'}
                 </div>
               </div>
               <div>
                 <span className="text-xs text-white/50">Cents</span>
-                <div className={`text-2xl font-bold ${Math.abs(centsDeviation) < 15 ? 'text-green-400' : Math.abs(centsDeviation) < 30 ? 'text-yellow-400' : 'text-red-400'}`}>
+                <div className={`text-xl font-bold tabular-nums ${Math.abs(centsDeviation) < 15 ? 'text-emerald-400' : Math.abs(centsDeviation) < 30 ? 'text-amber-400' : 'text-red-400'}`}>
                   {centsDeviation > 0 ? '+' : ''}{Math.round(centsDeviation)}
                 </div>
               </div>
               <div>
                 <span className="text-xs text-white/50">Target</span>
-                <div className="text-2xl font-bold text-pink-400">
+                <div className="text-xl font-bold tabular-nums text-gold-400">
                   {scaleNotes[currentNoteIndex]?.noteName || '—'}{scaleNotes[currentNoteIndex]?.octave || ''}
                 </div>
               </div>
@@ -910,7 +850,7 @@ export default function ScaleTrainer({ variant = 'floating' }: ScaleTrainerProps
               </div>
               <div className="h-2 bg-white/10 rounded-full overflow-hidden">
                 <div
-                  className="h-full bg-gradient-to-r from-pink-500 to-purple-500 transition-all duration-300"
+                  className="h-full bg-gradient-to-r from-gold-500 to-gold-300 transition-all duration-300"
                   style={{ width: `${(currentNoteIndex / scaleNotes.length) * 100}%` }}
                 />
               </div>
@@ -921,20 +861,20 @@ export default function ScaleTrainer({ variant = 'floating' }: ScaleTrainerProps
         {/* Stats */}
         {sungNotes.length > 0 && (
           <div className="grid grid-cols-3 gap-4 mb-6">
-            <div className="text-center p-3 rounded-xl bg-white/5">
-              <div className="text-2xl font-bold text-pink-400">
+            <div className="text-center p-3 rounded-2xl border border-white/10 bg-white/[0.04]">
+              <div className="text-xl font-bold tabular-nums text-gold-400">
                 {Math.round(sessionStats.sequenceAccuracy)}%
               </div>
               <div className="text-xs text-white/50">Sequence</div>
             </div>
-            <div className="text-center p-3 rounded-xl bg-white/5">
-              <div className="text-2xl font-bold text-purple-400">
+            <div className="text-center p-3 rounded-2xl border border-white/10 bg-white/[0.04]">
+              <div className="text-xl font-bold tabular-nums text-white">
                 {Math.round(sessionStats.pitchAccuracy)}%
               </div>
               <div className="text-xs text-white/50">Pitch Accuracy</div>
             </div>
-            <div className="text-center p-3 rounded-xl bg-white/5">
-              <div className="text-2xl font-bold text-green-400">
+            <div className="text-center p-3 rounded-2xl border border-white/10 bg-white/[0.04]">
+              <div className="text-xl font-bold tabular-nums text-emerald-400">
                 {Math.round(sessionStats.overallScore)}%
               </div>
               <div className="text-xs text-white/50">Overall Score</div>
@@ -942,86 +882,61 @@ export default function ScaleTrainer({ variant = 'floating' }: ScaleTrainerProps
           </div>
         )}
 
-        {/* Controls */}
+        {/* Controls: every action is the same size; nothing competes */}
         <div className="flex flex-wrap items-center gap-3">
-          {/* 1. Listen to Scale (Step 1 - Listen first) */}
-          <button
+          {/* Play Scale: plays the scale once so the singer can hear and copy it */}
+          <Button
+            size="lg"
             data-tour="listen-scale-btn"
             onClick={isPlayingScale ? stopScalePlayback : playEntireScale}
             disabled={isPracticing}
-            className={`flex items-center gap-2 px-5 py-3 rounded-xl font-medium transition-all ${
-              isPlayingScale
-                ? 'bg-pink-500/20 text-pink-300 border border-pink-500/50 shadow-lg shadow-pink-500/10'
-                : 'glass-button hover:bg-white/10 text-white'
-            } ${isPracticing ? 'opacity-50 cursor-not-allowed' : ''}`}
-            title="Listen to the scale before singing"
+            title="Hear the scale once before singing"
           >
-            {isPlayingScale ? (
-              <>
-                <Square size={18} className="text-pink-400" />
-                <span>Stop Audio</span>
-              </>
-            ) : (
-              <>
-                <Volume2 size={18} className="text-pink-400" />
-                <span>1. Listen to Scale</span>
-              </>
-            )}
-          </button>
+            {isPlayingScale ? <Square /> : <Volume2 />}
+            {isPlayingScale ? 'Stop' : 'Play Scale'}
+          </Button>
 
-          {/* 2. Start Practice (Step 2 - Sing next) */}
           {!isPracticing ? (
-            <button
+            <Button
+              size="lg"
               data-tour="start-practice-btn"
               onClick={startPractice}
               disabled={isPlayingScale}
-              className={`flex items-center gap-2 px-6 py-3 rounded-xl bg-gradient-to-r from-pink-500 to-purple-500 text-white font-medium hover:from-pink-400 hover:to-purple-400 transition-all shadow-lg shadow-purple-500/20 ${isPlayingScale ? 'opacity-50 cursor-not-allowed' : ''}`}
               title="Sing and practice the scale"
             >
-              <Play size={18} />
-              <span>2. Start Practice</span>
-            </button>
+              <Play />
+              Start Practice
+            </Button>
           ) : (
-            <button
-              onClick={stopPractice}
-              className="glass-button flex items-center gap-2 px-6 py-3 rounded-xl border-red-500/50 text-red-400 hover:bg-red-500/10 shadow-lg shadow-red-500/20"
-            >
-              <Square size={18} />
-              <span>Stop Practice</span>
-            </button>
+            <Button size="lg" variant="danger" onClick={stopPractice}>
+              <Square />
+              Stop Practice
+            </Button>
           )}
 
-          <button
-            onClick={resetSession}
-            disabled={isPracticing}
-            className="glass-button flex items-center gap-2 px-5 py-3 rounded-xl disabled:opacity-50 text-white/80 hover:text-white"
-          >
-            <RotateCcw size={18} />
-            <span>Reset</span>
-          </button>
+          <Button size="lg" onClick={resetSession} disabled={isPracticing}>
+            <RotateCcw />
+            Reset
+          </Button>
 
           {sungNotes.length > 0 && !isPracticing && (
-            <button
-              onClick={saveSession}
-              disabled={isSaving}
-              className="glass-button-gold flex items-center gap-2 px-6 py-3 rounded-xl disabled:opacity-50"
-            >
-              <Save size={18} />
-              <span>{isSaving ? 'Saving...' : 'Save Session'}</span>
-            </button>
+            <Button size="lg" variant="outline" onClick={saveSession} disabled={isSaving}>
+              <Save />
+              {isSaving ? 'Saving…' : 'Save Session'}
+            </Button>
           )}
         </div>
 
         {/* Messages */}
         {saveMessage && (
-          <div className={`mt-4 p-3 rounded-xl text-sm ${saveMessage.includes('Failed') ? 'bg-red-500/10 text-red-400' : 'bg-green-500/10 text-green-400'}`}>
+          <div className={`mt-4 rounded-2xl p-3 text-sm ${saveMessage.includes('Failed') ? 'bg-red-500/10 text-red-400' : 'bg-emerald-500/10 text-emerald-400'}`}>
             {saveMessage}
           </div>
         )}
 
         {currentNoteIndex >= scaleNotes.length && scaleNotes.length > 0 && (
-          <div className="mt-4 p-4 rounded-xl bg-green-500/10 border border-green-500/30 text-center">
-            <div className="text-green-400 font-semibold mb-1">Scale Completed!</div>
+          <div className="mt-4 rounded-2xl border border-emerald-500/30 bg-emerald-500/10 p-4 text-center">
+            <div className="text-emerald-400 font-semibold mb-1">Scale Completed!</div>
             <div className="text-white/70 text-sm">
               Overall Score: {Math.round(sessionStats.overallScore)}%
             </div>
@@ -1065,19 +980,30 @@ export default function ScaleTrainer({ variant = 'floating' }: ScaleTrainerProps
       )}
 
       {/* Modal */}
-      {isOpen && createPortal(
-        <div className="fixed inset-0 z-[99990] flex items-center justify-center bg-black/90 p-3 sm:p-4">
-          <div className="absolute inset-0 bg-black/90 backdrop-blur-sm" onClick={handleClose} />
-          <div
-            role="dialog"
-            aria-modal="true"
-            aria-labelledby="scale-trainer-title"
-            className={`relative w-full rounded-2xl border border-[#CEB466]/30 bg-gradient-to-br from-[#1b1233] via-[#171229] to-[#0f0b1e] p-4 shadow-2xl sm:p-6 ${isFullscreen ? 'max-w-none h-full overflow-y-auto' : 'max-w-2xl max-h-[calc(100dvh-1.5rem)] overflow-y-auto'}`}
-          >
-            {renderTrainer()}
-          </div>
-        </div>,
-        document.body
+      {isOpen && (
+        <ToolDialog
+          titleId="scale-trainer-title"
+          title="Scale Trainer"
+          subtitle="Hear a scale, then sing it back note by note."
+          icon={<Music />}
+          onClose={handleClose}
+          fullscreen={isFullscreen}
+          onToggleFullscreen={() => setIsFullscreen(!isFullscreen)}
+          actions={
+            <>
+              {isListening && (
+                <span className="hidden items-center gap-1.5 rounded-full border border-emerald-500/30 bg-emerald-500/10 px-2.5 py-1 text-xs font-medium text-emerald-300 sm:inline-flex">
+                  <Mic className="size-3.5" />
+                  Listening
+                </span>
+              )}
+              <SpotlightTriggerButton tourKey="scale_trainer_v4" label="How to" />
+            </>
+          }
+          beforeBody={<SpotlightTour tourKey="scale_trainer_v4" steps={scaleTourSteps} />}
+        >
+          {renderTrainer()}
+        </ToolDialog>
       )}
 
       {/* Load Aubio.js */}

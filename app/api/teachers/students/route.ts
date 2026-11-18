@@ -54,7 +54,11 @@ export async function GET(request: NextRequest) {
     const sortBy = searchParams.get('sortBy') || 'schedule' // 'schedule' | 'name' | 'recent'
     const offset = (page - 1) * limit
 
-    if (isAdmin) {
+    // scope=mine: an admin who also teaches sees only the students confirmed
+    // with them (what "My Students" means); the Student Directory lists everyone.
+    const onlyOwnStudents = searchParams.get('scope') === 'mine'
+
+    if (isAdmin && !onlyOwnStudents) {
       // ADMIN VIEW: Show ALL students from profiles table
       // First fetch all students for search/sort (we'll paginate after)
       let query = supabase
