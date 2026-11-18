@@ -148,7 +148,14 @@ export function EmailSearch({ placeholder = 'Search emails...' }: EmailSearchPro
 
   // Sync with URL on mount/change
   useEffect(() => {
-    setValue(searchParams.get('q') || '')
+    let active = true
+    const next = searchParams.get('q') || ''
+    queueMicrotask(() => {
+      if (active) setValue(next)
+    })
+    return () => {
+      active = false
+    }
   }, [searchParams])
 
   const showHistory = history.length > 0 && !value

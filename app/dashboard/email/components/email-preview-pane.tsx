@@ -20,7 +20,7 @@ import {
 import { LabelPicker } from './label-picker'
 import { ThreadStatePicker } from './thread-state-picker'
 import { SnoozePicker } from './snooze-picker'
-import { EmailThread, Email, EmailAccount, EmailAttachment } from '@/types/email.types'
+import { EmailThread, Email, EmailAccount, EmailAttachment, EmailRecipientLike } from '@/types/email.types'
 import { formatEmailDateFull, stripQuotedContent, stripQuotedContentText } from '@/lib/email-utils'
 import { EmailBodyFrame } from './email-body-frame'
 import { maybeDecodeQuotedPrintable } from '@/lib/quoted-printable'
@@ -30,7 +30,7 @@ import { useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase'
 
 // Helper to format a single recipient (handles both string and object formats)
-function formatRecipient(recipient: any): string {
+function formatRecipient(recipient: EmailRecipientLike): string {
   if (!recipient) return ''
   if (typeof recipient === 'string') return recipient
   if (recipient.email) {
@@ -40,7 +40,7 @@ function formatRecipient(recipient: any): string {
 }
 
 // Helper to format multiple recipients
-function formatRecipients(recipients: any): string {
+function formatRecipients(recipients: EmailRecipientLike | EmailRecipientLike[]): string {
   if (!recipients) return ''
   if (!Array.isArray(recipients)) return formatRecipient(recipients)
   return recipients.map(formatRecipient).join(', ')
@@ -322,13 +322,13 @@ export function EmailPreviewPane({ threadId, accounts, onReply, onReplyAll, onFo
           {/* Workflow State */}
           <ThreadStatePicker
             threadId={thread.id}
-            currentState={(thread as any).workflow_state || null}
+            currentState={thread.workflow_state || null}
           />
 
           {/* Snooze */}
           <SnoozePicker
             threadId={thread.id}
-            snoozedUntil={(thread as any).snoozed_until}
+            snoozedUntil={thread.snoozed_until}
           />
 
           {/* Labels */}

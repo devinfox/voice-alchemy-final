@@ -78,6 +78,11 @@ function formatWeeklySchedule(lesson: ActiveLesson): string {
   return time || 'No time set yet'
 }
 
+// Read once per request; kept out of the component body so rendering stays pure.
+function currentTimeMs(): number {
+  return Date.now()
+}
+
 // Minutes from now until the next occurrence of a weekly slot (for sorting).
 function minutesUntilNext(dayOfWeek: number | null, time: string | null): number {
   if (dayOfWeek === null) return Number.MAX_SAFE_INTEGER
@@ -632,7 +637,7 @@ export default async function DashboardPage() {
 
   // Per-tool latest score for the practice hub: sessions arrive newest-first,
   // but re-sort by timestamp since started_at is more precise than session_date.
-  const nowMs = Date.now()
+  const nowMs = currentTimeMs()
   const toolScores = [
     { tool: 'Pitch' as const, sessions: pitchSessions },
     { tool: 'Rhythm' as const, sessions: rhythmSessions },

@@ -286,7 +286,7 @@ export async function GET(request: NextRequest) {
     const startDate = new Date()
     startDate.setDate(startDate.getDate() - days)
 
-    let query = supabase
+    const query = supabase
       .from('scale_training_sessions')
       .select(includeMetrics ? '*, scale_training_note_metrics(*)' : '*')
       .eq('user_id', user.id)
@@ -308,7 +308,21 @@ export async function GET(request: NextRequest) {
 }
 
 // Helper function to update weekly progress
-async function updateWeeklyProgress(supabase: any, userId: string) {
+type ServerSupabase = Awaited<ReturnType<typeof createClient>>
+
+interface ScaleSessionRow {
+  sequence_accuracy: number | null
+  pitch_accuracy: number | null
+  timing_consistency: number | null
+  overall_score: number | null
+  total_notes_sung: number | null
+  duration_seconds: number | null
+  tempo_bpm: number | null
+  scale_type: string
+  root_note: string
+}
+
+async function updateWeeklyProgress(supabase: ServerSupabase, userId: string) {
   try {
     // Get current week's start (Monday)
     const now = new Date()
@@ -329,26 +343,26 @@ async function updateWeeklyProgress(supabase: any, userId: string) {
     if (!sessions || sessions.length === 0) return
 
     // Calculate aggregates
-    const avgSequenceAccuracy = sessions.reduce((s: number, x: any) => s + (x.sequence_accuracy || 0), 0) / sessions.length
-    const avgPitchAccuracy = sessions.reduce((s: number, x: any) => s + (x.pitch_accuracy || 0), 0) / sessions.length
-    const avgTimingConsistency = sessions.reduce((s: number, x: any) => s + (x.timing_consistency || 0), 0) / sessions.length
-    const avgOverallScore = sessions.reduce((s: number, x: any) => s + (x.overall_score || 0), 0) / sessions.length
-    const totalNotes = sessions.reduce((s: number, x: any) => s + (x.total_notes_sung || 0), 0)
-    const totalTime = sessions.reduce((s: number, x: any) => s + (x.duration_seconds || 0), 0)
+    const avgSequenceAccuracy = sessions.reduce((s: number, x: ScaleSessionRow) => s + (x.sequence_accuracy || 0), 0) / sessions.length
+    const avgPitchAccuracy = sessions.reduce((s: number, x: ScaleSessionRow) => s + (x.pitch_accuracy || 0), 0) / sessions.length
+    const avgTimingConsistency = sessions.reduce((s: number, x: ScaleSessionRow) => s + (x.timing_consistency || 0), 0) / sessions.length
+    const avgOverallScore = sessions.reduce((s: number, x: ScaleSessionRow) => s + (x.overall_score || 0), 0) / sessions.length
+    const totalNotes = sessions.reduce((s: number, x: ScaleSessionRow) => s + (x.total_notes_sung || 0), 0)
+    const totalTime = sessions.reduce((s: number, x: ScaleSessionRow) => s + (x.duration_seconds || 0), 0)
 
     // Calculate tempo stats
-    const tempos = sessions.map((s: any) => s.tempo_bpm || 80).filter((t: number) => t > 0)
+    const tempos = sessions.map((s: ScaleSessionRow) => s.tempo_bpm || 80).filter((t: number) => t > 0)
     const avgTempo = tempos.length > 0 ? tempos.reduce((s: number, t: number) => s + t, 0) / tempos.length : 80
     const minTempo = tempos.length > 0 ? Math.min(...tempos) : 80
     const maxTempo = tempos.length > 0 ? Math.max(...tempos) : 80
 
     // Count unique scales practiced
-    const uniqueScales = new Set(sessions.map((s: any) => `${s.scale_type}-${s.root_note}`))
+    const uniqueScales = new Set(sessions.map((s: ScaleSessionRow) => `${s.scale_type}-${s.root_note}`))
 
     // Find most practiced scale
     const scaleCounts: Record<string, number> = {}
     const rootCounts: Record<string, number> = {}
-    sessions.forEach((s: any) => {
+    sessions.forEach((s: ScaleSessionRow) => {
       scaleCounts[s.scale_type] = (scaleCounts[s.scale_type] || 0) + 1
       rootCounts[s.root_note] = (rootCounts[s.root_note] || 0) + 1
     })

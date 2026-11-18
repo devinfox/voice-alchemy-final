@@ -5,6 +5,10 @@ import { EmailList } from './components/email-list'
 import { NoAccountsSetup } from './components/no-accounts-setup'
 import { EmailSearch } from './components/email-search'
 import { parseEmailSearch, ParsedEmailSearch } from '@/lib/email-search-parser'
+import type { ComponentProps } from 'react'
+
+type ListThread = ComponentProps<typeof EmailList>['threads'][number]
+type ListThreadEmail = NonNullable<ListThread['emails']>[number]
 
 const PAGE_SIZE = 20
 
@@ -249,9 +253,9 @@ export default async function EmailInboxPage({
       {/* Email List */}
       <div className="flex-1 overflow-hidden max-w-full min-w-0">
         <EmailList
-          threads={(threads || []).map((t: any) => ({
+          threads={(threads || []).map((t: ListThread) => ({
             ...t,
-            emails: t.emails?.sort((a: any, b: any) =>
+            emails: t.emails?.sort((a: ListThreadEmail, b: ListThreadEmail) =>
               new Date(b.sent_at || b.created_at).getTime() -
               new Date(a.sent_at || a.created_at).getTime()
             )

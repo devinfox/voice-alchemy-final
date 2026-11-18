@@ -1,6 +1,7 @@
 'use client'
 
 import { EmailBlock } from '@/lib/email-builder-context'
+import type { BlockProperties } from '@/lib/email-builder-types'
 import { MoveVertical } from 'lucide-react'
 
 interface SpacerBlockProps {
@@ -35,8 +36,8 @@ export function SpacerBlockSettings({
   properties,
   onChange,
 }: {
-  properties: Record<string, any>
-  onChange: (props: Record<string, any>) => void
+  properties: BlockProperties
+  onChange: (props: BlockProperties) => void
 }) {
   const presetHeights = [16, 24, 32, 48, 64, 96]
 

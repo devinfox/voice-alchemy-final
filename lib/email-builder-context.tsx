@@ -3,6 +3,7 @@
 import React, { createContext, useContext, useState, useCallback, ReactNode } from 'react'
 
 import {
+  type BlockProperties,
   type BlockType,
   type EmailBlock,
   type EmailSettings,
@@ -25,7 +26,7 @@ interface EmailBuilderState {
 interface EmailBuilderActions {
   setBlocks: (blocks: EmailBlock[]) => void
   addBlock: (block: EmailBlock, index?: number) => void
-  updateBlock: (id: string, properties: Record<string, any>) => void
+  updateBlock: (id: string, properties: BlockProperties) => void
   removeBlock: (id: string) => void
   moveBlock: (fromIndex: number, toIndex: number) => void
   duplicateBlock: (id: string) => void
@@ -63,7 +64,7 @@ export function EmailBuilderProvider({ children }: { children: ReactNode }) {
     setSelectedBlockId(block.id)
   }, [])
 
-  const updateBlock = useCallback((id: string, properties: Record<string, any>) => {
+  const updateBlock = useCallback((id: string, properties: BlockProperties) => {
     setBlocksState((prev) =>
       prev.map((block) =>
         block.id === id

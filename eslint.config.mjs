@@ -12,6 +12,8 @@ const eslintConfig = defineConfig([
     "out/**",
     "build/**",
     "next-env.d.ts",
+    // Static scripts served as-is (the chromatic tuner): not app source.
+    "public/**",
   ]),
 ]);
 

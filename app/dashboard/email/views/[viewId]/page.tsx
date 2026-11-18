@@ -15,12 +15,24 @@ import {
   AlertCircle,
 } from 'lucide-react'
 
+interface SavedViewFilters {
+  is_read?: boolean
+  is_starred?: boolean
+  has_attachments?: boolean
+  workflow_state?: string
+  folder?: string
+  labels?: string[]
+  from?: string
+  date_after?: string
+  date_before?: string
+}
+
 interface SavedView {
   id: string
   name: string
   icon: string
   color: string
-  filters: Record<string, any>
+  filters: SavedViewFilters
   is_system: boolean
 }
 
@@ -42,11 +54,7 @@ export default function SavedViewPage() {
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
 
-  useEffect(() => {
-    loadViewAndThreads()
-  }, [viewId])
-
-  const loadViewAndThreads = async () => {
+  async function loadViewAndThreads() {
     setLoading(true)
     setError(null)
 
@@ -166,6 +174,11 @@ export default function SavedViewPage() {
 
     setLoading(false)
   }
+
+  useEffect(() => {
+    // Deferred a tick: the loader sets state, and an effect body should not.
+    queueMicrotask(() => void loadViewAndThreads())
+  }, [viewId])
 
   if (loading) {
     return (

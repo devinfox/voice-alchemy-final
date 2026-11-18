@@ -29,7 +29,7 @@ export default async function DomainsSettingsPage() {
         <div className="mb-8">
           <h1 className="text-2xl font-light text-white mb-2">Email Domains</h1>
           <p className="text-gray-400">
-            Connect your domains to send and receive emails. You'll need to add DNS records to your domain provider.
+            Connect your domains to send and receive emails. You&apos;ll need to add DNS records to your domain provider.
           </p>
         </div>
 

@@ -21,7 +21,7 @@ interface SavedView {
   name: string
   icon: string
   color: string
-  filters: Record<string, any>
+  filters: Record<string, unknown>
   is_system: boolean
   is_pinned: boolean
 }

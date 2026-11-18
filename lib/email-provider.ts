@@ -252,7 +252,7 @@ export async function sendEmailWithProvider(
 export async function syncMicrosoftEmails(
   tokenId?: string,
   fullSync: boolean = false
-): Promise<{ success: boolean; results?: any[]; error?: string }> {
+): Promise<{ success: boolean; results?: unknown[]; error?: string }> {
   try {
     const response = await fetch('/api/email/microsoft/sync', {
       method: 'POST',
@@ -278,7 +278,7 @@ export async function syncMicrosoftEmails(
 export async function syncGmailEmails(
   tokenId?: string,
   fullSync: boolean = false
-): Promise<{ success: boolean; results?: any[]; error?: string }> {
+): Promise<{ success: boolean; results?: unknown[]; error?: string }> {
   try {
     const response = await fetch('/api/email/gmail/sync', {
       method: 'POST',
@@ -305,7 +305,7 @@ export async function syncEmails(
   provider: EmailProviderType,
   tokenId?: string,
   fullSync: boolean = false
-): Promise<{ success: boolean; results?: any[]; error?: string }> {
+): Promise<{ success: boolean; results?: unknown[]; error?: string }> {
   switch (provider) {
     case 'microsoft':
       return syncMicrosoftEmails(tokenId, fullSync)

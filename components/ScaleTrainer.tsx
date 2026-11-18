@@ -165,7 +165,7 @@ export default function ScaleTrainer({ variant = 'floating' }: ScaleTrainerProps
   // Initialize playback audio context
   const initPlaybackContext = useCallback(() => {
     if (!playbackContextRef.current) {
-      playbackContextRef.current = new (window.AudioContext || (window as any).webkitAudioContext)()
+      playbackContextRef.current = new (window.AudioContext || (window as Window & { webkitAudioContext?: typeof AudioContext }).webkitAudioContext)()
     }
     if (playbackContextRef.current.state === 'suspended') void playbackContextRef.current.resume()
     return playbackContextRef.current

@@ -1,13 +1,13 @@
 'use client'
 
-import { useState, useEffect, useCallback, useRef, ReactNode } from 'react'
+import { useState, useEffect, useCallback, useRef, ReactNode, type ComponentProps } from 'react'
 import { usePathname, useRouter } from 'next/navigation'
 import { EmailSidebar } from './email-sidebar'
 import { EmailPreviewPane } from './email-preview-pane'
 import { EmailCompose } from './email-compose'
 import { EmailUIProvider, useEmailUI } from '@/lib/contexts/email-ui-context'
 import { useEmailShortcuts } from '@/lib/hooks/use-email-shortcuts'
-import { EmailAccount, Email } from '@/types/email.types'
+import { EmailAccount, Email, EmailRecipientLike } from '@/types/email.types'
 import { ArrowLeft } from 'lucide-react'
 import { formatEmailDateFull, getQuotableMessageBody } from '@/lib/email-utils'
 import { createClient } from '@/lib/supabase'
@@ -17,6 +17,8 @@ interface EmailSplitPaneLayoutProps {
   accounts: EmailAccount[]
   children: ReactNode
 }
+
+type ComposeProps = ComponentProps<typeof EmailCompose>
 
 function EmailLayoutContent({ userId, accounts, children }: EmailSplitPaneLayoutProps) {
   const pathname = usePathname()
@@ -36,8 +38,8 @@ function EmailLayoutContent({ userId, accounts, children }: EmailSplitPaneLayout
     navigateToPrevThread,
   } = useEmailUI()
 
-  const [replyData, setReplyData] = useState<any>(null)
-  const [forwardData, setForwardData] = useState<any>(null)
+  const [replyData, setReplyData] = useState<ComposeProps['replyTo']>(null)
+  const [forwardData, setForwardData] = useState<ComposeProps['forward']>(null)
 
   // Keyboard shortcut actions - use optimistic updates to avoid flicker
   const handleArchive = useCallback(async () => {
@@ -214,22 +216,22 @@ function EmailLayoutContent({ userId, accounts, children }: EmailSplitPaneLayout
       accounts.map((a) => (a.email_address || '').trim().toLowerCase())
     )
     const seen = new Set(ownAddresses)
-    const emailOf = (r: any) =>
+    const emailOf = (r: EmailRecipientLike) =>
       (typeof r === 'string' ? (r.match(/<([^>]+)>/)?.[1] || r) : r?.email || '')
         .trim()
         .toLowerCase()
-    const fmt = (r: any) =>
+    const fmt = (r: EmailRecipientLike) =>
       typeof r === 'string' ? r : r?.name ? `${r.name} <${r.email}>` : r?.email || ''
 
     const to: string[] = []
     const cc: string[] = []
-    const addTo = (r: any) => {
+    const addTo = (r: EmailRecipientLike) => {
       const a = emailOf(r)
       if (!a || seen.has(a)) return
       seen.add(a)
       to.push(fmt(r))
     }
-    const addCc = (r: any) => {
+    const addCc = (r: EmailRecipientLike) => {
       const a = emailOf(r)
       if (!a || seen.has(a)) return
       seen.add(a)
@@ -266,7 +268,7 @@ function EmailLayoutContent({ userId, accounts, children }: EmailSplitPaneLayout
         setForwardData({
           email_id: email.id,
           subject: `Fwd: ${thread.subject || ''}`,
-          body: `<br><br>---------- Forwarded message ---------<br>From: ${email.from_name || email.from_address}<br>Date: ${formatEmailDateFull(email.sent_at || email.created_at)}<br>Subject: ${thread.subject || ''}<br>To: ${email.to_addresses?.map((r: any) => typeof r === 'string' ? r : r.email).join(', ')}<br><br>${getQuotableMessageBody(email.body_html, email.body_text)}`,
+          body: `<br><br>---------- Forwarded message ---------<br>From: ${email.from_name || email.from_address}<br>Date: ${formatEmailDateFull(email.sent_at || email.created_at)}<br>Subject: ${thread.subject || ''}<br>To: ${email.to_addresses?.map((r: string | { email?: string }) => typeof r === 'string' ? r : r.email).join(', ')}<br><br>${getQuotableMessageBody(email.body_html, email.body_text)}`,
           attachments: email.attachments || [],
         })
         setComposeMode('forward')
@@ -285,7 +287,7 @@ function EmailLayoutContent({ userId, accounts, children }: EmailSplitPaneLayout
   }
 
   const validAccounts = accounts.filter(
-    (a: any) => a.provider === 'microsoft' || a.provider === 'gmail' || a.domain?.verification_status === 'verified'
+    (a) => a.provider === 'microsoft' || a.provider === 'gmail' || a.domain?.verification_status === 'verified'
   )
 
   return (

@@ -1,6 +1,7 @@
 'use client'
 
 import { EmailBlock } from '@/lib/email-builder-context'
+import type { BlockProperties } from '@/lib/email-builder-types'
 
 interface ButtonBlockProps {
   block: EmailBlock
@@ -46,8 +47,8 @@ export function ButtonBlockSettings({
   properties,
   onChange,
 }: {
-  properties: Record<string, any>
-  onChange: (props: Record<string, any>) => void
+  properties: BlockProperties
+  onChange: (props: BlockProperties) => void
 }) {
   return (
     <div className="space-y-4">

@@ -29,11 +29,7 @@ export default function AiDraftsPage() {
   const [loading, setLoading] = useState(true)
   const [userId, setUserId] = useState<string | null>(null)
 
-  useEffect(() => {
-    loadDrafts()
-  }, [])
-
-  const loadDrafts = async () => {
+  async function loadDrafts() {
     const supabase = createClient()
 
     // Run draft expiration cleanup in background
@@ -82,6 +78,11 @@ export default function AiDraftsPage() {
 
     setLoading(false)
   }
+
+  useEffect(() => {
+    // Deferred a tick: the loader sets state, and an effect body should not.
+    queueMicrotask(() => void loadDrafts())
+  }, [])
 
   const deleteDraft = async (draftId: string) => {
     try {

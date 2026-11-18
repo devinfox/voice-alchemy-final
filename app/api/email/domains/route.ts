@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient as createServerClient } from '@/lib/supabase-server'
 import { getSupabaseAdmin } from '@/lib/supabase-admin'
+import type { DNSRecord } from '@/types/email.types'
 import {
   createDomainAuthentication,
   formatDNSRecordsFromSendGrid,
@@ -72,7 +73,7 @@ export async function POST(request: NextRequest) {
 
     // Create domain authentication in SendGrid
     let sendgridResponse
-    let dnsRecords: any[] = []
+    let dnsRecords: DNSRecord[] = []
 
     try {
       if (process.env.SENDGRID_API_KEY) {
@@ -88,7 +89,8 @@ export async function POST(request: NextRequest) {
           { type: 'txt', host: '@', value: 'v=spf1 include:sendgrid.net ~all', verified: false },
         ]
       }
-    } catch (sgError: any) {
+    } catch (caught: unknown) {
+      const sgError = caught as { code?: number }
       console.error('SendGrid error:', sgError)
       // If SendGrid fails, still create the domain record with mock DNS
       if (sgError.code === 401) {

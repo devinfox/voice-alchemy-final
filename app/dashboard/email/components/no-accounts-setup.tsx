@@ -68,8 +68,8 @@ export function NoAccountsSetup() {
 
       setSuccess(true)
       setTimeout(() => router.refresh(), 1500)
-    } catch (err: any) {
-      setError(err.message)
+    } catch (err: unknown) {
+      setError((err as Error).message)
     } finally {
       setIsCreating(false)
     }
@@ -193,7 +193,7 @@ export function NoAccountsSetup() {
 
         <p className="text-gray-400 mb-8 leading-relaxed">
           Connect your domain to start sending and receiving emails directly within the CRM.
-          You'll be able to manage all your business communications in one place.
+          You&apos;ll be able to manage all your business communications in one place.
         </p>
 
         <div className="glass-card p-6 mb-6 text-left">

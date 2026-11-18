@@ -4,6 +4,13 @@ import { redirect, notFound } from 'next/navigation'
 import { ThreadView } from './thread-view'
 import { processEmailForAI } from '@/lib/email-ai'
 import { syncCalendarInvitesForEmail, getEmailInvites, type EmailInvite } from '@/lib/calendar/sync-email-invites'
+import type { Email, EmailAttachment, EmailRecipientLike } from '@/types/email.types'
+
+type ThreadAttachmentRow = Pick<EmailAttachment, 'content_type' | 'filename' | 'size_bytes'>
+type ThreadEmailRow = Omit<Email, 'attachments'> & {
+  attachments?: (ThreadAttachmentRow | null)[] | null
+  ai_processed_at?: string | null
+}
 
 interface ThreadPageProps {
   params: Promise<{ threadId: string }>
@@ -55,9 +62,9 @@ export default async function ThreadPage({ params }: ThreadPageProps) {
 
   // An attachment that might be a calendar invite (by type/ext, or a small
   // ambiguous octet-stream/.bin that could be a mislabeled invite).
-  const hasCalendarAttachment = (email: any): boolean =>
+  const hasCalendarAttachment = (email: ThreadEmailRow): boolean =>
     Array.isArray(email.attachments) &&
-    email.attachments.some((att: any) => {
+    email.attachments.some((att: ThreadAttachmentRow | null) => {
       const type = (att?.content_type || '').toLowerCase()
       const name = (att?.filename || '').toLowerCase()
       const size = att?.size_bytes ?? 0
@@ -69,11 +76,11 @@ export default async function ThreadPage({ params }: ThreadPageProps) {
 
   // Fallback: when a thread is opened, process any inbound emails that never ran AI processing.
   if (emails && emails.length > 0) {
-    const unprocessedInbound = emails.filter((email: any) => email.is_inbound && !email.ai_processed_at)
+    const unprocessedInbound = emails.filter((email: ThreadEmailRow) => email.is_inbound && !email.ai_processed_at)
     for (const email of unprocessedInbound) {
       const toAddresses = Array.isArray(email.to_addresses)
         ? email.to_addresses
-            .map((recipient: any) => (typeof recipient === 'string' ? recipient : recipient?.email))
+            .map((recipient: EmailRecipientLike) => (typeof recipient === 'string' ? recipient : recipient?.email))
             .filter((value: unknown): value is string => typeof value === 'string' && value.length > 3)
         : []
 
@@ -98,7 +105,7 @@ export default async function ThreadPage({ params }: ThreadPageProps) {
     // carries one — including emails received before this feature shipped (their
     // AI processing already ran, so they're skipped above). Idempotent: events
     // dedup by iCal UID, so re-running on each thread open is safe.
-    const inboundWithInvites = emails.filter((email: any) => email.is_inbound && hasCalendarAttachment(email))
+    const inboundWithInvites = emails.filter((email: ThreadEmailRow) => email.is_inbound && hasCalendarAttachment(email))
     for (const email of inboundWithInvites) {
       try {
         await syncCalendarInvitesForEmail({
@@ -148,9 +155,9 @@ export default async function ThreadPage({ params }: ThreadPageProps) {
   // .ics download. Driven straight off the email's attachment, so it shows on
   // whichever message carries the invite — no dependency on the calendar task.
   const invitesByEmail: Record<string, EmailInvite> = {}
-  const inboundWithInvites = (emails || []).filter((e: any) => hasCalendarAttachment(e))
+  const inboundWithInvites = (emails || []).filter((e: ThreadEmailRow) => hasCalendarAttachment(e))
   await Promise.all(
-    inboundWithInvites.map(async (email: any) => {
+    inboundWithInvites.map(async (email: ThreadEmailRow) => {
       try {
         const invites = await getEmailInvites(email.id, email.body_text || null, email.body_html || null)
         if (invites.length > 0) invitesByEmail[email.id] = invites[0]

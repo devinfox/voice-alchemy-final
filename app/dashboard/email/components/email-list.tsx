@@ -3,7 +3,7 @@
 import { useState, useEffect, useRef, useCallback, useMemo, memo, CSSProperties } from 'react'
 import Link from 'next/link'
 import { useRouter, useSearchParams } from 'next/navigation'
-import { List } from 'react-window'
+import { List, type ListProps } from 'react-window'
 import {
   Star,
   Paperclip,
@@ -20,13 +20,25 @@ import {
 import { createClient } from '@/lib/supabase'
 import { EmailThread } from '@/types/email.types'
 import { formatEmailDate, stripHtml } from '@/lib/email-utils'
-import { useEmailUI } from '@/lib/contexts/email-ui-context'
+import { useOptionalEmailUI } from '@/lib/contexts/email-ui-context'
 
 // Row height for virtual list
 const ROW_HEIGHT = 72
 
+// Columns a list row may lack: composer-draft rows are built by hand from
+// `user_email_drafts` and only carry what the list renders.
+type OptionalThreadColumns =
+  | 'conversation_key'
+  | 'provider_thread_id'
+  | 'provider'
+  | 'contact_id'
+  | 'lead_id'
+  | 'deal_id'
+  | 'deleted_at'
+
 interface EmailListProps {
-  threads: (EmailThread & {
+  threads: (Omit<EmailThread, OptionalThreadColumns | 'participants' | 'emails'> & Partial<Pick<EmailThread, OptionalThreadColumns>> & {
+    participants: { email: string; name?: string | null }[]
     emails?: {
       id: string
       from_address: string
@@ -120,14 +132,15 @@ const VirtualEmailRow = memo(function VirtualEmailRow({
 }: VirtualRowProps) {
 
   const thread = threads[index]
-  if (!thread) return null
+  const threadEmails = thread?.emails
 
   // Memoize derived data
-  const latestEmail = thread.emails?.[0]
   const displaySender = useMemo(
-    () => getDisplaySender(thread.emails, folder),
-    [thread.emails, folder]
+    () => (thread ? getDisplaySender(threadEmails, folder) : null),
+    [thread, threadEmails, folder]
   )
+  if (!thread || !displaySender) return null
+  const latestEmail = thread.emails?.[0]
   const isSelected = selectedIds.has(thread.id)
   const isPreviewSelected = selectedThreadId === thread.id
   // Use optimistic star state if available, otherwise use thread's actual state
@@ -251,12 +264,8 @@ export function EmailList({
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set())
 
   // Try to use email UI context for split-pane preview
-  let emailUI: ReturnType<typeof useEmailUI> | null = null
-  try {
-    emailUI = useEmailUI()
-  } catch {
-    // Context not available, fall back to direct navigation
-  }
+  // Null when the context is not available: fall back to direct navigation.
+  const emailUI = useOptionalEmailUI()
 
   const { selectedThreadId, setSelectedThreadId, setThreadIds } = emailUI || {
     selectedThreadId: null,
@@ -661,7 +670,7 @@ export function EmailList({
           className="flex-1"
           rowCount={threads.length}
           rowHeight={ROW_HEIGHT}
-          rowComponent={VirtualEmailRow as any}
+          rowComponent={VirtualEmailRow as ListProps<VirtualRowData>['rowComponent']}
           rowProps={{
             threads,
             selectedIds,

@@ -482,7 +482,8 @@ export default function ModernPitchTrainer({ variant = 'floating' }: ModernPitch
       } else {
         setSaveMessage(result.message || 'Session not saved')
       }
-    } catch (error: any) {
+    } catch (caught: unknown) {
+      const error = caught as { message?: string } | null | undefined
       console.error('Save error:', error)
       setSaveMessage(error?.message || 'Failed to save session')
     } finally {

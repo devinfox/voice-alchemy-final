@@ -79,7 +79,7 @@ export default async function ComposePage({
   // - Third-party providers (microsoft, gmail) - always allowed (they use their own infrastructure)
   // - SendGrid accounts - require verified domain
   const verifiedAccounts = accounts.filter(
-    (a: any) =>
+    (a: { provider?: string | null; domain?: { verification_status?: string | null } | null }) =>
       a.provider === 'microsoft' ||
       a.provider === 'gmail' ||
       a.domain?.verification_status === 'verified'

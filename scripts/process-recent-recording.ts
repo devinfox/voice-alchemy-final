@@ -147,7 +147,14 @@ async function main() {
   }
 }
 
-async function processRecording(recording: any) {
+interface RecordingRow {
+  id: string
+  booking_id: string | null
+  storage_path: string | null
+  [column: string]: unknown
+}
+
+async function processRecording(recording: RecordingRow) {
   console.log('\n=== Processing Recording ===')
   console.log(`ID: ${recording.id}`)
   console.log(`Booking ID: ${recording.booking_id}`)

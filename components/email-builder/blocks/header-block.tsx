@@ -2,6 +2,7 @@
 
 import { useState } from 'react'
 import { EmailBlock } from '@/lib/email-builder-context'
+import type { BlockProperties } from '@/lib/email-builder-types'
 import { Upload, Loader2 } from 'lucide-react'
 
 interface HeaderBlockProps {
@@ -52,8 +53,8 @@ export function HeaderBlockSettings({
   properties,
   onChange,
 }: {
-  properties: Record<string, any>
-  onChange: (props: Record<string, any>) => void
+  properties: BlockProperties
+  onChange: (props: BlockProperties) => void
 }) {
   const [uploading, setUploading] = useState(false)
 

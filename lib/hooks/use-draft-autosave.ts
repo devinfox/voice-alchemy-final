@@ -12,7 +12,7 @@ interface DraftData {
   bcc_emails?: string[]
   subject?: string
   body_html?: string
-  attachments?: any[]
+  attachments?: unknown[]
   compose_mode?: 'new' | 'reply' | 'forward'
 }
 

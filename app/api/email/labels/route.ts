@@ -175,7 +175,7 @@ export async function PATCH(request: NextRequest) {
       .eq('id', thread_id)
       .single()
 
-    if (!thread || (thread as any).email_accounts?.user_id !== user.id) {
+    if (!thread || (thread as { email_accounts?: { user_id?: string } | null }).email_accounts?.user_id !== user.id) {
       return NextResponse.json({ error: 'Thread not found' }, { status: 404 })
     }
 

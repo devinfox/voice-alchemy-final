@@ -82,7 +82,7 @@ export async function GET(request: NextRequest) {
 
 // Fallback search using regular queries
 async function fallbackSearch(
-  admin: any,
+  admin: ReturnType<typeof getSupabaseAdmin>,
   accountIds: string[],
   parsed: ReturnType<typeof parseEmailSearch>,
   limit: number,

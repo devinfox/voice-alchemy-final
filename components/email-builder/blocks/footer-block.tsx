@@ -1,6 +1,7 @@
 'use client'
 
 import { EmailBlock } from '@/lib/email-builder-context'
+import type { BlockProperties, BlockSocialLink } from '@/lib/email-builder-types'
 
 interface FooterBlockProps {
   block: EmailBlock
@@ -25,7 +26,7 @@ export function FooterBlock({ block, isSelected, onClick }: FooterBlockProps) {
     >
       {showSocial && socialLinks?.length > 0 && (
         <div className="mb-4">
-          {socialLinks.map((link: any, idx: number) => (
+          {socialLinks.map((link: BlockSocialLink, idx: number) => (
             <span key={idx} style={{ color: textColor, margin: '0 8px' }}>
               {link.name}
             </span>
@@ -49,8 +50,8 @@ export function FooterBlockSettings({
   properties,
   onChange,
 }: {
-  properties: Record<string, any>
-  onChange: (props: Record<string, any>) => void
+  properties: BlockProperties
+  onChange: (props: BlockProperties) => void
 }) {
   const socialLinks = properties.socialLinks || []
 
@@ -65,7 +66,7 @@ export function FooterBlockSettings({
   }
 
   const removeSocialLink = (index: number) => {
-    onChange({ socialLinks: socialLinks.filter((_: any, i: number) => i !== index) })
+    onChange({ socialLinks: socialLinks.filter((_: BlockSocialLink, i: number) => i !== index) })
   }
 
   return (
@@ -102,7 +103,7 @@ export function FooterBlockSettings({
             Social Links
           </label>
           <div className="space-y-2">
-            {socialLinks.map((link: any, idx: number) => (
+            {socialLinks.map((link: BlockSocialLink, idx: number) => (
               <div key={idx} className="flex gap-2">
                 <input
                   type="text"

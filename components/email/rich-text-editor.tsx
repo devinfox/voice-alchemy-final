@@ -98,9 +98,8 @@ interface EditorToolbarProps {
 }
 
 function EditorToolbar({ editor }: EditorToolbarProps) {
-  if (!editor) return null
-
   const addLink = useCallback(() => {
+    if (!editor) return
     const previousUrl = editor.getAttributes('link').href
     const url = window.prompt('Enter URL:', previousUrl)
 
@@ -117,11 +116,14 @@ function EditorToolbar({ editor }: EditorToolbarProps) {
   }, [editor])
 
   const addImage = useCallback(() => {
+    if (!editor) return
     const url = window.prompt('Enter image URL:')
     if (url) {
       editor.chain().focus().setImage({ src: url }).run()
     }
   }, [editor])
+
+  if (!editor) return null
 
   return (
     <div className="flex flex-shrink-0 items-center gap-0.5 px-2 py-1 border-b border-white/10 flex-wrap">

@@ -31,7 +31,7 @@ import { SnoozePicker } from '../components/snooze-picker'
 import { CrmLinkPicker } from '../components/crm-link-picker'
 import { AiSummaryCard } from '../components/ai-summary-card'
 import { CreateTaskModal } from '../components/create-task-modal'
-import { EmailThread, Email, EmailAccount, EmailAttachment } from '@/types/email.types'
+import { EmailThread, Email, EmailAccount, EmailAttachment, EmailRecipientLike } from '@/types/email.types'
 import { formatEmailDate, formatEmailDateFull, stripQuotedContent, stripQuotedContentText, stripHtml, getQuotableMessageBody } from '@/lib/email-utils'
 import { EmailBodyFrame } from '../components/email-body-frame'
 import { maybeDecodeQuotedPrintable } from '@/lib/quoted-printable'
@@ -41,7 +41,7 @@ import { useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase'
 
 // Helper to format a single recipient (handles both string and object formats)
-function formatRecipient(recipient: any): string {
+function formatRecipient(recipient: EmailRecipientLike): string {
   if (!recipient) return ''
   if (typeof recipient === 'string') return recipient
   if (recipient.email) {
@@ -51,7 +51,7 @@ function formatRecipient(recipient: any): string {
 }
 
 // Helper to format multiple recipients
-function formatRecipients(recipients: any): string {
+function formatRecipients(recipients: EmailRecipientLike | EmailRecipientLike[]): string {
   if (!recipients) return ''
   if (!Array.isArray(recipients)) return formatRecipient(recipients)
   return recipients.map(formatRecipient).join(', ')
@@ -59,7 +59,7 @@ function formatRecipients(recipients: any): string {
 
 // Compact label for a busy recipient list: "alice@x.com and 3 others".
 // Returns overflow > 0 when the list was condensed so callers can offer a toggle.
-function compactRecipients(recipients: any): { text: string; overflow: number } {
+function compactRecipients(recipients: EmailRecipientLike | EmailRecipientLike[]): { text: string; overflow: number } {
   if (!recipients) return { text: '', overflow: 0 }
   const arr = Array.isArray(recipients) ? recipients : [recipients]
   if (arr.length <= 2) return { text: arr.map(formatRecipient).join(', '), overflow: 0 }
@@ -67,7 +67,7 @@ function compactRecipients(recipients: any): { text: string; overflow: number } 
 }
 
 // Extract the bare email address (lowercased) from a recipient (string or {email})
-function extractEmail(recipient: any): string {
+function extractEmail(recipient: EmailRecipientLike): string {
   if (!recipient) return ''
   if (typeof recipient === 'string') {
     const match = recipient.match(/<([^>]+)>/)
@@ -90,13 +90,13 @@ function buildReplyAllRecipients(
   const to: string[] = []
   const cc: string[] = []
 
-  const addTo = (recipient: any) => {
+  const addTo = (recipient: EmailRecipientLike) => {
     const addr = extractEmail(recipient)
     if (!addr || seen.has(addr)) return
     seen.add(addr)
     to.push(formatRecipient(recipient))
   }
-  const addCc = (recipient: any) => {
+  const addCc = (recipient: EmailRecipientLike) => {
     const addr = extractEmail(recipient)
     if (!addr || seen.has(addr)) return
     seen.add(addr)
@@ -442,7 +442,7 @@ const EmailItem = memo(function EmailItem({
                       <div className="text-sm text-gray-400 italic mb-3">
                         {email.snippet ? stripHtml(email.snippet) : 'No message body was stored for this email.'}
                       </div>
-                      {(email as any).graph_message_id && ((email as any).email_provider === 'microsoft' || (email as any).email_provider === 'gmail') && (
+                      {email.graph_message_id && (email.email_provider === 'microsoft' || email.email_provider === 'gmail') && (
                         <HydrateButton emailId={email.id} />
                       )}
                       <div className="mt-2 text-[10px] text-gray-500">
@@ -626,7 +626,8 @@ function HydrateButton({ emailId }: { emailId: string }) {
         const j = await res.json().catch(() => ({}))
         alert('Could not fetch full content: ' + (j.error || res.statusText))
       }
-    } catch (e: any) {
+    } catch (caught: unknown) {
+      const e = caught as { message?: string } | null | undefined
       alert('Hydrate failed: ' + (e?.message || e))
     } finally {
       setLoading(false)
@@ -808,13 +809,13 @@ export function ThreadView({ thread, emails, accounts, invitesByEmail }: ThreadV
           {/* Workflow State */}
           <ThreadStatePicker
             threadId={thread.id}
-            currentState={(thread as any).workflow_state || null}
+            currentState={thread.workflow_state || null}
           />
 
           {/* Snooze */}
           <SnoozePicker
             threadId={thread.id}
-            snoozedUntil={(thread as any).snoozed_until}
+            snoozedUntil={thread.snoozed_until}
           />
 
           {/* Labels */}
@@ -823,9 +824,9 @@ export function ThreadView({ thread, emails, accounts, invitesByEmail }: ThreadV
           {/* CRM Link */}
           <CrmLinkPicker
             threadId={thread.id}
-            currentContactId={(thread as any).contact_id}
-            currentLeadId={(thread as any).lead_id}
-            currentDealId={(thread as any).deal_id}
+            currentContactId={thread.contact_id}
+            currentLeadId={thread.lead_id}
+            currentDealId={thread.deal_id}
           />
 
           {/* Create Task */}
@@ -902,9 +903,9 @@ export function ThreadView({ thread, emails, accounts, invitesByEmail }: ThreadV
           {/* AI Summary Card */}
           <AiSummaryCard
             threadId={thread.id}
-            summary={(thread as any).ai_summary}
-            sentiment={(thread as any).ai_sentiment}
-            actionItems={(thread as any).ai_action_items}
+            summary={thread.ai_summary}
+            sentiment={thread.ai_sentiment}
+            actionItems={thread.ai_action_items}
             onRefresh={() => router.refresh()}
           />
 
@@ -952,7 +953,7 @@ export function ThreadView({ thread, emails, accounts, invitesByEmail }: ThreadV
       {(showReply || showForward) && replyToEmail && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
           <EmailCompose
-            accounts={accounts.filter((a: any) => a.provider === 'microsoft' || a.provider === 'gmail' || a.domain?.verification_status === 'verified')}
+            accounts={accounts.filter((a) => a.provider === 'microsoft' || a.provider === 'gmail' || a.domain?.verification_status === 'verified')}
             defaultAccountId={thread.email_account_id}
             replyTo={showReply ? {
               email_id: replyToEmail.id,

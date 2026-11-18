@@ -56,7 +56,7 @@ export async function PATCH(
     const admin = getSupabaseAdmin()
 
     // Build update object with only provided fields
-    const updateData: Record<string, any> = {}
+    const updateData: Record<string, unknown> = {}
     if (name !== undefined) updateData.name = name
     if (icon !== undefined) updateData.icon = icon
     if (color !== undefined) updateData.color = color

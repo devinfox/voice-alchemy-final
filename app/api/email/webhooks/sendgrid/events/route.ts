@@ -82,7 +82,7 @@ export async function POST(request: NextRequest) {
 
       // Update email status based on event type
       let newStatus: string | null = null
-      const updates: Record<string, any> = {}
+      const updates: Record<string, unknown> = {}
 
       switch (event.event) {
         case 'delivered':

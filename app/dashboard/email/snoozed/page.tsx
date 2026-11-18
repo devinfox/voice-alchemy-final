@@ -10,11 +10,7 @@ export default function SnoozedPage() {
   const [threads, setThreads] = useState<EmailThread[]>([])
   const [loading, setLoading] = useState(true)
 
-  useEffect(() => {
-    loadSnoozedThreads()
-  }, [])
-
-  const loadSnoozedThreads = async () => {
+  async function loadSnoozedThreads() {
     const supabase = createClient()
 
     const { data: { user } } = await supabase.auth.getUser()
@@ -64,6 +60,11 @@ export default function SnoozedPage() {
     }
     setLoading(false)
   }
+
+  useEffect(() => {
+    // Deferred a tick: the loader sets state, and an effect body should not.
+    queueMicrotask(() => void loadSnoozedThreads())
+  }, [])
 
   const formatSnoozeTime = (dateStr: string) => {
     const date = new Date(dateStr)
@@ -120,7 +121,7 @@ export default function SnoozedPage() {
 
       <div className="flex-1 overflow-y-auto">
         {threads.map((thread) => {
-          const snoozedUntil = (thread as any).snoozed_until
+          const snoozedUntil = thread.snoozed_until
           return (
             <div key={thread.id} className="relative">
               {snoozedUntil && (

@@ -50,9 +50,14 @@ export function CollaborativeNotes({
       },
     })
 
-    setProvider(newProvider)
+    // Deferred a tick so the effect body itself does not set state.
+    let active = true
+    queueMicrotask(() => {
+      if (active) setProvider(newProvider)
+    })
 
     return () => {
+      active = false
       newProvider.destroy()
     }
   }, [noteId, userId, userName, userColor, ydoc, onSynced])

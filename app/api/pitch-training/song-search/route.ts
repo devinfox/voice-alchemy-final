@@ -85,12 +85,12 @@ Example: {"songs":[{"title":"Blinding Lights","artist":"The Weeknd","key":"F","b
       const parsed = JSON.parse(content)
       const songs = parsed.songs || []
 
-      return songs.slice(0, 10).map((song: any, index: number) => ({
+      return songs.slice(0, 10).map((song: { title?: string; artist?: string; key?: string; bpm?: string | number; mode?: string }, index: number) => ({
         id: `web_${index}_${Date.now()}`,
         title: song.title || 'Unknown',
         artist: song.artist || 'Unknown Artist',
         key: (song.key || 'C').replace(/m$/i, ''),
-        bpm: parseInt(song.bpm) || 120,
+        bpm: parseInt(String(song.bpm)) || 120,
         mode: song.mode === 'minor' || /m$/i.test(song.key || '') ? 'minor' : 'major'
       }))
     } catch (e) {
@@ -279,7 +279,7 @@ export async function GET(request: NextRequest) {
         .limit(5)
 
       if (verified && verified.length > 0) {
-        verifiedMatches = verified.map((v: any, index: number) => ({
+        verifiedMatches = verified.map((v: { id: string | number; title: string; artist: string; key: string; bpm: number; mode: string }, index: number) => ({
           id: `verified_${v.id}`,
           title: v.title.split(' ').map((w: string) => w.charAt(0).toUpperCase() + w.slice(1)).join(' '),
           artist: v.artist.split(' ').map((w: string) => w.charAt(0).toUpperCase() + w.slice(1)).join(' '),

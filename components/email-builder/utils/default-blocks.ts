@@ -1,4 +1,4 @@
-import { BlockType, EmailBlock, generateBlockId } from '@/lib/email-builder-types'
+import { BlockProperties, BlockType, EmailBlock, generateBlockId } from '@/lib/email-builder-types'
 
 // Dark-mode friendly default colors
 // Using slightly off-white and off-black for better dark mode compatibility
@@ -11,7 +11,7 @@ const defaultColors = {
 }
 
 // Default properties for each block type
-export const DEFAULT_BLOCK_PROPERTIES: Record<BlockType, Record<string, any>> = {
+export const DEFAULT_BLOCK_PROPERTIES: Record<BlockType, BlockProperties> = {
   text: {
     content: '<p>Enter your text here...</p>',
     align: 'left',

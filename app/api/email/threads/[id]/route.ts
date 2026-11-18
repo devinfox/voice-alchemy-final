@@ -107,7 +107,7 @@ export async function DELETE(
     }
 
     // Check ownership
-    const threadData = thread as any
+    const threadData = thread as { email_accounts?: { user_id?: string } | null }
     if (threadData.email_accounts?.user_id !== user.id) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 403 })
     }

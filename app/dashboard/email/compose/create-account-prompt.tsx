@@ -66,8 +66,8 @@ export function CreateEmailAccountPrompt({ sharedDomain, userName }: Props) {
       setTimeout(() => {
         router.refresh()
       }, 1500)
-    } catch (err: any) {
-      setError(err.message)
+    } catch (err: unknown) {
+      setError((err as Error).message)
     } finally {
       setIsLoading(false)
     }

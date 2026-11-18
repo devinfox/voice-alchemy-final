@@ -12,6 +12,26 @@ import { v4 as uuidv4 } from 'uuid'
 import { processEmailForAI } from '@/lib/email-ai'
 import { revalidatePath } from 'next/cache'
 
+/** Attachment as posted by the composer (content is base64). */
+interface SendAttachment {
+  filename: string
+  content: string
+  content_type?: string
+  content_id?: string
+  size?: number
+  is_inline?: boolean
+}
+
+/** Refreshed OAuth tokens handed back by the provider. */
+interface RefreshedTokens {
+  access_token: string
+  refresh_token?: string
+  expires_in: number
+}
+
+/** The parts of a thrown value the handlers below read. */
+type CaughtError = { message?: string; stack?: string } | null | undefined
+
 // For App Router, body size is configured via route segment config
 // The default is 1MB for App Router, increase to 25MB for attachments
 export const maxDuration = 60 // Allow up to 60 seconds for large uploads
@@ -413,7 +433,7 @@ export async function POST(request: NextRequest) {
           tokenData.access_token,
           tokenData.refresh_token,
           tokenData.expires_at,
-          async (newTokens: any) => {
+          async (newTokens: RefreshedTokens) => {
             // Update tokens in database
             await getSupabaseAdmin()
               .from('microsoft_oauth_tokens')
@@ -430,7 +450,7 @@ export async function POST(request: NextRequest) {
         // Log attachment info for debugging
         console.log('[Email Send] Attachments received:', attachments?.length || 0)
         if (attachments?.length > 0) {
-          attachments.forEach((att: any, idx: number) => {
+          attachments.forEach((att: SendAttachment, idx: number) => {
             console.log(`[Email Send] Attachment ${idx + 1}:`, {
               filename: att.filename,
               content_type: att.content_type,
@@ -441,7 +461,7 @@ export async function POST(request: NextRequest) {
         }
 
         // Check if any attachment exceeds the inline limit
-        const hasLargeAttachments = attachments?.some((att: any) => {
+        const hasLargeAttachments = attachments?.some((att: SendAttachment) => {
           // Base64 encoded size is roughly 4/3 of original size
           const estimatedSize = att.content ? (att.content.length * 3) / 4 : 0
           return estimatedSize > MS_GRAPH_INLINE_ATTACHMENT_LIMIT
@@ -467,7 +487,7 @@ export async function POST(request: NextRequest) {
         if (hasLargeAttachments && attachments?.length > 0) {
           // Use upload session for large attachments
           console.log('[Email Send] Using upload session for large attachments')
-          await sendEmailWithLargeAttachments(accessToken, messageData, attachments.map((att: any) => ({
+          await sendEmailWithLargeAttachments(accessToken, messageData, attachments.map((att: SendAttachment) => ({
             name: att.filename,
             contentType: att.content_type || 'application/octet-stream',
             contentBytes: att.content,
@@ -475,7 +495,7 @@ export async function POST(request: NextRequest) {
           })))
         } else {
           // Prepare Microsoft Graph attachments for inline sending
-          const msAttachments = attachments?.map((att: any) => ({
+          const msAttachments = attachments?.map((att: SendAttachment) => ({
             '@odata.type': '#microsoft.graph.fileAttachment',
             name: att.filename,
             contentType: att.content_type || 'application/octet-stream',
@@ -539,7 +559,8 @@ export async function POST(request: NextRequest) {
           }
           accessToken = token
           console.log('[Email Send] Gmail access token obtained')
-        } catch (tokenRefreshError: any) {
+        } catch (caught: unknown) {
+          const tokenRefreshError = caught as { message?: string }
           console.error('[Email Send] Gmail token refresh error:', tokenRefreshError)
           return NextResponse.json(
             { error: `Gmail authentication failed: ${tokenRefreshError.message}. Please reconnect your Google account.` },
@@ -548,7 +569,7 @@ export async function POST(request: NextRequest) {
         }
 
         // Prepare Gmail attachments
-        const gmailAttachments = attachments?.map((att: any) => ({
+        const gmailAttachments = attachments?.map((att: SendAttachment) => ({
           filename: att.filename,
           contentType: att.content_type || 'application/octet-stream',
           content: att.content, // base64 encoded
@@ -580,7 +601,8 @@ export async function POST(request: NextRequest) {
         try {
           result = await sendGmailMessage(accessToken, raw)
           console.log('[Email Send] Gmail message sent:', result.id)
-        } catch (gmailSendError: any) {
+        } catch (caught: unknown) {
+          const gmailSendError = caught as { message?: string }
           console.error('[Email Send] Gmail API send error:', gmailSendError)
           throw new Error(`Gmail send failed: ${gmailSendError.message}`)
         }
@@ -607,7 +629,7 @@ export async function POST(request: NextRequest) {
         }
 
         // Prepare SendGrid attachments
-        const sgAttachments = attachments?.map((att: any) => ({
+        const sgAttachments = attachments?.map((att: SendAttachment) => ({
           content: att.content, // base64 encoded
           filename: att.filename,
           type: att.content_type,
@@ -686,7 +708,8 @@ export async function POST(request: NextRequest) {
         email_id: emailId,
         thread_id: finalThreadId,
       })
-    } catch (sendError: any) {
+    } catch (caught: unknown) {
+      const sendError = caught as CaughtError
       console.error('[Email Send] Send error:', sendError)
       console.error('[Email Send] Error message:', sendError?.message)
       console.error('[Email Send] Error stack:', sendError?.stack)
@@ -705,7 +728,8 @@ export async function POST(request: NextRequest) {
         { status: 500 }
       )
     }
-  } catch (error: any) {
+  } catch (caught: unknown) {
+    const error = caught as CaughtError
     console.error('[Email Send] Fatal error:', error)
     console.error('[Email Send] Error message:', error?.message)
     console.error('[Email Send] Error stack:', error?.stack)

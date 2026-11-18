@@ -42,11 +42,6 @@ export function CrmLinkPicker({
 
   const hasLinks = currentContactId || currentLeadId || currentDealId
 
-  // Load linked items on mount
-  useEffect(() => {
-    loadLinkedItems()
-  }, [currentContactId, currentLeadId, currentDealId])
-
   // Close on outside click
   useEffect(() => {
     const handleClickOutside = (e: MouseEvent) => {
@@ -66,7 +61,7 @@ export function CrmLinkPicker({
     }
   }, [isOpen])
 
-  const loadLinkedItems = async () => {
+  async function loadLinkedItems() {
     const supabase = createClient()
     const items: typeof linkedItems = {}
 
@@ -105,6 +100,12 @@ export function CrmLinkPicker({
 
     setLinkedItems(items)
   }
+
+  // Load linked items on mount
+  useEffect(() => {
+    // Deferred a tick: the loader sets state, and an effect body should not.
+    queueMicrotask(() => void loadLinkedItems())
+  }, [currentContactId, currentLeadId, currentDealId])
 
   const search = async (query: string) => {
     if (!query.trim()) {

@@ -1,6 +1,7 @@
 'use client'
 
 import { EmailBlock } from '@/lib/email-builder-context'
+import type { BlockProperties } from '@/lib/email-builder-types'
 import { ensureVisibleDivider } from '../utils/color-utils'
 
 interface DividerBlockProps {
@@ -41,8 +42,8 @@ export function DividerBlockSettings({
   properties,
   onChange,
 }: {
-  properties: Record<string, any>
-  onChange: (props: Record<string, any>) => void
+  properties: BlockProperties
+  onChange: (props: BlockProperties) => void
 }) {
   return (
     <div className="space-y-4">

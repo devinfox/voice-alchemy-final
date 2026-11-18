@@ -1,10 +1,26 @@
 import { getCurrentUser, getAuthUser, createClient } from '@/lib/supabase-server'
 import { stripHtml } from '@/lib/email-utils'
 import { redirect } from 'next/navigation'
+import type { ComponentProps } from 'react'
 import { EmailList } from './email-list'
 import { NoAccountsSetup } from './no-accounts-setup'
 
 const PAGE_SIZE = 20
+
+type ListThread = ComponentProps<typeof EmailList>['threads'][number]
+type ListThreadEmail = NonNullable<ListThread['emails']>[number]
+
+/** A row of `user_email_drafts` (an unsent composer draft). */
+interface ComposerDraftRow {
+  id: string
+  email_account_id: string
+  subject: string | null
+  body_html: string | null
+  to_emails: string[] | null
+  attachments: unknown[] | null
+  created_at: string
+  updated_at: string
+}
 
 interface FolderPageProps {
   folder: 'inbox' | 'sent' | 'drafts' | 'trash' | 'spam' | 'archive'
@@ -34,7 +50,7 @@ export async function FolderPage({ folder, title, emptyMessage, isStarred, curre
     return <NoAccountsSetup />
   }
 
-  const accountIds = accounts.map((a: any) => a.id)
+  const accountIds = accounts.map((a) => a.id)
 
   // Composer drafts live in `user_email_drafts`, keyed by AUTH user id (the API
   // route writes them from supabase.auth.getUser()), while email_accounts.user_id
@@ -43,7 +59,7 @@ export async function FolderPage({ folder, title, emptyMessage, isStarred, curre
   // Nothing used to list this table, so anything composed and closed without
   // sending disappeared from the UI entirely. Drafts now shows them, and clicking
   // one reopens the composer (see is_composer_draft in EmailList).
-  let composerDrafts: any[] = []
+  let composerDrafts: ListThread[] = []
   if (folder === 'drafts') {
     const authUser = await getAuthUser()
     if (authUser) {
@@ -54,8 +70,8 @@ export async function FolderPage({ folder, title, emptyMessage, isStarred, curre
         .in('email_account_id', accountIds)
         .order('updated_at', { ascending: false })
 
-      composerDrafts = (rawDrafts || []).map((d: any) => {
-        const account = accounts.find((a: any) => a.id === d.email_account_id)
+      composerDrafts = (rawDrafts || []).map((d: ComposerDraftRow) => {
+        const account = accounts.find((a) => a.id === d.email_account_id)
         const preview = stripHtml(d.body_html || '').trim()
         return {
           // Prefixed so it can never collide with a real thread id.
@@ -182,7 +198,7 @@ export async function FolderPage({ folder, title, emptyMessage, isStarred, curre
 
     // .in() does not preserve order, so restore outbound-recency ordering.
     const threads = (rawThreads || []).sort(
-      (a: any, b: any) => (lastSentAt.get(b.id) || 0) - (lastSentAt.get(a.id) || 0)
+      (a: ListThread, b: ListThread) => (lastSentAt.get(b.id) || 0) - (lastSentAt.get(a.id) || 0)
     )
 
     // Get first account for compose
@@ -195,9 +211,9 @@ export async function FolderPage({ folder, title, emptyMessage, isStarred, curre
         </div>
         <div className="flex-1 overflow-hidden">
           <EmailList
-            threads={(threads || []).map((t: any) => ({
+            threads={(threads || []).map((t: ListThread) => ({
               ...t,
-              emails: t.emails?.sort((a: any, b: any) =>
+              emails: t.emails?.sort((a: ListThreadEmail, b: ListThreadEmail) =>
                 new Date(b.sent_at || b.created_at).getTime() -
                 new Date(a.sent_at || a.created_at).getTime()
               )
@@ -256,9 +272,9 @@ export async function FolderPage({ folder, title, emptyMessage, isStarred, curre
   // typically few, so page 1 can run slightly long; no synced thread is skipped.
   const listThreads = [
     ...(currentPage === 1 ? composerDrafts : []),
-    ...(threads || []).map((t: any) => ({
+    ...(threads || []).map((t: ListThread) => ({
       ...t,
-      emails: t.emails?.sort((a: any, b: any) =>
+      emails: t.emails?.sort((a: ListThreadEmail, b: ListThreadEmail) =>
         new Date(b.sent_at || b.created_at).getTime() -
         new Date(a.sent_at || a.created_at).getTime()
       )

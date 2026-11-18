@@ -1,4 +1,4 @@
-import { Extension } from '@tiptap/core'
+import { Extension, type CommandProps } from '@tiptap/core'
 
 /**
  * Indent — a minimal, email-safe indent/outdent for the compose editor.
@@ -73,12 +73,12 @@ export const Indent = Extension.create<IndentOptions>({
 
     const shift =
       (delta: number) =>
-      ({ state, dispatch }: { state: any; dispatch: any }) => {
+      ({ state, dispatch }: CommandProps) => {
         const { from, to } = state.selection
         let tr = state.tr
         let changed = false
 
-        state.doc.nodesBetween(from, to, (node: any, pos: number) => {
+        state.doc.nodesBetween(from, to, (node, pos) => {
           if (types.includes(node.type.name)) {
             const current = node.attrs.indent || 0
             const next = Math.min(maxLevel, Math.max(0, current + delta))

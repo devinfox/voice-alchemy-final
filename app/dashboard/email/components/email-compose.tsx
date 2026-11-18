@@ -41,13 +41,13 @@ interface EmailComposeProps {
     cc?: string[]
     subject: string
     body?: string
-  }
+  } | null
   forward?: {
     email_id: string
     subject: string
     body?: string
     attachments?: EmailAttachment[]
-  }
+  } | null
   draftId?: string // Load from AI-generated draft (`email_drafts`)
   resumeDraftId?: string // Reopen a saved composer draft (`user_email_drafts`)
   onClose: () => void
@@ -59,6 +59,22 @@ interface EmailComposeProps {
   maxWidthClassName?: string // Override the default max width (non-inline/non-fullscreen)
   fillHeight?: boolean // Stretch to fill the parent's height so the editor grows
   onToggleFullscreen?: () => void
+}
+
+/** A stored attachment reference on a saved draft. */
+interface DraftAttachmentRef {
+  public_url: string
+  file_name: string
+  mime_type?: string | null
+}
+
+/** An attachment uploaded to storage and referenced in the send request. */
+interface StagedAttachment {
+  storage_path: string
+  filename: string
+  content_type: string
+  size: number
+  content?: string
 }
 
 interface ByeTalkListItem {
@@ -334,7 +350,7 @@ export function EmailCompose({
         // they send exactly as they would have when the draft was written.
         if (draft.attachments?.length > 0) {
           const loaded = await Promise.all(
-            draft.attachments.map(async (doc: any) => {
+            draft.attachments.map(async (doc: DraftAttachmentRef) => {
               try {
                 const res = await fetch(doc.public_url)
                 const blob = await res.blob()
@@ -388,7 +404,7 @@ export function EmailCompose({
 
         // Load attachments in parallel for better performance
         if (draft.attachments?.length > 0) {
-          const attachmentPromises = draft.attachments.map(async (doc: any) => {
+          const attachmentPromises = draft.attachments.map(async (doc: DraftAttachmentRef) => {
             try {
               const fileResponse = await fetch(doc.public_url)
               const blob = await fileResponse.blob()
@@ -991,7 +1007,7 @@ export function EmailCompose({
       // Upload attachments directly to storage (bypasses the ~4.5MB serverless
       // request-body limit that base64-in-JSON attachments used to hit). We send
       // only a storage reference; the send route downloads the bytes server-side.
-      let attachmentData: any[] = []
+      const attachmentData: StagedAttachment[] = []
       if (attachments.length > 0) {
         console.log('[Email Compose] Uploading attachments to storage:', attachments.length)
         for (const file of attachments) {
@@ -1044,7 +1060,7 @@ export function EmailCompose({
 
       console.log('[Email Compose] Sending request with attachments:', requestBody.attachments?.length || 0)
       if (requestBody.attachments && requestBody.attachments.length > 0) {
-        requestBody.attachments.forEach((att: any, idx: number) => {
+        requestBody.attachments.forEach((att: StagedAttachment, idx: number) => {
           console.log(`[Email Compose] Request attachment ${idx + 1}:`, {
             filename: att.filename,
             content_type: att.content_type,

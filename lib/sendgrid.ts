@@ -1,4 +1,5 @@
 import sgMail, { MailService } from '@sendgrid/mail'
+import type { MailData, MailDataRequired } from '@sendgrid/helpers/classes/mail'
 import sgClient from '@sendgrid/client'
 
 // Initialize SendGrid. Prefer SENDGRID_API_KEY; fall back to OTHER_SENDGRID_API_KEY
@@ -86,7 +87,7 @@ export async function getDomainAuthentication(domainId: string | number): Promis
   return response.body as SendGridDomainResponse
 }
 
-export async function validateDomain(domainId: string | number): Promise<{
+export interface SendGridDomainValidation {
   id: number
   valid: boolean
   validation_results: {
@@ -94,12 +95,14 @@ export async function validateDomain(domainId: string | number): Promise<{
     dkim1: { valid: boolean; reason: string | null }
     dkim2: { valid: boolean; reason: string | null }
   }
-}> {
+}
+
+export async function validateDomain(domainId: string | number): Promise<SendGridDomainValidation> {
   const [response] = await sgClient.request({
     method: 'POST',
     url: `/v3/whitelabel/domains/${domainId}/validate`,
   })
-  return response.body as any
+  return response.body as SendGridDomainValidation
 }
 
 export async function deleteDomainAuthentication(domainId: string | number): Promise<void> {
@@ -133,7 +136,7 @@ export async function getInboundParseSettings(): Promise<InboundParseSettings[]>
     method: 'GET',
     url: '/v3/user/webhooks/parse/settings',
   })
-  return (response.body as any).result || []
+  return (response.body as { result?: InboundParseSettings[] }).result || []
 }
 
 export async function createInboundParseWebhook(
@@ -166,7 +169,7 @@ export async function deleteInboundParseWebhook(hostname: string): Promise<void>
 // Event Webhook Helpers
 // ============================================================================
 
-export async function getEventWebhookSettings(): Promise<any> {
+export async function getEventWebhookSettings(): Promise<unknown> {
   const [response] = await sgClient.request({
     method: 'GET',
     url: '/v3/user/webhooks/event/settings',
@@ -188,7 +191,7 @@ export async function updateEventWebhookSettings(settings: {
   open?: boolean
   click?: boolean
   dropped?: boolean
-}): Promise<any> {
+}): Promise<unknown> {
   const [response] = await sgClient.request({
     method: 'PATCH',
     url: '/v3/user/webhooks/event/settings',
@@ -239,7 +242,7 @@ export async function sendEmail(params: SendEmailParams): Promise<{
     throw new Error('SendGrid API key is not configured. Please set SENDGRID_API_KEY environment variable.')
   }
 
-  const msg: any = {
+  const msg: MailData = {
     to: params.to,
     from: params.from,
     subject: params.subject,
@@ -269,20 +272,21 @@ export async function sendEmail(params: SendEmailParams): Promise<{
   }
 
   try {
-    const [response] = await sgClientForSend.send(msg)
+    const [response] = await sgClientForSend.send(msg as MailDataRequired)
 
     return {
       messageId: response.headers['x-message-id'] as string,
       statusCode: response.statusCode,
     }
-  } catch (error: any) {
+  } catch (err: unknown) {
+    const error = err as { response?: { body?: { errors?: { message: string }[] } } }
     // SendGrid errors have a response body with more details
     console.error('[SendGrid] Send error:', error)
     if (error.response?.body) {
       console.error('[SendGrid] Error body:', JSON.stringify(error.response.body, null, 2))
       const errors = error.response.body.errors
       if (errors && errors.length > 0) {
-        throw new Error(`SendGrid error: ${errors.map((e: any) => e.message).join(', ')}`)
+        throw new Error(`SendGrid error: ${errors.map((e) => e.message).join(', ')}`)
       }
     }
     throw error

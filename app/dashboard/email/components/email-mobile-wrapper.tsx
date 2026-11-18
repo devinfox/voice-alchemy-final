@@ -65,23 +65,13 @@ export function EmailMobileWrapper({ userId, userEmail, children }: EmailMobileW
   const [syncing, setSyncing] = useState(false)
   const [hasMicrosoftAccount, setHasMicrosoftAccount] = useState(false)
 
-  useEffect(() => {
-    loadAccounts()
-    loadAiDraftsCount()
-  }, [userId])
-
-  useEffect(() => {
-    if (accounts.length > 0) {
-      loadFolderCounts(accounts.map(a => a.id))
-    }
-  }, [accounts])
-
   // Close sidebar when route changes
   useEffect(() => {
-    setSidebarOpen(false)
+    // Deferred a tick so the effect body itself does not set state.
+    queueMicrotask(() => setSidebarOpen(false))
   }, [pathname])
 
-  const loadAiDraftsCount = async () => {
+  async function loadAiDraftsCount() {
     const supabase = createClient()
     const { count } = await supabase
       .from('email_drafts')
@@ -92,7 +82,7 @@ export function EmailMobileWrapper({ userId, userEmail, children }: EmailMobileW
     setAiDraftsCount(count || 0)
   }
 
-  const loadAccounts = async () => {
+  async function loadAccounts() {
     const supabase = createClient()
     const { data } = await supabase
       .from('email_accounts')
@@ -103,11 +93,11 @@ export function EmailMobileWrapper({ userId, userEmail, children }: EmailMobileW
 
     if (data && data.length > 0) {
       setAccounts(data)
-      setHasMicrosoftAccount(data.some((a: any) => a.provider === 'microsoft'))
+      setHasMicrosoftAccount(data.some((a: { provider?: string | null }) => a.provider === 'microsoft'))
     }
   }
 
-  const loadFolderCounts = async (accountIds: string[]) => {
+  async function loadFolderCounts(accountIds: string[]) {
     if (accountIds.length === 0) return
 
     const supabase = createClient()
@@ -141,6 +131,21 @@ export function EmailMobileWrapper({ userId, userEmail, children }: EmailMobileW
       setFolderCounts(counts)
     }
   }
+
+  useEffect(() => {
+    // Deferred a tick: the loader sets state, and an effect body should not.
+    queueMicrotask(() => {
+      void loadAccounts()
+      void loadAiDraftsCount()
+    })
+  }, [userId])
+
+  useEffect(() => {
+    if (accounts.length > 0) {
+      // Deferred a tick: the loader sets state, and an effect body should not.
+      queueMicrotask(() => void loadFolderCounts(accounts.map(a => a.id)))
+    }
+  }, [accounts])
 
   const handleManualSync = async () => {
     if (syncing) return

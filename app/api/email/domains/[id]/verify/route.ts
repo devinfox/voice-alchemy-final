@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient as createServerClient } from '@/lib/supabase-server'
 import { getSupabaseAdmin } from '@/lib/supabase-admin'
-import { validateDomain, getDomainAuthentication } from '@/lib/sendgrid'
+import { validateDomain, getDomainAuthentication, type SendGridDomainValidation } from '@/lib/sendgrid'
 
 // POST /api/email/domains/[id]/verify - Verify DNS records for a domain
 export async function POST(
@@ -40,7 +40,7 @@ export async function POST(
       .eq('id', id)
 
     let verified = false
-    let validationResult: any = null
+    let validationResult: SendGridDomainValidation | null = null
     let dnsRecords = domain.dns_records
 
     // If we have a SendGrid domain ID, verify through SendGrid
@@ -89,7 +89,8 @@ export async function POST(
             })
           }
         }
-      } catch (sgError: any) {
+      } catch (caught: unknown) {
+        const sgError = caught as { message?: string }
         console.error('SendGrid verification error:', sgError)
 
         // Update with error
@@ -118,7 +119,7 @@ export async function POST(
 
       // Update mock DNS records with random verification status
       if (Array.isArray(dnsRecords)) {
-        dnsRecords = dnsRecords.map((record: any) => ({
+        dnsRecords = dnsRecords.map((record: Record<string, unknown>) => ({
           ...record,
           verified: mockVerified || Math.random() > 0.5
         }))

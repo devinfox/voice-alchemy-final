@@ -103,6 +103,11 @@ export function EmailUIProvider({ children }: EmailUIProviderProps) {
   )
 }
 
+/** Same as useEmailUI, but returns null outside an EmailUIProvider instead of throwing. */
+export function useOptionalEmailUI() {
+  return useContext(EmailUIContext) ?? null
+}
+
 export function useEmailUI() {
   const context = useContext(EmailUIContext)
   if (context === undefined) {

@@ -353,7 +353,7 @@ export function DomainsList({ domains, userId }: DomainsListProps) {
                   <div className="mt-4 p-4 bg-yellow-500/10 border border-yellow-500/30 rounded-lg">
                     <p className="text-sm text-yellow-400">
                       <strong>Note:</strong> DNS changes can take up to 48 hours to propagate.
-                      We'll automatically check every few minutes.
+                      We&apos;ll automatically check every few minutes.
                     </p>
                   </div>
                 )}

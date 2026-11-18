@@ -75,9 +75,17 @@ const SCALE_NOTES: Record<string, string[]> = {
 const BUFFER_SIZE = 4096
 const IN_TUNE_THRESHOLD = 10
 
+interface AubioPitchDetector {
+  do: (buffer: Float32Array) => number
+}
+
+interface AubioModule {
+  Pitch: new (method: string, bufferSize: number, hopSize: number, sampleRate: number) => AubioPitchDetector
+}
+
 declare global {
   interface Window {
-    aubio: () => Promise<any>
+    aubio: () => Promise<AubioModule>
   }
 }
 
@@ -114,7 +122,7 @@ function usePitchDetection(sensitivity: number, onNoteDetected: (note: DetectedN
   const audioContextRef = useRef<AudioContext | null>(null)
   const analyserRef = useRef<AnalyserNode | null>(null)
   const scriptProcessorRef = useRef<ScriptProcessorNode | null>(null)
-  const pitchDetectorRef = useRef<any>(null)
+  const pitchDetectorRef = useRef<AubioPitchDetector | null>(null)
   const streamRef = useRef<MediaStream | null>(null)
   const sensitivityRef = useRef(sensitivity)
   const callbackRef = useRef(onNoteDetected)
@@ -128,7 +136,7 @@ function usePitchDetection(sensitivity: number, onNoteDetected: (note: DetectedN
       return
     }
     try {
-      audioContextRef.current = new (window.AudioContext || (window as any).webkitAudioContext)()
+      audioContextRef.current = new (window.AudioContext || (window as Window & { webkitAudioContext?: typeof AudioContext }).webkitAudioContext)()
       analyserRef.current = audioContextRef.current.createAnalyser()
       scriptProcessorRef.current = audioContextRef.current.createScriptProcessor(BUFFER_SIZE, 1, 1)
       const aubioModule = await window.aubio()
@@ -145,15 +153,15 @@ function usePitchDetection(sensitivity: number, onNoteDetected: (note: DetectedN
 
         // Shared gating: amplitude threshold plus the 60-2000Hz plausibility
         // check, identical across all three trainers.
-        const detected = analyzeBuffer(input, pitchDetectorRef.current, sensitivityRef.current)
+        const detected = analyzeBuffer(input, pitchDetectorRef.current!, sensitivityRef.current)
         if (!detected) return
 
         callbackRef.current(detected)
       })
       setIsListening(true)
-    } catch (error: any) {
+    } catch (error: unknown) {
       console.error('Mic error:', error)
-      alert(error.message)
+      alert((error as Error).message)
     }
   }, [])
 

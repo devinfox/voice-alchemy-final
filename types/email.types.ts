@@ -34,6 +34,10 @@ export interface EmailParticipant {
   name?: string
 }
 
+// A recipient as it may actually be stored: older rows hold plain strings
+// ("Name <a@b.c>"), newer ones hold { email, name } objects.
+export type EmailRecipientLike = string | { email?: string; name?: string | null } | null | undefined
+
 // Email Domain
 export interface EmailDomain {
   id: string
@@ -80,6 +84,8 @@ export interface EmailAccount {
   updated_at: string
   // Joined
   email_domain?: EmailDomain
+  // Joined as `domain:email_domains(id, domain, verification_status)`
+  domain?: { id?: string; domain?: string; verification_status?: DomainVerificationStatus } | null
 }
 
 // Email Thread
@@ -108,6 +114,12 @@ export interface EmailThread {
   deleted_at: string | null
   created_at: string
   updated_at: string
+  // Workflow / AI columns (present on rows selected with `*`)
+  workflow_state?: 'needs_response' | 'waiting_on_reply' | 'snoozed' | 'done' | null
+  snoozed_until?: string | null
+  ai_summary?: string | null
+  ai_sentiment?: string | null
+  ai_action_items?: string[] | null
   // Joined
   email_account?: EmailAccount
   emails?: Email[]

@@ -75,7 +75,15 @@ async function resolveSendingAccount(admin: SupabaseClient, preferredUserId: str
   const preferredAddress = (process.env.EMAIL_FUNNEL_FROM || '').trim().toLowerCase()
 
   const select = 'id, user_id, email_address, display_name, organization_id, domain:email_domains(domain, verification_status)'
-  const pick = (rows: any[] | null): SendingAccount | null => {
+  type DomainRef = { domain: string | null; verification_status: string | null }
+  type AccountRow = {
+    id: string
+    email_address: string
+    display_name: string | null
+    organization_id: string | null
+    domain: DomainRef | DomainRef[] | null
+  }
+  const pick = (rows: AccountRow[] | null): SendingAccount | null => {
     for (const row of rows || []) {
       const d = Array.isArray(row.domain) ? row.domain[0] : row.domain
       if (d?.verification_status === 'verified' && d.domain) {

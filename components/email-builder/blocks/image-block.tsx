@@ -2,6 +2,7 @@
 
 import { useState } from 'react'
 import { EmailBlock } from '@/lib/email-builder-context'
+import type { BlockProperties } from '@/lib/email-builder-types'
 import { ImageIcon, Upload, Loader2 } from 'lucide-react'
 
 interface ImageBlockProps {
@@ -46,8 +47,8 @@ export function ImageBlockSettings({
   properties,
   onChange,
 }: {
-  properties: Record<string, any>
-  onChange: (props: Record<string, any>) => void
+  properties: BlockProperties
+  onChange: (props: BlockProperties) => void
 }) {
   const [uploading, setUploading] = useState(false)
 

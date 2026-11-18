@@ -2,7 +2,7 @@
 
 import Link from 'next/link'
 import { usePathname, useRouter } from 'next/navigation'
-import { useState, useEffect, useRef, useCallback } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import {
   Inbox,
   Send,
@@ -80,43 +80,30 @@ export function EmailSidebar({ userId, onCompose }: EmailSidebarProps) {
   const { isVoiceAlchemy, gradientConfig } = useTenant()
   const { accentColor, accentColorLight } = gradientConfig
 
-  // Initial load effect - only runs once on mount
-  useEffect(() => {
-    loadAccounts()
-    loadAiDraftsCount()
-    triggerInitialSync()
-  }, [userId])
+  async function loadAccounts() {
+    const supabase = createClient()
+    const { data } = await supabase
+      .from('email_accounts')
+      .select('*, email_domains(*)')
+      .eq('user_id', userId)
+      .eq('is_deleted', false)
+      .order('is_primary', { ascending: false })
 
-  // Polling effect - sets up intervals using refs to avoid infinite loops
-  useEffect(() => {
-    // Set up automatic email polling every 60 seconds for Microsoft/Gmail accounts
-    // Only poll when the tab is visible to reduce server load
-    const pollInterval = setInterval(() => {
-      if (hasSyncableAccountsRef.current && !syncingRef.current && document.visibilityState === 'visible') {
-        console.log('[Email Sidebar] Auto-polling for new emails...')
-        handleAutoSync()
-      }
-    }, 60000) // 60 seconds
-
-    // Sync when tab becomes visible after being hidden
-    const handleVisibilityChange = () => {
-      if (document.visibilityState === 'visible' && hasSyncableAccountsRef.current && !syncingRef.current) {
-        console.log('[Email Sidebar] Tab visible, checking for new emails...')
-        handleAutoSync()
-      }
+    if (data && data.length > 0) {
+      setAccounts(data)
+      // Select primary account or first one
+      const primary = data.find(a => a.is_primary) || data[0]
+      setSelectedAccount(primary)
+      // Check for Microsoft and Gmail accounts
+      setHasMicrosoftAccount(data.some((a: { provider?: string | null }) => a.provider === 'microsoft'))
+      setHasGmailAccount(data.some((a: { provider?: string | null }) => a.provider === 'gmail'))
     }
-
-    document.addEventListener('visibilitychange', handleVisibilityChange)
-
-    return () => {
-      clearInterval(pollInterval)
-      document.removeEventListener('visibilitychange', handleVisibilityChange)
-    }
-  }, [userId])
+    setLoading(false)
+  }
 
   // Trigger initial email sync for Microsoft and Gmail (runs once on first login)
   // Optimized: Run both syncs in parallel
-  const triggerInitialSync = useCallback(async () => {
+  const triggerInitialSync = async () => {
     const syncPromises: Promise<boolean>[] = []
 
     // Microsoft initial sync
@@ -128,7 +115,7 @@ export function EmailSidebar({ userId, onCompose }: EmailSidebarProps) {
         .then(async (res) => {
           if (res.ok) {
             const result = await res.json()
-            return result.results?.some((r: any) => r.created > 0) ?? false
+            return result.results?.some((r: { created: number }) => r.created > 0) ?? false
           }
           return false
         })
@@ -145,7 +132,7 @@ export function EmailSidebar({ userId, onCompose }: EmailSidebarProps) {
         .then(async (res) => {
           if (res.ok) {
             const result = await res.json()
-            return result.results?.some((r: any) => r.created > 0) ?? false
+            return result.results?.some((r: { created: number }) => r.created > 0) ?? false
           }
           return false
         })
@@ -159,9 +146,9 @@ export function EmailSidebar({ userId, onCompose }: EmailSidebarProps) {
       // Don't call router.refresh() here - it causes UI flicker
       // New emails will appear on next navigation or manual refresh
     }
-  }, [])
+  }
 
-  const loadAiDraftsCount = async () => {
+  async function loadAiDraftsCount() {
     const supabase = createClient()
     const { count } = await supabase
       .from('email_drafts')
@@ -171,13 +158,6 @@ export function EmailSidebar({ userId, onCompose }: EmailSidebarProps) {
 
     setAiDraftsCount(count || 0)
   }
-
-  // Load folder counts whenever accounts change
-  useEffect(() => {
-    if (accounts.length > 0) {
-      loadFolderCounts(accounts.map(a => a.id))
-    }
-  }, [accounts])
 
   // Listen for star changes to update count in real-time
   useEffect(() => {
@@ -212,30 +192,10 @@ export function EmailSidebar({ userId, onCompose }: EmailSidebarProps) {
     }
   }, [])
 
-  const loadAccounts = async () => {
-    const supabase = createClient()
-    const { data } = await supabase
-      .from('email_accounts')
-      .select('*, email_domains(*)')
-      .eq('user_id', userId)
-      .eq('is_deleted', false)
-      .order('is_primary', { ascending: false })
-
-    if (data && data.length > 0) {
-      setAccounts(data)
-      // Select primary account or first one
-      const primary = data.find(a => a.is_primary) || data[0]
-      setSelectedAccount(primary)
-      // Check for Microsoft and Gmail accounts
-      setHasMicrosoftAccount(data.some((a: any) => a.provider === 'microsoft'))
-      setHasGmailAccount(data.some((a: any) => a.provider === 'gmail'))
-    }
-    setLoading(false)
-  }
 
   // Auto sync for polling (silent, doesn't show loading state)
   // Optimized: Run syncs in parallel
-  const handleAutoSync = useCallback(async () => {
+  const handleAutoSync = async () => {
     const syncPromises: Promise<boolean>[] = []
 
     // Microsoft sync
@@ -249,7 +209,7 @@ export function EmailSidebar({ userId, onCompose }: EmailSidebarProps) {
           .then(async (res) => {
             if (res.ok) {
               const result = await res.json()
-              return result.results?.some((r: any) => r.created > 0) ?? false
+              return result.results?.some((r: { created: number }) => r.created > 0) ?? false
             }
             return false
           })
@@ -271,7 +231,7 @@ export function EmailSidebar({ userId, onCompose }: EmailSidebarProps) {
           .then(async (res) => {
             if (res.ok) {
               const result = await res.json()
-              return result.results?.some((r: any) => r.created > 0) ?? false
+              return result.results?.some((r: { created: number }) => r.created > 0) ?? false
             }
             return false
           })
@@ -292,7 +252,7 @@ export function EmailSidebar({ userId, onCompose }: EmailSidebarProps) {
         loadAccounts()
       }
     }
-  }, [hasMicrosoftAccount, hasGmailAccount])
+  }
 
   // Manual sync for Microsoft and Gmail accounts
   const handleManualSync = async () => {
@@ -329,7 +289,7 @@ export function EmailSidebar({ userId, onCompose }: EmailSidebarProps) {
     setSyncing(false)
   }
 
-  const loadFolderCounts = async (accountIds: string[]) => {
+  async function loadFolderCounts(accountIds: string[]) {
     if (accountIds.length === 0) {
       setFolderCounts({})
       return
@@ -377,6 +337,51 @@ export function EmailSidebar({ userId, onCompose }: EmailSidebarProps) {
       setStarredCount(starred)
     }
   }
+
+  // Initial load effect - only runs once on mount
+  useEffect(() => {
+    // Deferred a tick: the loader sets state, and an effect body should not.
+    queueMicrotask(() => {
+      void loadAccounts()
+      void loadAiDraftsCount()
+      void triggerInitialSync()
+    })
+  }, [userId])
+
+  // Polling effect - sets up intervals using refs to avoid infinite loops
+  useEffect(() => {
+    // Set up automatic email polling every 60 seconds for Microsoft/Gmail accounts
+    // Only poll when the tab is visible to reduce server load
+    const pollInterval = setInterval(() => {
+      if (hasSyncableAccountsRef.current && !syncingRef.current && document.visibilityState === 'visible') {
+        console.log('[Email Sidebar] Auto-polling for new emails...')
+        handleAutoSync()
+      }
+    }, 60000) // 60 seconds
+
+    // Sync when tab becomes visible after being hidden
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === 'visible' && hasSyncableAccountsRef.current && !syncingRef.current) {
+        console.log('[Email Sidebar] Tab visible, checking for new emails...')
+        handleAutoSync()
+      }
+    }
+
+    document.addEventListener('visibilitychange', handleVisibilityChange)
+
+    return () => {
+      clearInterval(pollInterval)
+      document.removeEventListener('visibilitychange', handleVisibilityChange)
+    }
+  }, [userId])
+
+  // Load folder counts whenever accounts change
+  useEffect(() => {
+    if (accounts.length > 0) {
+      // Deferred a tick: the loader sets state, and an effect body should not.
+      queueMicrotask(() => void loadFolderCounts(accounts.map(a => a.id)))
+    }
+  }, [accounts])
 
   const isActive = (href: string) => {
     if (href === '/dashboard/email') {

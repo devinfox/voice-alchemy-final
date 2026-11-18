@@ -1,6 +1,7 @@
 'use client'
 
 import { EmailBlock } from '@/lib/email-builder-context'
+import type { BlockProperties, BlockSocialPlatform } from '@/lib/email-builder-types'
 
 interface SocialBlockProps {
   block: EmailBlock
@@ -18,7 +19,7 @@ const SOCIAL_ICONS: Record<string, string> = {
 
 export function SocialBlock({ block, isSelected, onClick }: SocialBlockProps) {
   const { platforms, iconSize, align, padding } = block.properties
-  const enabledPlatforms = (platforms || []).filter((p: any) => p.enabled)
+  const enabledPlatforms = (platforms || []).filter((p: BlockSocialPlatform) => p.enabled)
 
   return (
     <div
@@ -29,7 +30,7 @@ export function SocialBlock({ block, isSelected, onClick }: SocialBlockProps) {
       style={{ padding: `${padding}px`, textAlign: align }}
     >
       <div className="flex gap-3 justify-center">
-        {enabledPlatforms.map((platform: any) => (
+        {enabledPlatforms.map((platform: BlockSocialPlatform) => (
           <div
             key={platform.name}
             className="rounded-full bg-gray-700 p-2 hover:bg-gray-600 transition-colors"
@@ -54,20 +55,20 @@ export function SocialBlockSettings({
   properties,
   onChange,
 }: {
-  properties: Record<string, any>
-  onChange: (props: Record<string, any>) => void
+  properties: BlockProperties
+  onChange: (props: BlockProperties) => void
 }) {
   const platforms = properties.platforms || []
 
   const togglePlatform = (name: string) => {
-    const updated = platforms.map((p: any) =>
+    const updated = platforms.map((p: BlockSocialPlatform) =>
       p.name === name ? { ...p, enabled: !p.enabled } : p
     )
     onChange({ platforms: updated })
   }
 
   const updatePlatformUrl = (name: string, url: string) => {
-    const updated = platforms.map((p: any) =>
+    const updated = platforms.map((p: BlockSocialPlatform) =>
       p.name === name ? { ...p, url } : p
     )
     onChange({ platforms: updated })
@@ -80,7 +81,7 @@ export function SocialBlockSettings({
           Platforms
         </label>
         <div className="space-y-2">
-          {platforms.map((platform: any) => (
+          {platforms.map((platform: BlockSocialPlatform) => (
             <div key={platform.name} className="glass-card-subtle p-3">
               <div className="flex items-center gap-3 mb-2">
                 <label className="relative inline-flex items-center cursor-pointer">

@@ -44,7 +44,7 @@ export function EmailNotificationToast({ userId, accountIds }: EmailNotification
     try {
       // Create audio context on demand (required for autoplay policies)
       if (!audioContextRef.current) {
-        audioContextRef.current = new (window.AudioContext || (window as any).webkitAudioContext)()
+        audioContextRef.current = new (window.AudioContext || (window as Window & { webkitAudioContext?: typeof AudioContext }).webkitAudioContext)()
       }
       const ctx = audioContextRef.current
 
@@ -130,7 +130,14 @@ export function EmailNotificationToast({ userId, accountIds }: EmailNotification
           filter: `email_account_id=in.(${accountIds.join(',')})`,
         },
         (payload) => {
-          const email = payload.new as any
+          const email = payload.new as {
+            id: string
+            thread_id: string
+            is_inbound: boolean
+            from_name: string | null
+            from_address: string
+            subject: string | null
+          }
           console.log('[EmailNotification] Realtime event received:', email.id)
 
           // Only notify for inbound emails

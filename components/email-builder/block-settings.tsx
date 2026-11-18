@@ -1,6 +1,7 @@
 'use client'
 
 import { useEmailBuilder, BlockType } from '@/lib/email-builder-context'
+import type { BlockProperties } from '@/lib/email-builder-types'
 import { Trash2, Copy, X } from 'lucide-react'
 import { TextBlockSettings } from './blocks/text-block'
 import { ImageBlockSettings } from './blocks/image-block'
@@ -43,7 +44,7 @@ export function BlockSettings() {
 
   const blockMeta = BLOCK_METADATA.find((b) => b.type === selectedBlock.type)
 
-  const handleChange = (props: Record<string, any>) => {
+  const handleChange = (props: BlockProperties) => {
     if (selectedBlockId) {
       updateBlock(selectedBlockId, props)
     }

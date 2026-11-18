@@ -5,6 +5,16 @@ import OpenAI from 'openai'
 import { ByeTalkAttachmentRef } from '@/lib/email/byetalk-file-utils'
 import { listByeTalkFilesForEmail } from '@/lib/email/byetalk-file-utils'
 
+/** An attachment row returned with a draft (document row or generated file ref). */
+interface DraftAttachment {
+  id: string
+  file_name: string
+  public_url: string | null
+  mime_type: string | null
+  file_size_bytes: number | null
+  byetalk_ref?: ByeTalkAttachmentRef
+}
+
 let openaiInstance: OpenAI | null = null
 
 /**
@@ -484,7 +494,7 @@ export async function GET(request: NextRequest) {
     }
 
     // Fetch attachment details
-    let attachments: any[] = []
+    let attachments: DraftAttachment[] = []
     if (draft.attachment_ids?.length > 0) {
       const { data: docs } = await getSupabaseAdmin()
         .from('documents')
@@ -597,7 +607,7 @@ export async function PATCH(request: NextRequest) {
       return NextResponse.json({ error: 'Draft not found' }, { status: 404 })
     }
 
-    const updateData: any = { status }
+    const updateData: Record<string, unknown> = { status }
     if (status === 'sent') {
       updateData.sent_at = new Date().toISOString()
     } else if (status === 'dismissed' || status === 'expired') {

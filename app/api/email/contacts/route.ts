@@ -68,7 +68,7 @@ export async function GET(request: NextRequest) {
       }
 
       // Helper to process recipient arrays (to, cc, bcc)
-      const processRecipients = (recipients: any[]) => {
+      const processRecipients = (recipients: (string | { email?: string; name?: string | null } | null)[]) => {
         for (const recipient of recipients) {
           let recipientEmail: string
           let recipientName: string | null = null

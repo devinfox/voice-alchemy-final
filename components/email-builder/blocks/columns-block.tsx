@@ -1,7 +1,8 @@
 'use client'
 
-import { useState } from 'react'
+import { useState, type CSSProperties } from 'react'
 import { EmailBlock } from '@/lib/email-builder-context'
+import type { BlockProperties } from '@/lib/email-builder-types'
 import { Type, ImageIcon, Upload, Loader2, X } from 'lucide-react'
 import { ensureReadableColor, isLightColor } from '../utils/color-utils'
 
@@ -73,7 +74,7 @@ export function ColumnsBlock({ block, isSelected, onClick, contentBackgroundColo
               ) : col.type === 'text' && col.content ? (
                 <div
                   style={{
-                    textAlign: col.align as any,
+                    textAlign: col.align as CSSProperties['textAlign'],
                     fontSize: `${col.fontSize || 16}px`,
                     color: textColor,
                     width: '100%',
@@ -105,8 +106,8 @@ export function ColumnsBlockSettings({
   properties,
   onChange,
 }: {
-  properties: Record<string, any>
-  onChange: (props: Record<string, any>) => void
+  properties: BlockProperties
+  onChange: (props: BlockProperties) => void
 }) {
   const [activeColumn, setActiveColumn] = useState(0)
   const [uploading, setUploading] = useState(false)

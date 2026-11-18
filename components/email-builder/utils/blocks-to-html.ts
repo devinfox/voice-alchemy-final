@@ -1,4 +1,4 @@
-import { EmailBlock, EmailSettings, defaultEmailSettings } from '@/lib/email-builder-types'
+import { BlockProperties, BlockSocialLink, BlockSocialPlatform, EmailBlock, EmailSettings, defaultEmailSettings } from '@/lib/email-builder-types'
 import { ensureReadableColor, ensureVisibleDivider, isLightColor } from './color-utils'
 
 // Color-scheme handling.
@@ -105,7 +105,7 @@ function blockToHtml(block: EmailBlock, contentBg: string): string {
   }
 }
 
-function textBlockToHtml(props: Record<string, any>, contentBg: string): string {
+function textBlockToHtml(props: BlockProperties, contentBg: string): string {
   const textColor = ensureReadableColor(props.color || '#333333', contentBg)
   return `
 <tr>
@@ -115,7 +115,7 @@ function textBlockToHtml(props: Record<string, any>, contentBg: string): string 
 </tr>`
 }
 
-function imageBlockToHtml(props: Record<string, any>): string {
+function imageBlockToHtml(props: BlockProperties): string {
   if (!props.src) return ''
 
   // Use margin for centering with display:block (more reliable in email clients)
@@ -133,7 +133,7 @@ function imageBlockToHtml(props: Record<string, any>): string {
 </tr>`
 }
 
-function buttonBlockToHtml(props: Record<string, any>, contentBg: string): string {
+function buttonBlockToHtml(props: BlockProperties, contentBg: string): string {
   const width = props.fullWidth ? '100%' : 'auto'
   // Button text color should contrast with button background, not email background
   const buttonTextColor = ensureReadableColor(props.textColor || '#000000', props.bgColor || '#D4AF37')
@@ -154,7 +154,7 @@ function buttonBlockToHtml(props: Record<string, any>, contentBg: string): strin
 </tr>`
 }
 
-function dividerBlockToHtml(props: Record<string, any>, contentBg: string): string {
+function dividerBlockToHtml(props: BlockProperties, contentBg: string): string {
   const dividerColor = ensureVisibleDivider(props.color || '#E5E5E5', contentBg)
   return `
 <tr>
@@ -168,7 +168,7 @@ function dividerBlockToHtml(props: Record<string, any>, contentBg: string): stri
 </tr>`
 }
 
-function spacerBlockToHtml(props: Record<string, any>): string {
+function spacerBlockToHtml(props: BlockProperties): string {
   return `
 <tr>
   <td style="height: ${props.height}px; line-height: ${props.height}px; font-size: 1px;">&nbsp;</td>
@@ -186,7 +186,7 @@ interface ColumnContent {
   width: number
 }
 
-function columnsBlockToHtml(props: Record<string, any>, contentBg: string): string {
+function columnsBlockToHtml(props: BlockProperties, contentBg: string): string {
   const columnCount = props.columnCount || 2
   const widths = props.columnWidths || [50, 50]
   const columnContent: ColumnContent[] = props.columnContent || []
@@ -226,10 +226,10 @@ function columnsBlockToHtml(props: Record<string, any>, contentBg: string): stri
 </tr>`
 }
 
-function socialBlockToHtml(props: Record<string, any>): string {
-  const enabledPlatforms = (props.platforms || []).filter((p: any) => p.enabled)
+function socialBlockToHtml(props: BlockProperties): string {
+  const enabledPlatforms = (props.platforms || []).filter((p: BlockSocialPlatform) => p.enabled)
 
-  const icons = enabledPlatforms.map((platform: any) => {
+  const icons = enabledPlatforms.map((platform: BlockSocialPlatform) => {
     const iconUrl = getSocialIconUrl(platform.name, props.iconStyle)
     return `<a href="${platform.url}" style="display: inline-block; margin: 0 8px;"><img src="${iconUrl}" alt="${platform.name}" width="${props.iconSize}" height="${props.iconSize}" style="display: block; border: 0;" /></a>`
   }).join('')
@@ -242,7 +242,7 @@ function socialBlockToHtml(props: Record<string, any>): string {
 </tr>`
 }
 
-function videoBlockToHtml(props: Record<string, any>): string {
+function videoBlockToHtml(props: BlockProperties): string {
   if (!props.thumbnailUrl) return ''
 
   return `
@@ -258,7 +258,7 @@ function videoBlockToHtml(props: Record<string, any>): string {
 </tr>`
 }
 
-function headerBlockToHtml(props: Record<string, any>): string {
+function headerBlockToHtml(props: BlockProperties): string {
   const logo = props.logoUrl
     ? `<img src="${props.logoUrl}" alt="${props.companyName}" style="display: block; max-height: 50px; width: auto; margin: 0 auto;" />`
     : `<h1 style="margin: 0; font-size: 24px; font-weight: bold; color: ${props.textColor};">${props.companyName}</h1>`
@@ -271,13 +271,13 @@ function headerBlockToHtml(props: Record<string, any>): string {
 </tr>`
 }
 
-function footerBlockToHtml(props: Record<string, any>, contentBg: string): string {
+function footerBlockToHtml(props: BlockProperties, contentBg: string): string {
   // Footer has its own background, so use that for contrast calculation
   const footerBg = props.bgColor || '#1A1A1A'
   const textColor = ensureReadableColor(props.textColor || '#999999', footerBg)
 
   const socialLinks = props.showSocial && props.socialLinks?.length
-    ? `<p style="margin: 0 0 16px 0;">${props.socialLinks.map((s: any) =>
+    ? `<p style="margin: 0 0 16px 0;">${props.socialLinks.map((s: BlockSocialLink) =>
         `<a href="${s.url}" style="color: ${textColor}; margin: 0 8px;">${s.name}</a>`
       ).join(' | ')}</p>`
     : ''
@@ -293,7 +293,7 @@ function footerBlockToHtml(props: Record<string, any>, contentBg: string): strin
 }
 
 // Get social icon URL (placeholder - in production use actual hosted icons)
-function getSocialIconUrl(platform: string, style: string): string {
+function getSocialIconUrl(platform: string, style?: string): string {
   // These would be actual hosted icon URLs
   const baseUrl = 'https://cdn-icons-png.flaticon.com/512'
   const icons: Record<string, string> = {

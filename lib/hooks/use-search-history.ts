@@ -10,13 +10,20 @@ export function useSearchHistory() {
 
   // Load history from localStorage on mount
   useEffect(() => {
+    let active = true
     try {
       const stored = localStorage.getItem(STORAGE_KEY)
       if (stored) {
-        setHistory(JSON.parse(stored))
+        const parsed = JSON.parse(stored) as string[]
+        queueMicrotask(() => {
+          if (active) setHistory(parsed)
+        })
       }
     } catch (error) {
       console.error('Error loading search history:', error)
+    }
+    return () => {
+      active = false
     }
   }, [])
 

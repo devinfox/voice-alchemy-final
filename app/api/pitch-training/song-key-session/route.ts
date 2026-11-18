@@ -224,7 +224,14 @@ export async function GET(request: NextRequest) {
 // Helper: Update user's overall training stats
 // ============================================================================
 
-async function updateUserTrainingStats(supabase: any, userId: string) {
+type ServerSupabase = Awaited<ReturnType<typeof createClient>>
+
+interface WeekSessionRow {
+  in_key_percentage: number | null
+  duration_seconds: number | null
+}
+
+async function updateUserTrainingStats(supabase: ServerSupabase, userId: string) {
   try {
     // Get all song key sessions for this week
     const startOfWeek = new Date()
@@ -238,8 +245,8 @@ async function updateUserTrainingStats(supabase: any, userId: string) {
       .gte('session_date', startOfWeek.toISOString().split('T')[0])
 
     if (weekSessions && weekSessions.length > 0) {
-      const weeklyAvg = weekSessions.reduce((sum: number, s: any) => sum + (s.in_key_percentage || 0), 0) / weekSessions.length
-      const totalDuration = weekSessions.reduce((sum: number, s: any) => sum + (s.duration_seconds || 0), 0)
+      const weeklyAvg = weekSessions.reduce((sum: number, s: WeekSessionRow) => sum + (s.in_key_percentage || 0), 0) / weekSessions.length
+      const totalDuration = weekSessions.reduce((sum: number, s: WeekSessionRow) => sum + (s.duration_seconds || 0), 0)
 
       // Update weekly progress (if table exists)
       await supabase

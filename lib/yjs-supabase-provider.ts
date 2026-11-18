@@ -261,7 +261,8 @@ export class YjsSupabaseProvider {
         return
       }
 
-      const rawState = (note as any)?.yjs_state || (note as any)?.yjs_document_state
+      const noteRow = note as { yjs_state?: string | null; yjs_document_state?: string | null } | null
+      const rawState = noteRow?.yjs_state || noteRow?.yjs_document_state
       if (rawState) {
         try {
           const state = decodeUpdate(rawState)
