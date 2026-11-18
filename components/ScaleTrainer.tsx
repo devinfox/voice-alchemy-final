@@ -1,12 +1,16 @@
 'use client'
 
-import { useState, useEffect, useRef, useCallback } from 'react'
-import Script from 'next/script'
-import { Music, Play, Square, Save, RotateCcw, ChevronUp, ChevronDown, Mic, MicOff, Check, ArrowUp, ArrowDown, ArrowUpDown, Volume2, VolumeX } from 'lucide-react'
+import { useState, useEffect, useRef, useCallback, useMemo } from 'react'
+import { Music, Play, Square, Save, RotateCcw, ChevronUp, ChevronDown, Mic, Check, ArrowUp, ArrowDown, ArrowUpDown, Volume2, VolumeX, Piano } from 'lucide-react'
 import { Button, buttonVariants } from '@/components/ui/button'
 import { ToolDialog } from '@/components/ui/tool-dialog'
-import { analyzeBuffer } from '@/lib/pitch-detection'
+import { PitchTrail, type PitchTrailHandle } from '@/components/ui/pitch-trail'
 import { SpotlightTour, SpotlightTriggerButton, SpotlightStep } from '@/components/spotlight-tour'
+import { useVoiceTracker, type VoiceFrame } from '@/lib/use-voice-tracker'
+import { analyzeHeldNote, describeHeldNote, midiToHz, tuningAccuracyOf, type NoteFrame } from '@/lib/pitch-scoring'
+import { SCALE_GROUPS, NOTE_NAMES, getScale, describeDegree, backingChordIntervals } from '@/lib/music-theory'
+import { playTone, startBackingChord, type ToneHandle } from '@/lib/tone-synth'
+import type { DetectedNote } from '@/lib/pitch-detection'
 
 const scaleTourSteps: SpotlightStep[] = [
   {
@@ -30,50 +34,26 @@ const scaleTourSteps: SpotlightStep[] = [
   {
     target: '[data-tour="scale-notes-strip"]',
     title: '4. Follow the Notes',
-    content: 'These boxes are the notes of your scale — tap any box to hear its note. Once you press "Start Practice", the pink box is the note to sing. Hold it steady for a moment and it turns green, then the next box lights up pink.',
+    content: 'These boxes are the notes of your scale — tap any box to hear its note. Once you press "Start Practice", the gold box is the note to sing. Land on it and it turns green, then the next box lights up. Any octave counts, so sing where your voice is comfortable.',
     placement: 'top',
   },
 ]
 
-// Audio playback constants
-const MIDDLE_A = 440
-const SEMITONE = 69
-
-// Scale definitions (intervals from root in semitones)
-const SCALE_DEFINITIONS: Record<string, { name: string; intervals: number[]; description: string }> = {
-  major: { name: 'Major', intervals: [0, 2, 4, 5, 7, 9, 11, 12], description: 'Happy, bright sound' },
-  natural_minor: { name: 'Natural Minor', intervals: [0, 2, 3, 5, 7, 8, 10, 12], description: 'Sad, melancholic' },
-  harmonic_minor: { name: 'Harmonic Minor', intervals: [0, 2, 3, 5, 7, 8, 11, 12], description: 'Exotic, Middle Eastern' },
-  melodic_minor: { name: 'Melodic Minor', intervals: [0, 2, 3, 5, 7, 9, 11, 12], description: 'Jazz, ascending pattern' },
-  pentatonic_major: { name: 'Pentatonic Major', intervals: [0, 2, 4, 7, 9, 12], description: 'Folk, rock solos' },
-  pentatonic_minor: { name: 'Pentatonic Minor', intervals: [0, 3, 5, 7, 10, 12], description: 'Blues, rock' },
-  blues: { name: 'Blues', intervals: [0, 3, 5, 6, 7, 10, 12], description: 'Blues with blue note' },
-  chromatic: { name: 'Chromatic', intervals: [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12], description: 'All 12 notes' },
-}
-
-const NOTE_NAMES = ['C', 'C#', 'D', 'D#', 'E', 'F', 'F#', 'G', 'G#', 'A', 'A#', 'B']
-const NOTE_FREQUENCIES: Record<string, number> = {
-  'C': 261.63, 'C#': 277.18, 'D': 293.66, 'D#': 311.13,
-  'E': 329.63, 'F': 349.23, 'F#': 369.99, 'G': 392.00,
-  'G#': 415.30, 'A': 440.00, 'A#': 466.16, 'B': 493.88,
-}
+// How long the singer must be on a note before it counts. Long enough that
+// sliding through a note on the way to another does not count, short enough
+// that a scale can be sung at a musical speed.
+const NOTE_LANDED_MS = 220
+// A gap shorter than this inside a note (a consonant, a flicker) is ignored.
+const NOTE_GAP_MS = 150
 
 interface ScaleNote {
   noteName: string
   octave: number
   frequency: number
   position: number
-}
-
-interface SungNote {
-  noteName: string
-  octave: number
-  frequency: number
-  detectedFrequency: number
-  centsDeviation: number
-  pitchAccuracy: number
-  timestamp: number
-  samples: number
+  midi: number
+  /** Semitones above the home note, 0-11. */
+  degree: number
 }
 
 interface NoteMetric {
@@ -90,12 +70,30 @@ interface NoteMetric {
   wasInOrder: boolean
   sampleCount: number
   avgDetectedFrequency: number
+  /** Plain-language note for the screen and the AI coach. Not a DB column. */
+  coachNote: string
+  degree: number
+}
+
+/** The note that has just been accepted, still being listened to until the singer leaves it. */
+interface NoteInProgress {
+  note: ScaleNote
+  frames: NoteFrame[]
+  lastT: number
+  octaveShift: number
+  timeToSingMs: number | null
+  order: number
 }
 
 type Direction = 'ascending' | 'descending' | 'both'
 
 interface ScaleTrainerProps {
   variant?: 'floating' | 'card'
+}
+
+/** Distance between two pitches ignoring which octave they are in (-6..+6 semitones). */
+function foldOctave(semitones: number): number {
+  return ((((semitones + 6) % 12) + 12) % 12) - 6
 }
 
 export default function ScaleTrainer({ variant = 'floating' }: ScaleTrainerProps) {
@@ -109,97 +107,59 @@ export default function ScaleTrainer({ variant = 'floating' }: ScaleTrainerProps
   const [direction, setDirection] = useState<Direction>('ascending')
   const [sensitivity, setSensitivity] = useState<number>(50)
   const [tempo, setTempo] = useState<number>(80) // BPM - beats per minute
+  const [backing, setBacking] = useState(false)
 
   // Session state
-  const [isActive, setIsActive] = useState(false)
   const [isPracticing, setIsPracticing] = useState(false)
   const [startedAt, setStartedAt] = useState<Date | null>(null)
-  const [scaleNotes, setScaleNotes] = useState<ScaleNote[]>([])
   const [currentNoteIndex, setCurrentNoteIndex] = useState<number>(0)
-  const [sungNotes, setSungNotes] = useState<SungNote[]>([])
   const [noteMetrics, setNoteMetrics] = useState<Map<string, NoteMetric>>(new Map())
 
-  // Audio state
-  const [hasPermission, setHasPermission] = useState<boolean | null>(null)
-  const [detectedNote, setDetectedNote] = useState<string | null>(null)
-  const [detectedOctave, setDetectedOctave] = useState<number | null>(null)
-  const [detectedFrequency, setDetectedFrequency] = useState<number | null>(null)
-  const [centsDeviation, setCentsDeviation] = useState<number>(0)
-  const [isListening, setIsListening] = useState(false)
-
-  // Refs for audio processing (pitch detection)
-  const audioContextRef = useRef<AudioContext | null>(null)
-  const analyserRef = useRef<AnalyserNode | null>(null)
-  const scriptProcessorRef = useRef<ScriptProcessorNode | null>(null)
-  const mediaStreamRef = useRef<MediaStream | null>(null)
-  const pitchDetectorRef = useRef<any>(null)
-
-  // Constants for pitch detection (matching ModernPitchTrainer).
-  // MIDDLE_A_FREQ / SEMITONE_OFFSET moved to lib/pitch-detection.
-  const BUFFER_SIZE = 4096
+  // What the mic hears, for the live readout
+  const [detected, setDetected] = useState<DetectedNote | null>(null)
 
   // Refs for audio playback
   const playbackContextRef = useRef<AudioContext | null>(null)
-  const oscillatorRef = useRef<OscillatorNode | null>(null)
-  const gainNodeRef = useRef<GainNode | null>(null)
-  const audioElementRef = useRef<HTMLAudioElement | null>(null)
+  const toneRef = useRef<ToneHandle | null>(null)
+  const backingRef = useRef<ToneHandle | null>(null)
   const scalePlaybackRef = useRef<{ isPlaying: boolean; timeoutId: NodeJS.Timeout | null }>({ isPlaying: false, timeoutId: null })
-
-  // Stats
-  const [sessionStats, setSessionStats] = useState({
-    notesAttempted: 0,
-    notesCorrect: 0,
-    sequenceAccuracy: 0,
-    pitchAccuracy: 0,
-    overallScore: 0,
-  })
 
   // Saving state
   const [isSaving, setIsSaving] = useState(false)
   const [saveMessage, setSaveMessage] = useState<string | null>(null)
 
-  // Aubio loading state
-  const [aubioLoaded, setAubioLoaded] = useState(false)
-
   // Audio playback state
-  const [isPlayingNote, setIsPlayingNote] = useState(false)
   const [playingNoteIndex, setPlayingNoteIndex] = useState<number | null>(null)
   const [isPlayingScale, setIsPlayingScale] = useState(false)
   const [volume, setVolume] = useState(0.5)
 
-  // Generate scale notes based on settings
-  useEffect(() => {
-    const scale = SCALE_DEFINITIONS[scaleType]
-    if (!scale) return
+  const scale = getScale(scaleType)
 
-    const rootIndex = NOTE_NAMES.indexOf(rootNote)
-    let notes: ScaleNote[] = []
-
-    scale.intervals.forEach((interval, idx) => {
-      const noteIndex = (rootIndex + interval) % 12
-      const noteOctave = octave + Math.floor((rootIndex + interval) / 12)
-      const noteName = NOTE_NAMES[noteIndex]
-      const baseFreq = NOTE_FREQUENCIES[noteName]
-      const frequency = baseFreq * Math.pow(2, noteOctave - 4)
-
-      notes.push({
-        noteName,
-        octave: noteOctave,
-        frequency,
+  // The notes to sing, from the settings
+  const scaleNotes = useMemo<ScaleNote[]>(() => {
+    const rootIndex = NOTE_NAMES.indexOf(rootNote as (typeof NOTE_NAMES)[number])
+    const rootMidi = (octave + 1) * 12 + Math.max(0, rootIndex)
+    // One octave of the scale, finishing on the home note at the top.
+    const up: ScaleNote[] = [...getScale(scaleType).intervals, 12].map((interval, idx) => {
+      const midi = rootMidi + interval
+      return {
+        noteName: NOTE_NAMES[((midi % 12) + 12) % 12],
+        octave: Math.floor(midi / 12) - 1,
+        frequency: midiToHz(midi),
         position: idx + 1,
-      })
+        midi,
+        degree: interval % 12,
+      }
     })
 
     if (direction === 'descending') {
-      notes = notes.reverse().map((n, i) => ({ ...n, position: i + 1 }))
-    } else if (direction === 'both') {
-      const ascending = [...notes]
-      const descending = notes.slice(0, -1).reverse()
-      notes = [...ascending, ...descending.map((n, i) => ({ ...n, position: ascending.length + i + 1 }))]
+      return [...up].reverse().map((n, i) => ({ ...n, position: i + 1 }))
     }
-
-    setScaleNotes(notes)
-    resetSession()
+    if (direction === 'both') {
+      const down = up.slice(0, -1).reverse()
+      return [...up, ...down.map((n, i) => ({ ...n, position: up.length + i + 1 }))]
+    }
+    return up
   }, [scaleType, rootNote, octave, direction])
 
   // Initialize playback audio context
@@ -207,51 +167,23 @@ export default function ScaleTrainer({ variant = 'floating' }: ScaleTrainerProps
     if (!playbackContextRef.current) {
       playbackContextRef.current = new (window.AudioContext || (window as any).webkitAudioContext)()
     }
+    if (playbackContextRef.current.state === 'suspended') void playbackContextRef.current.resume()
     return playbackContextRef.current
   }, [])
 
-  // Play a single note using sine wave oscillator
+  // Play a single note with a warm keyboard-like tone
   const playNoteFrequency = useCallback((frequency: number, duration: number = 1000) => {
     const ctx = initPlaybackContext()
-
-    // Stop any existing oscillator
-    if (oscillatorRef.current) {
-      try {
-        oscillatorRef.current.stop()
-        oscillatorRef.current.disconnect()
-      } catch (e) {
-        // Already stopped
-      }
-    }
-
-    // Create oscillator and gain node
-    const oscillator = ctx.createOscillator()
-    const gainNode = ctx.createGain()
-
-    oscillator.type = 'sine'
-    oscillator.frequency.setValueAtTime(frequency, ctx.currentTime)
-
-    // Envelope for smooth sound
-    gainNode.gain.setValueAtTime(0, ctx.currentTime)
-    gainNode.gain.linearRampToValueAtTime(volume * 0.3, ctx.currentTime + 0.05) // Attack
-    gainNode.gain.setValueAtTime(volume * 0.3, ctx.currentTime + duration / 1000 - 0.1) // Sustain
-    gainNode.gain.linearRampToValueAtTime(0, ctx.currentTime + duration / 1000) // Release
-
-    oscillator.connect(gainNode)
-    gainNode.connect(ctx.destination)
-
-    oscillatorRef.current = oscillator
-    gainNodeRef.current = gainNode
-
-    oscillator.start(ctx.currentTime)
-    oscillator.stop(ctx.currentTime + duration / 1000)
-
-    setIsPlayingNote(true)
-
-    oscillator.onended = () => {
-      setIsPlayingNote(false)
-      setPlayingNoteIndex(null)
-    }
+    toneRef.current?.stop()
+    const handle = playTone(ctx, frequency, {
+      duration: duration / 1000,
+      volume,
+      onEnded: () => {
+        // Only the most recent note clears the highlight
+        if (toneRef.current === handle) setPlayingNoteIndex(null)
+      },
+    })
+    toneRef.current = handle
   }, [initPlaybackContext, volume])
 
   // Play a specific note from the scale
@@ -284,7 +216,7 @@ export default function ScaleTrainer({ variant = 'floating' }: ScaleTrainerProps
 
       const note = scaleNotes[currentIndex]
       setPlayingNoteIndex(currentIndex)
-      playNoteFrequency(note.frequency, noteDuration - 50)
+      playNoteFrequency(note.frequency, noteDuration - 20)
 
       currentIndex++
       scalePlaybackRef.current.timeoutId = setTimeout(playNext, noteDuration)
@@ -300,234 +232,243 @@ export default function ScaleTrainer({ variant = 'floating' }: ScaleTrainerProps
       clearTimeout(scalePlaybackRef.current.timeoutId)
       scalePlaybackRef.current.timeoutId = null
     }
-    if (oscillatorRef.current) {
-      try {
-        oscillatorRef.current.stop()
-        oscillatorRef.current.disconnect()
-      } catch (e) {
-        // Already stopped
-      }
-    }
+    toneRef.current?.stop()
+    toneRef.current = null
     setIsPlayingScale(false)
-    setIsPlayingNote(false)
     setPlayingNoteIndex(null)
   }, [])
 
-  // Note-number, cents and standard-frequency math now come from
-  // lib/pitch-detection, shared with ModernPitchTrainer and SongPitchTrainer.
-
-  // Refs to keep callbacks updated without recreating audio processing
-  const sensitivityRef = useRef(sensitivity)
-  const isPracticingRef = useRef(isPracticing)
-  const processDetectedNoteRef = useRef<((noteName: string, noteOctave: number, frequency: number, cents: number) => void) | null>(null)
-
-  useEffect(() => {
-    sensitivityRef.current = sensitivity
-  }, [sensitivity])
-
-  useEffect(() => {
-    isPracticingRef.current = isPracticing
-  }, [isPracticing])
-
-  // Initialize Aubio pitch detector with ScriptProcessorNode (like ModernPitchTrainer)
-  const initAudio = useCallback(async () => {
-    try {
-      // Check if aubio is loaded
-      if (!window.aubio) {
-        alert('Audio library is still loading. Please wait a moment and try again.')
-        return
-      }
-
-      const stream = await navigator.mediaDevices.getUserMedia({ audio: true })
-      mediaStreamRef.current = stream
-      setHasPermission(true)
-
-      audioContextRef.current = new (window.AudioContext || (window as any).webkitAudioContext)()
-      analyserRef.current = audioContextRef.current.createAnalyser()
-      scriptProcessorRef.current = audioContextRef.current.createScriptProcessor(BUFFER_SIZE, 1, 1)
-
-      const aubioModule = await window.aubio()
-      pitchDetectorRef.current = new aubioModule.Pitch(
-        'default',
-        BUFFER_SIZE,
-        1,
-        audioContextRef.current.sampleRate
-      )
-
-      const source = audioContextRef.current.createMediaStreamSource(stream)
-      source.connect(analyserRef.current)
-      analyserRef.current.connect(scriptProcessorRef.current)
-      scriptProcessorRef.current.connect(audioContextRef.current.destination)
-
-      // Real-time audio processing via ScriptProcessorNode.
-      // Detection logic is shared with ModernPitchTrainer and SongPitchTrainer
-      // via lib/pitch-detection; behaviour here is unchanged.
-      scriptProcessorRef.current.addEventListener('audioprocess', (event: AudioProcessingEvent) => {
-        const input = event.inputBuffer.getChannelData(0)
-
-        const detected = analyzeBuffer(input, pitchDetectorRef.current, sensitivityRef.current)
-        if (!detected) return
-
-        // ScaleTrainer matches against ASCII note names ('F#', not 'F♯')
-        const noteName = detected.nameAscii
-
-        // Update UI state
-        setDetectedNote(noteName)
-        setDetectedOctave(detected.octave)
-        setDetectedFrequency(detected.frequency)
-        setCentsDeviation(detected.cents)
-
-        // Process for scale training if practicing
-        if (isPracticingRef.current && processDetectedNoteRef.current) {
-          processDetectedNoteRef.current(noteName, detected.octave, detected.frequency, detected.cents)
-        }
-      })
-
-      setIsListening(true)
-    } catch (err) {
-      console.error('Error initializing audio:', err)
-      setHasPermission(false)
-    }
-    // No deps: note math now comes from lib/pitch-detection as pure module
-    // functions rather than component-scoped callbacks.
+  const stopBacking = useCallback(() => {
+    backingRef.current?.stop()
+    backingRef.current = null
   }, [])
 
-  // Process detected note
-  const lastNoteTimeRef = useRef<number>(0)
-  const currentSamplesRef = useRef<{ freq: number; cents: number }[]>([])
-  const matchedNoteRef = useRef<string | null>(null)
+  // ==========================================================================
+  // LISTENING AND SCORING
+  // ==========================================================================
+  // Readings arrive ~90 times a second, so progress lives in refs and React
+  // state only changes when a note is actually landed or finished.
 
-  const processDetectedNote = useCallback((noteName: string, noteOctave: number, frequency: number, cents: number) => {
-    if (currentNoteIndex >= scaleNotes.length) return
+  const scaleNotesRef = useRef(scaleNotes)
+  const isPracticingRef = useRef(false)
+  const indexRef = useRef(0)
+  const runRef = useRef<NoteFrame[]>([])
+  const runShiftRef = useRef(0)
+  const inProgressRef = useRef<NoteInProgress | null>(null)
+  const lastLandedAtRef = useRef(0)
+  const landedCountRef = useRef(0)
+  const trailRef = useRef<PitchTrailHandle | null>(null)
 
-    const expectedNote = scaleNotes[currentNoteIndex]
-    const noteKey = `${noteName}-${noteOctave}`
-    const expectedKey = `${expectedNote.noteName}-${expectedNote.octave}`
-
-    currentSamplesRef.current.push({ freq: frequency, cents })
-
-    if (noteKey === expectedKey) {
-      if (currentSamplesRef.current.length >= 5) {
-        const now = Date.now()
-        const timeFromLast = lastNoteTimeRef.current ? now - lastNoteTimeRef.current : null
-
-        const samples = currentSamplesRef.current
-        const avgFreq = samples.reduce((s, x) => s + x.freq, 0) / samples.length
-        const avgCents = samples.reduce((s, x) => s + x.cents, 0) / samples.length
-
-        const freqVariance = samples.reduce((s, x) => s + Math.pow(x.freq - avgFreq, 2), 0) / samples.length
-        const freqStdDev = Math.sqrt(freqVariance)
-        const voiceStability = Math.max(0, Math.min(100, 100 - freqStdDev * 2))
-
-        const pitchAccuracy = Math.max(0, Math.min(100, 100 - Math.abs(avgCents) * 2))
-
-        const centsPenalty = Math.min(25, Math.abs(avgCents) * 0.5)
-        const targetAccuracy = Math.max(0, 100 - centsPenalty)
-
-        const sungNote: SungNote = {
-          noteName,
-          octave: noteOctave,
-          frequency: expectedNote.frequency,
-          detectedFrequency: avgFreq,
-          centsDeviation: avgCents,
-          pitchAccuracy,
-          timestamp: now,
-          samples: samples.length,
-        }
-        setSungNotes(prev => [...prev, sungNote])
-
-        const metric: NoteMetric = {
-          noteName,
-          octave: noteOctave,
-          expectedPosition: expectedNote.position,
-          actualPosition: sungNotes.length + 1,
-          targetFrequency: expectedNote.frequency,
-          pitchAccuracy,
-          centsDeviation: avgCents,
-          targetAccuracy,
-          voiceStability,
-          timeToSingMs: timeFromLast,
-          wasInOrder: true,
-          sampleCount: samples.length,
-          avgDetectedFrequency: avgFreq,
-        }
-        setNoteMetrics(prev => new Map(prev).set(`${expectedNote.position}`, metric))
-
-        setCurrentNoteIndex(prev => prev + 1)
-        lastNoteTimeRef.current = now
-        currentSamplesRef.current = []
-        matchedNoteRef.current = null
-
-        updateStats()
-      }
-    } else {
-      if (matchedNoteRef.current !== noteKey) {
-        currentSamplesRef.current = [{ freq: frequency, cents }]
-        matchedNoteRef.current = noteKey
-      }
-    }
-  }, [currentNoteIndex, scaleNotes, sungNotes])
-
-  // Keep the processDetectedNote ref updated
   useEffect(() => {
-    processDetectedNoteRef.current = processDetectedNote
-  }, [processDetectedNote])
+    scaleNotesRef.current = scaleNotes
+  }, [scaleNotes])
 
-  const updateStats = useCallback(() => {
-    const totalExpected = scaleNotes.length
-    const totalSung = Math.min(totalExpected, sungNotes.length)
+  /** Turn the readings for one note into its score. */
+  const scoreNote = useCallback((item: NoteInProgress) => {
+    const analysis = analyzeHeldNote(item.frames, item.note.midi)
+    const verdict = describeHeldNote(analysis)
+    const metric: NoteMetric = {
+      noteName: item.note.noteName,
+      octave: item.note.octave,
+      expectedPosition: item.note.position,
+      actualPosition: item.order,
+      targetFrequency: item.note.frequency,
+      pitchAccuracy: tuningAccuracyOf(analysis.deviationCents),
+      centsDeviation: analysis.deviationCents,
+      targetAccuracy: Math.max(0, 100 - Math.min(25, Math.abs(analysis.deviationCents) * 0.5)),
+      voiceStability: analysis.steadiness,
+      timeToSingMs: item.timeToSingMs,
+      wasInOrder: true,
+      sampleCount: item.frames.length,
+      avgDetectedFrequency: midiToHz(analysis.centerMidi + item.octaveShift * 12),
+      coachNote: [verdict.headline, verdict.detail].filter(Boolean).join('. '),
+      degree: item.note.degree,
+    }
+    setNoteMetrics(prev => new Map(prev).set(`${item.note.position}`, metric))
+  }, [])
 
+  /** The singer has left the note (or gone quiet): its score is final. */
+  const finishNoteInProgress = useCallback(() => {
+    const item = inProgressRef.current
+    if (!item) return
+    inProgressRef.current = null
+    scoreNote(item)
+    // Last note of the scale finished: the run is over.
+    if (indexRef.current >= scaleNotesRef.current.length && isPracticingRef.current) {
+      isPracticingRef.current = false
+      setIsPracticing(false)
+      stopBacking()
+    }
+  }, [scoreNote, stopBacking])
+
+  const handleFrame = useCallback((frame: VoiceFrame) => {
+    if (!isPracticingRef.current) return
+
+    // Still on the note that was just accepted? Keep listening to it, so it is
+    // scored on the whole note rather than its first moment.
+    const item = inProgressRef.current
+    if (item) {
+      const offset = foldOctave(frame.midi - item.note.midi)
+      if (Math.abs(offset) <= 0.6 && frame.time - item.lastT < NOTE_GAP_MS && item.frames.length < 400) {
+        item.frames.push({ t: frame.time, midi: item.note.midi + offset })
+        item.lastT = frame.time
+        trailRef.current?.push(frame.time, item.note.midi + offset, item.note.midi)
+        return
+      }
+      finishNoteInProgress()
+    }
+
+    const notes = scaleNotesRef.current
+    if (indexRef.current >= notes.length) return
+    const expected = notes[indexRef.current]
+
+    // Any octave counts: a low voice singing a scale written an octave up is
+    // singing the right notes.
+    const offset = foldOctave(frame.midi - expected.midi)
+    trailRef.current?.push(frame.time, expected.midi + offset, expected.midi)
+
+    if (Math.abs(offset) > 0.5) {
+      runRef.current = []
+      return
+    }
+
+    const run = runRef.current
+    if (run.length > 0 && frame.time - run[run.length - 1].t > NOTE_GAP_MS) run.length = 0
+    if (run.length === 0) runShiftRef.current = Math.round((frame.midi - expected.midi - offset) / 12)
+    run.push({ t: frame.time, midi: expected.midi + offset })
+
+    if (frame.time - run[0].t >= NOTE_LANDED_MS) {
+      landedCountRef.current += 1
+      inProgressRef.current = {
+        note: expected,
+        frames: run,
+        lastT: frame.time,
+        octaveShift: runShiftRef.current,
+        timeToSingMs: lastLandedAtRef.current ? Math.round(frame.time - lastLandedAtRef.current) : null,
+        order: landedCountRef.current,
+      }
+      lastLandedAtRef.current = frame.time
+      runRef.current = []
+      indexRef.current += 1
+      setCurrentNoteIndex(indexRef.current)
+      // Show a score straight away; it is refined when the note ends.
+      scoreNote(inProgressRef.current)
+    }
+  }, [finishNoteInProgress, scoreNote])
+
+  const handleNote = useCallback((note: DetectedNote | null) => {
+    setDetected(note)
+    // Silence ends whatever note was being held.
+    if (!note) finishNoteInProgress()
+  }, [finishNoteInProgress])
+
+  const { isListening, start: startListening, stop: stopListening } = useVoiceTracker({
+    sensitivity,
+    onFrame: handleFrame,
+    onNote: handleNote,
+  })
+
+  // Scores for the run so far, always in step with the notes scored
+  const sessionStats = useMemo(() => {
     const metrics = Array.from(noteMetrics.values())
-    const avgPitchAccuracy = metrics.length > 0
-      ? metrics.reduce((s, m) => s + m.pitchAccuracy, 0) / metrics.length
+    const totalExpected = scaleNotes.length
+    const totalSung = Math.min(totalExpected, metrics.length)
+    const pitchAccuracy = metrics.length > 0
+      ? metrics.reduce((sum, m) => sum + m.pitchAccuracy, 0) / metrics.length
       : 0
-
     const sequenceAccuracy = totalExpected > 0 ? Math.min(100, (totalSung / totalExpected) * 100) : 0
-    const overallScore = Math.min(100, (sequenceAccuracy * 0.5) + (avgPitchAccuracy * 0.5))
-
-    setSessionStats({
+    return {
       notesAttempted: totalExpected,
       notesCorrect: totalSung,
       sequenceAccuracy,
-      pitchAccuracy: avgPitchAccuracy,
-      overallScore,
-    })
-  }, [scaleNotes, sungNotes, noteMetrics])
+      pitchAccuracy,
+      overallScore: Math.min(100, sequenceAccuracy * 0.5 + pitchAccuracy * 0.5),
+    }
+  }, [noteMetrics, scaleNotes])
 
-  const resetSession = () => {
+  // What a teacher would point out after hearing the scale
+  const insights = useMemo<string[]>(() => {
+    const metrics = Array.from(noteMetrics.values())
+    if (metrics.length < 3) return []
+    const lines: string[] = []
+
+    const toughest = [...metrics].sort((a, b) => Math.abs(b.centsDeviation) - Math.abs(a.centsDeviation))[0]
+    if (Math.abs(toughest.centsDeviation) > 20) {
+      const degree = describeDegree(toughest.degree)
+      const where = toughest.centsDeviation > 0 ? 'high' : 'low'
+      lines.push(`Trickiest note: ${toughest.noteName}, ${degree.name}. You sang it a little ${where}. ${degree.tip}`)
+    } else {
+      lines.push('Every note landed in tune. Try a faster speed or a new scale.')
+    }
+
+    // Going up against coming down
+    if (direction === 'both') {
+      const turn = Math.ceil(scaleNotes.length / 2)
+      const average = (list: NoteMetric[]) =>
+        list.length > 0 ? list.reduce((sum, m) => sum + m.centsDeviation, 0) / list.length : 0
+      const up = average(metrics.filter(m => m.expectedPosition <= turn))
+      const down = average(metrics.filter(m => m.expectedPosition > turn))
+      if (down < -15 && down < up - 10) {
+        lines.push('You sink a little on the way down. Keep the same energy coming down as going up.')
+      } else if (up > 15 && up > down + 10) {
+        lines.push('You push a little high on the way up. Stay relaxed as you climb.')
+      }
+    }
+
+    const shaky = metrics.filter(m => m.voiceStability < 60).length
+    if (shaky >= Math.ceil(metrics.length / 2)) {
+      lines.push('Several notes wavered. Slow the scale down and give each note a steady breath.')
+    }
+    return lines
+  }, [noteMetrics, direction, scaleNotes])
+
+  const resetSession = useCallback(() => {
+    indexRef.current = 0
+    runRef.current = []
+    inProgressRef.current = null
+    lastLandedAtRef.current = 0
+    landedCountRef.current = 0
+    trailRef.current?.clear()
     setCurrentNoteIndex(0)
-    setSungNotes([])
     setNoteMetrics(new Map())
-    setSessionStats({
-      notesAttempted: 0,
-      notesCorrect: 0,
-      sequenceAccuracy: 0,
-      pitchAccuracy: 0,
-      overallScore: 0,
-    })
-    lastNoteTimeRef.current = 0
-    currentSamplesRef.current = []
-    matchedNoteRef.current = null
     setSaveMessage(null)
-  }
+  }, [])
+
+  // New settings mean a new scale: start again
+  useEffect(() => {
+    resetSession()
+  }, [scaleNotes, resetSession])
 
   const startPractice = async () => {
     if (!isListening) {
-      await initAudio()
+      const ok = await startListening()
+      if (!ok) return
     }
     resetSession()
     setStartedAt(new Date())
+    isPracticingRef.current = true
     setIsPracticing(true)
-    setIsActive(true)
+
+    if (backing) {
+      const ctx = initPlaybackContext()
+      const home = scaleNotes.find(n => n.degree === 0)?.midi ?? scaleNotes[0].midi
+      // Sit the chord low so it supports the voice instead of covering it.
+      let base = home
+      while (base > 55) base -= 12
+      stopBacking()
+      backingRef.current = startBackingChord(ctx, backingChordIntervals(scale).map(i => midiToHz(base + i)), volume)
+    }
   }
 
   const stopPractice = () => {
+    finishNoteInProgress()
+    isPracticingRef.current = false
     setIsPracticing(false)
-    updateStats()
+    stopBacking()
   }
 
   const saveSession = async () => {
-    if (!startedAt || sungNotes.length === 0) {
+    if (!startedAt || noteMetrics.size === 0) {
       setSaveMessage('No notes to save')
       return
     }
@@ -548,12 +489,15 @@ export default function ScaleTrainer({ variant = 'floating' }: ScaleTrainerProps
           direction,
           tempo,
           totalNotesExpected: scaleNotes.length,
-          totalNotesSung: sungNotes.length,
-          notesInCorrectOrder: sungNotes.length,
+          totalNotesSung: noteMetrics.size,
+          notesInCorrectOrder: noteMetrics.size,
           sequenceAccuracy: sessionStats.sequenceAccuracy,
           pitchAccuracy: sessionStats.pitchAccuracy,
           overallScore: sessionStats.overallScore,
           noteMetrics: Array.from(noteMetrics.values()),
+          // For the AI coach
+          scaleName: scale.name,
+          insights,
         }),
       })
 
@@ -575,19 +519,11 @@ export default function ScaleTrainer({ variant = 'floating' }: ScaleTrainerProps
   // Cleanup
   useEffect(() => {
     return () => {
-      if (mediaStreamRef.current) {
-        mediaStreamRef.current.getTracks().forEach(track => track.stop())
-      }
-      if (scriptProcessorRef.current) {
-        scriptProcessorRef.current.disconnect()
-      }
-      if (audioContextRef.current) {
-        audioContextRef.current.close()
-      }
-      // Cleanup playback
       stopScalePlayback()
+      backingRef.current?.stop()
       if (playbackContextRef.current) {
-        playbackContextRef.current.close()
+        void playbackContextRef.current.close().catch(() => {})
+        playbackContextRef.current = null
       }
     }
   }, [stopScalePlayback])
@@ -596,27 +532,36 @@ export default function ScaleTrainer({ variant = 'floating' }: ScaleTrainerProps
     if (isPracticing) {
       stopPractice()
     }
-    // Stop audio playback
     stopScalePlayback()
-    // Stop pitch detection
-    if (scriptProcessorRef.current) {
-      scriptProcessorRef.current.disconnect()
-      scriptProcessorRef.current = null
-    }
-    if (mediaStreamRef.current) {
-      mediaStreamRef.current.getTracks().forEach(track => track.stop())
-      mediaStreamRef.current = null
-    }
-    if (audioContextRef.current) {
-      audioContextRef.current.close()
-      audioContextRef.current = null
-    }
-    pitchDetectorRef.current = null
-    setIsListening(false)
+    stopBacking()
+    stopListening()
+    setDetected(null)
     setIsOpen(false)
     setIsFullscreen(false)
     resetSession()
   }
+
+  // The note to sing right now, and how the voice compares with it
+  const targetNote = scaleNotes[currentNoteIndex]
+  const liveOffsetCents = detected && targetNote
+    ? foldOctave(69 + 12 * Math.log2(detected.frequency / 440) - targetNote.midi) * 100
+    : null
+  // Still holding the note that was just ticked off: that is a success, not
+  // "too low" for a note they have not moved to yet.
+  const previousNote = currentNoteIndex > 0 ? scaleNotes[currentNoteIndex - 1] : undefined
+  const stillOnPrevious = detected && previousNote && liveOffsetCents !== null && Math.abs(liveOffsetCents) > 50
+    ? Math.abs(foldOctave(69 + 12 * Math.log2(detected.frequency / 440) - previousNote.midi)) <= 0.6
+    : false
+  const liveHint = liveOffsetCents === null
+    ? { text: 'Listening…', className: 'text-white/50' }
+    : stillOnPrevious
+      ? { text: 'Got it! Next note', className: 'text-emerald-400' }
+    : Math.abs(liveOffsetCents) <= 15
+      ? { text: 'Spot on', className: 'text-emerald-400' }
+      : Math.abs(liveOffsetCents) <= 50
+        ? { text: liveOffsetCents > 0 ? 'A little high' : 'A little low', className: 'text-amber-400' }
+        : { text: liveOffsetCents > 0 ? 'Too high' : 'Too low', className: 'text-red-400' }
+  const isComplete = scaleNotes.length > 0 && currentNoteIndex >= scaleNotes.length
 
   const getDirectionIcon = () => {
     switch (direction) {
@@ -640,8 +585,12 @@ export default function ScaleTrainer({ variant = 'floating' }: ScaleTrainerProps
               disabled={isPracticing}
               className="glass-select w-full text-sm"
             >
-              {Object.entries(SCALE_DEFINITIONS).map(([key, scale]) => (
-                <option key={key} value={key}>{scale.name}</option>
+              {SCALE_GROUPS.map(group => (
+                <optgroup key={group.label} label={group.label}>
+                  {group.scales.map(option => (
+                    <option key={option.id} value={option.id}>{option.name}</option>
+                  ))}
+                </optgroup>
               ))}
             </select>
           </div>
@@ -734,26 +683,40 @@ export default function ScaleTrainer({ variant = 'floating' }: ScaleTrainerProps
             <div className="flex items-center gap-2">
               <span className="text-sm text-white/70">Scale: </span>
               <span className="text-gold-400 font-medium">
-                {rootNote} {SCALE_DEFINITIONS[scaleType]?.name}
+                {rootNote} {scale.name}
               </span>
               <span className="text-white/40 text-xs">
-                ({SCALE_DEFINITIONS[scaleType]?.description})
+                ({scale.mood})
               </span>
             </div>
           </div>
 
-          {/* Volume Control */}
-          <div className="flex items-center gap-2 mb-3">
-            <VolumeX size={14} className="text-white/40" />
-            <input
-              type="range"
-              min="0"
-              max="100"
-              value={volume * 100}
-              onChange={(e) => setVolume(Number(e.target.value) / 100)}
-              className="va-range w-24"
-            />
-            <Volume2 size={14} className="text-white/40" />
+          {/* Volume and backing chord */}
+          <div className="mb-3 flex flex-wrap items-center gap-x-4 gap-y-2">
+            <div className="flex items-center gap-2">
+              <VolumeX size={14} className="text-white/40" />
+              <input
+                type="range"
+                min="0"
+                max="100"
+                value={volume * 100}
+                onChange={(e) => setVolume(Number(e.target.value) / 100)}
+                aria-label="Volume"
+                className="va-range w-24"
+              />
+              <Volume2 size={14} className="text-white/40" />
+            </div>
+            <Button
+              size="sm"
+              variant={backing ? 'success' : 'secondary'}
+              aria-pressed={backing}
+              onClick={() => setBacking(b => !b)}
+              disabled={isPracticing}
+              title="Hold a soft chord under you while you sing, like a teacher at the piano. Best with headphones."
+            >
+              <Piano />
+              Backing chord: {backing ? 'On' : 'Off'}
+            </Button>
           </div>
 
           <div data-tour="scale-notes-strip" className="flex flex-wrap gap-2">
@@ -802,7 +765,12 @@ export default function ScaleTrainer({ variant = 'floating' }: ScaleTrainerProps
                   )}
 
                   {isCompleted && metric && (
-                    <div className="absolute -bottom-1 left-1/2 -translate-x-1/2 text-[11px] text-emerald-400">
+                    <div
+                      className={`absolute -bottom-1 left-1/2 -translate-x-1/2 text-[11px] ${
+                        metric.pitchAccuracy >= 70 ? 'text-emerald-400' : metric.pitchAccuracy >= 40 ? 'text-amber-400' : 'text-red-400'
+                      }`}
+                      title={metric.coachNote}
+                    >
                       {Math.round(metric.pitchAccuracy)}%
                     </div>
                   )}
@@ -824,26 +792,29 @@ export default function ScaleTrainer({ variant = 'floating' }: ScaleTrainerProps
           <div className="mb-4 p-4 rounded-2xl bg-white/[0.04] border border-white/10">
             <div className="flex items-center justify-between">
               <div>
-                <span className="text-xs text-white/50">Detected Note</span>
-                <div className="text-xl font-bold tabular-nums text-white">
-                  {detectedNote ? `${detectedNote}${detectedOctave}` : '—'}
-                </div>
-              </div>
-              <div>
-                <span className="text-xs text-white/50">Cents</span>
-                <div className={`text-xl font-bold tabular-nums ${Math.abs(centsDeviation) < 15 ? 'text-emerald-400' : Math.abs(centsDeviation) < 30 ? 'text-amber-400' : 'text-red-400'}`}>
-                  {centsDeviation > 0 ? '+' : ''}{Math.round(centsDeviation)}
-                </div>
-              </div>
-              <div>
-                <span className="text-xs text-white/50">Target</span>
+                <span className="text-xs text-white/50">Sing this</span>
                 <div className="text-xl font-bold tabular-nums text-gold-400">
-                  {scaleNotes[currentNoteIndex]?.noteName || '—'}{scaleNotes[currentNoteIndex]?.octave || ''}
+                  {targetNote ? `${targetNote.noteName}${targetNote.octave}` : '—'}
+                </div>
+              </div>
+              <div className="text-center">
+                <span className="text-xs text-white/50">How close</span>
+                <div className={`text-xl font-bold ${liveHint.className}`}>{liveHint.text}</div>
+              </div>
+              <div className="text-right">
+                <span className="text-xs text-white/50">We hear</span>
+                <div className="text-xl font-bold tabular-nums text-white">
+                  {detected ? `${detected.nameAscii}${detected.octave}` : '—'}
                 </div>
               </div>
             </div>
 
-            <div className="mt-4">
+            <PitchTrail ref={trailRef} className="mt-3 h-20" />
+            <p className="mt-1 text-center text-xs text-white/40">
+              The line is your voice. Keep it inside the green band. Any octave counts.
+            </p>
+
+            <div className="mt-3">
               <div className="flex justify-between text-xs text-white/50 mb-1">
                 <span>Progress</span>
                 <span>{currentNoteIndex} / {scaleNotes.length}</span>
@@ -859,7 +830,7 @@ export default function ScaleTrainer({ variant = 'floating' }: ScaleTrainerProps
         )}
 
         {/* Stats */}
-        {sungNotes.length > 0 && (
+        {noteMetrics.size > 0 && (
           <div className="grid grid-cols-3 gap-4 mb-6">
             <div className="text-center p-3 rounded-2xl border border-white/10 bg-white/[0.04]">
               <div className="text-xl font-bold tabular-nums text-gold-400">
@@ -919,7 +890,7 @@ export default function ScaleTrainer({ variant = 'floating' }: ScaleTrainerProps
             Reset
           </Button>
 
-          {sungNotes.length > 0 && !isPracticing && (
+          {noteMetrics.size > 0 && !isPracticing && (
             <Button size="lg" variant="outline" onClick={saveSession} disabled={isSaving}>
               <Save />
               {isSaving ? 'Saving…' : 'Save Session'}
@@ -934,12 +905,24 @@ export default function ScaleTrainer({ variant = 'floating' }: ScaleTrainerProps
           </div>
         )}
 
-        {currentNoteIndex >= scaleNotes.length && scaleNotes.length > 0 && (
+        {isComplete && (
           <div className="mt-4 rounded-2xl border border-emerald-500/30 bg-emerald-500/10 p-4 text-center">
             <div className="text-emerald-400 font-semibold mb-1">Scale Completed!</div>
             <div className="text-white/70 text-sm">
               Overall Score: {Math.round(sessionStats.overallScore)}%
             </div>
+          </div>
+        )}
+
+        {/* What a teacher would point out */}
+        {!isPracticing && insights.length > 0 && (
+          <div className="mt-4 rounded-2xl border border-white/10 bg-white/[0.04] p-4" aria-live="polite">
+            <div className="mb-1.5 text-sm font-semibold text-white">Your coach says</div>
+            <ul className="space-y-1.5 text-sm text-white/75">
+              {insights.map(line => (
+                <li key={line}>{line}</li>
+              ))}
+            </ul>
           </div>
         )}
       </div>
@@ -1006,12 +989,6 @@ export default function ScaleTrainer({ variant = 'floating' }: ScaleTrainerProps
         </ToolDialog>
       )}
 
-      {/* Load Aubio.js */}
-      <Script
-        src="https://cdn.jsdelivr.net/npm/aubiojs@0.1.1/build/aubio.min.js"
-        strategy="lazyOnload"
-        onLoad={() => setAubioLoaded(true)}
-      />
     </>
   )
 }

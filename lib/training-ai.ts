@@ -44,6 +44,10 @@ export interface RhythmSessionMetrics {
   rhythmTendency?: string
   avgEarlyMs?: number
   avgLateMs?: number
+  /** Drummer style played along with, if any (e.g. "Soul"). */
+  drumFeel?: string | null
+  /** How beats were entered: tapping, or clapping/singing into the mic. */
+  inputMethod?: string | null
 }
 
 export interface SongKeySessionMetrics {
@@ -70,6 +74,17 @@ export interface ScaleSessionMetrics {
   totalNotesExpected: number
   totalNotesSung: number
   notesInCorrectOrder: number
+  /** Display name of the scale, e.g. "Dorian". */
+  scaleName?: string | null
+  /** What the trainer pointed out on screen (trickiest note, up vs down). */
+  insights?: string[]
+  /** One line per note: which step of the scale it is and how it was sung. */
+  noteNotes?: string[]
+}
+
+/** Keep client-supplied text short and on one line before it goes in a prompt. */
+function tidy(text: unknown, max = 220): string {
+  return String(text ?? '').replace(/\s+/g, ' ').trim().slice(0, max)
 }
 
 /** Shared trailer instructing the model to return our standard JSON shape. */
@@ -117,6 +132,9 @@ You are analysing a metronome-based rhythm session. Interpret the numbers like a
 - Rhythm tendency matters more than raw offset. Rushing ("early") and dragging ("late") have different causes and different fixes: rushing usually comes from tension or breath anxiety, dragging from late breath preparation or over-thinking.
 - Missed beats indicate loss of pulse, which is more serious than being slightly off.
 - Faster tempos naturally produce larger absolute offsets. Judge the offset relative to the beat length, not in absolute milliseconds.
+- Timing is measured to within a few milliseconds. "On beat" means within about 35ms for a tap and 45ms for a clap or sung beat.
+- People naturally tap a touch ahead of a click. A small early lean is normal and not a fault; only flag it when it is large or when it costs on-beat hits.
+- If a drummer style was used, the student was keeping time against a real groove rather than a bare click: relate advice to that style (for example sitting back for soul, driving for rock).
 
 Be encouraging and specific. Give exercises a singer can actually do with a metronome.`
 
@@ -126,6 +144,8 @@ Be encouraging and specific. Give exercises a singer can actually do with a metr
   const userPrompt = `Analyse this rhythm training session:
 
 TEMPO: ${metrics.bpm} BPM (${metrics.timeSignature}), one beat = ${beatLengthMs.toFixed(0)}ms
+${metrics.drumFeel ? `PLAYED ALONG WITH: a ${tidy(metrics.drumFeel, 30)} drummer` : 'PLAYED ALONG WITH: a metronome click'}
+${metrics.inputMethod ? `KEPT TIME BY: ${tidy(metrics.inputMethod, 60)}` : ''}
 DURATION: ${Math.round(metrics.durationSeconds / 60)} minutes
 
 ACCURACY:
@@ -203,11 +223,18 @@ Two independent skills are being measured, and they must not be conflated:
 
 High sequence accuracy with low pitch accuracy means the singer knows the scale but cannot yet place it accurately. Low sequence accuracy with high pitch accuracy means good tuning but the scale shape is not internalised. Say which case this is and prescribe accordingly.
 
-Ascending and descending have different difficulties: descending scales commonly go flat as support drops.`
+Ascending and descending have different difficulties: descending scales commonly go flat as support drops.
+
+How the numbers are measured, so you can trust them:
+- Each note is judged on the pitch the singer settled on, not on the slide into it.
+- Steadiness ignores vibrato. A note marked as having vibrato is a good sign, not a wobble.
+- Singing the scale in a lower or higher octave counts as correct.
+
+When per-note lines are given, use them. Name the specific step of the scale that went wrong (for example "the 7th") and explain in plain words why that step is hard and how to practise it. Never use the words "cents" or "Hz" with the student.`
 
   const userPrompt = `Analyse this scale training session:
 
-SCALE: ${metrics.rootNote} ${metrics.scaleType}, ${metrics.direction}${metrics.octave ? `, octave ${metrics.octave}` : ''}
+SCALE: ${metrics.rootNote} ${tidy(metrics.scaleName || metrics.scaleType, 40)}, ${metrics.direction}${metrics.octave ? `, octave ${metrics.octave}` : ''}
 ${metrics.tempoBpm ? `TEMPO: ${metrics.tempoBpm} BPM` : ''}
 DURATION: ${Math.round(metrics.durationSeconds / 60)} minutes
 
@@ -216,6 +243,10 @@ RESULTS:
 - Sequence accuracy: ${metrics.sequenceAccuracy.toFixed(1)}% (${metrics.notesInCorrectOrder}/${metrics.totalNotesExpected} notes in the correct order)
 - Pitch accuracy: ${metrics.pitchAccuracy.toFixed(1)}%
 - Notes sung: ${metrics.totalNotesSung} of ${metrics.totalNotesExpected} expected
+
+${metrics.noteNotes?.length ? `NOTE BY NOTE:\n${metrics.noteNotes.slice(0, 30).map(line => `- ${tidy(line)}`).join('\n')}` : ''}
+
+${metrics.insights?.length ? `WHAT THE TRAINER POINTED OUT ON SCREEN:\n${metrics.insights.slice(0, 4).map(line => `- ${tidy(line, 300)}`).join('\n')}` : ''}
 
 ${context?.lessonNotes?.length ? `FROM RECENT LESSONS: ${context.lessonNotes.slice(0, 3).join('; ')}` : ''}
 ${JSON_SHAPE_INSTRUCTION}`

@@ -2,9 +2,20 @@
 
 import { useState, useEffect, useRef, useCallback, useMemo } from 'react'
 import { Music, Circle, Piano, Mic, MicOff, TrendingUp, Save, Play, Pause, SkipForward, Volume2, CheckCircle2, RotateCcw } from 'lucide-react'
-import Script from 'next/script'
 import { getSharedMicStream, subscribeSharedMicStream } from '@/lib/shared-mic-stream'
-import { analyzeBuffer, getNoteFrequency } from '@/lib/pitch-detection'
+import { getNoteFrequency } from '@/lib/pitch-detection'
+import { useVoiceTracker, type VoiceFrame } from '@/lib/use-voice-tracker'
+import {
+  analyzeHeldNote,
+  describeHeldNote,
+  hzToMidi,
+  midiToHz,
+  targetAccuracyOf,
+  tuningAccuracyOf,
+  type NoteFrame,
+  type NoteVerdict,
+} from '@/lib/pitch-scoring'
+import { PitchTrail, type PitchTrailHandle } from '@/components/ui/pitch-trail'
 import { SpotlightTour, SpotlightTriggerButton, SpotlightStep } from '@/components/spotlight-tour'
 import { useDraggableFab } from '@/lib/use-draggable-fab'
 import { Button } from '@/components/ui/button'
@@ -22,7 +33,7 @@ const pitchTourSteps: SpotlightStep[] = [
   {
     target: '[data-tour="pitch-note-display"]',
     title: '2. See What You Sang',
-    content: 'When you sing, the note you are singing shows up here, and the small number under it says how close you are — orange means a tiny bit high, blue means a tiny bit low. Tap a note below first, then sing it back. When you get it right, the word "Match!" appears.',
+    content: 'When you sing, the note you are singing shows up here. The moving line underneath is your voice: keep it inside the green band. Tap a note below first, then sing it back. After each note you get a short tip on how it went.',
     placement: 'bottom',
   },
   {
@@ -40,37 +51,27 @@ const pitchTourSteps: SpotlightStep[] = [
 ]
 
 // ============================================================================
-// TUNER LOGIC - Exact port from original tuner.js
+// NOTE NAMES AND PRACTICE TIMING
 // ============================================================================
 
 const NOTE_STRINGS = ['C', 'C♯', 'D', 'D♯', 'E', 'F', 'F♯', 'G', 'G♯', 'A', 'A♯', 'B']
 const NOTE_STRINGS_DISPLAY = ['C', 'C#', 'D', 'D#', 'E', 'F', 'F#', 'G', 'G#', 'A', 'A#', 'B']
 
-// Constants from original tuner.js
-// MIDDLE_A / SEMITONE now live in lib/pitch-detection alongside the note math.
-const BUFFER_SIZE = 4096
-
-// In-tune threshold (cents)
-const IN_TUNE_THRESHOLD = 15
-
 // Maximum semitone range to track (±4 semitones = major third)
 // Notes outside this range are likely mistakes, not actual attempts
 const TRACKING_RANGE_SEMITONES = 4
+
+// A settled pitch this far from the note (in cents) counts as leaning high or low.
+const LEANING_CENTS = 20
 
 // Guided practice: the reference note plays briefly, then the singer answers.
 // Holding the match this long moves on to the next note automatically.
 const REFERENCE_TONE_MS = 2000
 const MATCH_HOLD_MS = 1000
-// Detection flickers between buffers; a gap shorter than this keeps the hold.
+// A gap shorter than this (a breath, a consonant) keeps the hold going.
 const MATCH_GAP_TOLERANCE_MS = 350
 
 type PracticeState = 'idle' | 'running' | 'paused' | 'done'
-
-declare global {
-  interface Window {
-    aubio: () => Promise<any>
-  }
-}
 
 interface DetectedNote {
   name: string
@@ -89,7 +90,10 @@ interface NoteAttempt {
   octave: number
   targetFrequency: number
   startTime: number
-  samples: PitchSample[]
+  /** Same moment as startTime, on the performance.now() clock the mic uses. */
+  startPerf: number
+  /** Readings taken while the singer was on or near the note. */
+  samples: NoteFrame[]
   // Legacy fields (kept for API compatibility)
   pitchAccuracy: number
   pitchOnsetSpeedMs: number
@@ -101,32 +105,20 @@ interface NoteAttempt {
   minCentsDeviation: number
   attemptNumber: number
   isComplete: boolean
-  // NEW: Separate metrics for singing students
+  // Singer-focused metrics
   targetAccuracy: number        // How close to the target note (0-100, considers semitones)
-  voiceStability: number        // How steady the voice is regardless of target (0-100)
-  avgSemitoneDeviation: number  // Average semitones away from target (can be negative = flat)
+  voiceStability: number        // How steady the voice is; vibrato is not marked down (0-100)
+  avgSemitoneDeviation: number  // Settled pitch relative to the target, in semitones (negative = flat)
   mostSungNote: string | null   // The note they sang most often
   mostSungOctave: number | null // The octave they sang most often
   pitchDirection: 'sharp' | 'flat' | 'on-target' // Tendency
   timeToFirstSound: number      // Time until any pitch was detected (ms)
-}
-
-interface BasePitchSample {
-  frequency: number
-  cents: number
-  timestamp: number
-  isInTune: boolean
-}
-
-interface PitchSample extends BasePitchSample {
-  // New fields to track what was actually sung (added in handleSampleRecorded)
-  detectedNoteName: string
-  detectedOctave: number
-  detectedNoteValue: number
-  // Distance from target (in semitones, can be negative)
-  semitoneDeviationFromTarget: number
-  // Cents deviation from the detected note's perfect pitch
-  centsFromDetectedNote: number
+  // What a teacher would say about it, for the screen and the AI coach
+  verdict: NoteVerdict | null
+  vibratoRateHz: number | null
+  vibratoDepthCents: number | null
+  scoopCents: number
+  driftCents: number
 }
 
 interface SessionMetrics {
@@ -137,265 +129,70 @@ interface SessionMetrics {
 }
 
 // ============================================================================
-// PITCH DETECTION HELPERS
+// METRICS
 // ============================================================================
-// getNote / getStandardFrequency / getCents / getNoteFrequency now come from
-// lib/pitch-detection so this trainer, ScaleTrainer and SongPitchTrainer share
-// one implementation and cannot drift apart again.
+// Note maths lives in lib/pitch-detection, scoring in lib/pitch-scoring, so
+// every trainer measures the same way.
 
 function getMeterDegree(cents: number): number {
   return Math.round((cents / 250) * 45)
 }
 
-// ============================================================================
-// METRICS CALCULATION HELPERS
-// ============================================================================
-
+/**
+ * Score a finished note. The heavy lifting (settled pitch, steadiness with
+ * vibrato set aside, slide-in, drift) is in lib/pitch-scoring.
+ */
 function calculateNoteMetrics(attempt: NoteAttempt): NoteAttempt {
   const samples = attempt.samples
   if (samples.length === 0) return attempt
 
-  // === CENTS DEVIATION (from detected note's perfect pitch) ===
-  const centsDeviations = samples.map(s => s.centsFromDetectedNote)
-  const avgCentsDeviation = centsDeviations.reduce((a, b) => a + b, 0) / centsDeviations.length
-  const maxCentsDeviation = Math.max(...centsDeviations.map(Math.abs))
-  const minCentsDeviation = Math.min(...centsDeviations.map(Math.abs))
+  const targetMidi = hzToMidi(attempt.targetFrequency)
+  const analysis = analyzeHeldNote(samples, targetMidi)
 
-  // === SEMITONE DEVIATION (from target note) ===
-  const semitoneDeviations = samples.map(s => s.semitoneDeviationFromTarget)
-  const avgSemitoneDeviation = semitoneDeviations.reduce((a, b) => a + b, 0) / semitoneDeviations.length
-
-  // === MOST SUNG NOTE (mode of detected notes) ===
-  const noteCount: Record<string, number> = {}
-  samples.forEach(s => {
-    const key = `${s.detectedNoteName}-${s.detectedOctave}`
-    noteCount[key] = (noteCount[key] || 0) + 1
-  })
-  const mostSungKey = Object.entries(noteCount).sort((a, b) => b[1] - a[1])[0]?.[0]
-  const [mostSungNote, mostSungOctaveStr] = mostSungKey?.split('-') || [null, null]
-  const mostSungOctave = mostSungOctaveStr ? parseInt(mostSungOctaveStr) : null
-
-  // === PITCH DIRECTION (tendency) ===
-  const sharpCount = semitoneDeviations.filter(d => d > 0).length
-  const flatCount = semitoneDeviations.filter(d => d < 0).length
-  const onTargetCount = semitoneDeviations.filter(d => d === 0).length
-  let pitchDirection: 'sharp' | 'flat' | 'on-target' = 'on-target'
-  if (sharpCount > flatCount && sharpCount > onTargetCount) pitchDirection = 'sharp'
-  else if (flatCount > sharpCount && flatCount > onTargetCount) pitchDirection = 'flat'
-
-  // === TARGET ACCURACY (NEW - considers semitone distance) ===
-  // 100% = hit target note with <15 cents deviation
-  // Decreases by 25% per semitone away, plus cents penalty
-  // This means singing 1 semitone off = max 75%, 2 semitones = max 50%, etc.
-  const avgAbsSemitones = Math.abs(avgSemitoneDeviation)
-  const semitonePenalty = avgAbsSemitones * 25 // 25% per semitone
-  const avgAbsCents = Math.abs(avgCentsDeviation)
-  const centsPenalty = Math.min(25, avgAbsCents * 0.5) // Max 25% for cents, 0.5% per cent
-  const targetAccuracy = Math.max(0, Math.min(100, 100 - semitonePenalty - centsPenalty))
-
-  // === VOICE STABILITY (NEW - independent of target) ===
-  // Measures how steady their pitch is, regardless of which note they're singing
-  // Based on variance of their detected frequencies
-  const frequencies = samples.map(s => s.frequency)
-  const avgFreq = frequencies.reduce((a, b) => a + b, 0) / frequencies.length
-  const freqVariance = frequencies.reduce((sum, f) => sum + Math.pow(f - avgFreq, 2), 0) / frequencies.length
-  const freqStdDev = Math.sqrt(freqVariance)
-  // Convert to percentage: 0 stdDev = 100%, 50Hz stdDev = 0%
-  // (50Hz stdDev would mean their pitch is all over the place)
-  const voiceStability = Math.max(0, Math.min(100, 100 - (freqStdDev * 2)))
-
-  // === LEGACY: Pitch Accuracy (old formula for API compatibility) ===
-  const pitchAccuracy = Math.max(0, Math.min(100, 100 - (Math.abs(avgCentsDeviation) * 2)))
-
-  // === PITCH ONSET SPEED (time to first in-tune sample) ===
-  const firstInTuneIndex = samples.findIndex(s => s.isInTune)
-  const pitchOnsetSpeedMs = firstInTuneIndex >= 0
-    ? samples[firstInTuneIndex].timestamp - attempt.startTime
-    : samples.length > 0 ? samples[samples.length - 1].timestamp - attempt.startTime : 5000
-
-  // === TIME TO FIRST SOUND ===
-  const timeToFirstSound = samples.length > 0 ? samples[0].timestamp - attempt.startTime : 5000
-
-  // === LEGACY: Pitch Stability (old formula for API compatibility) ===
-  const variance = centsDeviations.reduce((sum, c) => sum + Math.pow(c - avgCentsDeviation, 2), 0) / centsDeviations.length
-  const stdDev = Math.sqrt(variance)
-  const pitchStability = Math.max(0, Math.min(100, 100 - (stdDev * 3.33)))
-
-  // === IN-TUNE SUSTAIN ===
-  let maxSustain = 0
-  let currentSustain = 0
-  for (let i = 1; i < samples.length; i++) {
-    if (samples[i].isInTune && samples[i - 1].isInTune) {
-      currentSustain += samples[i].timestamp - samples[i - 1].timestamp
-      maxSustain = Math.max(maxSustain, currentSustain)
-    } else if (!samples[i].isInTune) {
-      currentSustain = 0
-    }
+  // The note they were on most of the time
+  const noteCount = new Map<number, number>()
+  let maxCentsDeviation = 0
+  let minCentsDeviation = Infinity
+  for (const sample of samples) {
+    const nearest = Math.round(sample.midi)
+    noteCount.set(nearest, (noteCount.get(nearest) ?? 0) + 1)
+    const cents = Math.abs(sample.midi - nearest) * 100
+    maxCentsDeviation = Math.max(maxCentsDeviation, cents)
+    minCentsDeviation = Math.min(minCentsDeviation, cents)
   }
-  const inTuneSustainMs = maxSustain
+  const mostSungMidi = [...noteCount.entries()].sort((a, b) => b[1] - a[1])[0][0]
 
-  // === AVERAGE DETECTED FREQUENCY ===
-  const avgDetectedFrequency = avgFreq
+  let pitchDirection: 'sharp' | 'flat' | 'on-target' = 'on-target'
+  if (analysis.deviationCents > LEANING_CENTS) pitchDirection = 'sharp'
+  else if (analysis.deviationCents < -LEANING_CENTS) pitchDirection = 'flat'
+
+  const timeToFirstSound = Math.max(0, samples[0].t - attempt.startPerf)
 
   return {
     ...attempt,
     // Legacy metrics
-    pitchAccuracy,
-    pitchOnsetSpeedMs,
-    pitchStability,
-    inTuneSustainMs,
-    avgDetectedFrequency,
-    avgCentsDeviation,
+    pitchAccuracy: tuningAccuracyOf(analysis.centsFromNearest),
+    pitchOnsetSpeedMs: Math.round(timeToFirstSound + (analysis.timeToInTuneMs ?? analysis.durationMs)),
+    pitchStability: analysis.steadiness,
+    inTuneSustainMs: Math.round(analysis.inTuneSustainMs),
+    avgDetectedFrequency: midiToHz(analysis.centerMidi),
+    avgCentsDeviation: analysis.centsFromNearest,
     maxCentsDeviation,
-    minCentsDeviation,
+    minCentsDeviation: Number.isFinite(minCentsDeviation) ? minCentsDeviation : 0,
     isComplete: true,
-    // New singer-focused metrics
-    targetAccuracy,
-    voiceStability,
-    avgSemitoneDeviation,
-    mostSungNote,
-    mostSungOctave,
+    // Singer-focused metrics
+    targetAccuracy: targetAccuracyOf(analysis),
+    voiceStability: analysis.steadiness,
+    avgSemitoneDeviation: analysis.deviationCents / 100,
+    mostSungNote: NOTE_STRINGS[((mostSungMidi % 12) + 12) % 12],
+    mostSungOctave: Math.floor(mostSungMidi / 12) - 1,
     pitchDirection,
-    timeToFirstSound,
-  }
-}
-
-// ============================================================================
-// CUSTOM HOOK - usePitchDetection
-// ============================================================================
-
-interface UsePitchDetectionOptions {
-  sensitivity: number
-  externalMicStream?: MediaStream | null
-  onNoteDetected?: (note: DetectedNote) => void
-  onSampleRecorded?: (sample: BasePitchSample) => void
-}
-
-function usePitchDetection({ sensitivity, externalMicStream, onNoteDetected, onSampleRecorded }: UsePitchDetectionOptions) {
-  const [isListening, setIsListening] = useState(false)
-  const [aubioLoaded, setAubioLoaded] = useState(false)
-
-  const audioContextRef = useRef<AudioContext | null>(null)
-  const analyserRef = useRef<AnalyserNode | null>(null)
-  const scriptProcessorRef = useRef<ScriptProcessorNode | null>(null)
-  const pitchDetectorRef = useRef<any>(null)
-  const streamRef = useRef<MediaStream | null>(null)
-  const sensitivityRef = useRef(sensitivity)
-  const onNoteDetectedRef = useRef(onNoteDetected)
-  const onSampleRecordedRef = useRef(onSampleRecorded)
-  const externalMicStreamRef = useRef<MediaStream | null | undefined>(externalMicStream)
-
-  useEffect(() => {
-    sensitivityRef.current = sensitivity
-  }, [sensitivity])
-
-  useEffect(() => {
-    onNoteDetectedRef.current = onNoteDetected
-  }, [onNoteDetected])
-
-  useEffect(() => {
-    onSampleRecordedRef.current = onSampleRecorded
-  }, [onSampleRecorded])
-
-  useEffect(() => {
-    externalMicStreamRef.current = externalMicStream
-  }, [externalMicStream])
-
-  const startListening = useCallback(async () => {
-    try {
-      if (!window.aubio) {
-        alert('Audio library is still loading. Please wait a moment and try again.')
-        return
-      }
-
-      audioContextRef.current = new (window.AudioContext || (window as any).webkitAudioContext)()
-      analyserRef.current = audioContextRef.current.createAnalyser()
-      scriptProcessorRef.current = audioContextRef.current.createScriptProcessor(BUFFER_SIZE, 1, 1)
-
-      const aubioModule = await window.aubio()
-      pitchDetectorRef.current = new aubioModule.Pitch(
-        'default',
-        BUFFER_SIZE,
-        1,
-        audioContextRef.current.sampleRate
-      )
-
-      let inputStream: MediaStream
-      const externalStream = externalMicStreamRef.current
-      const externalAudioTrack = externalStream?.getAudioTracks()[0]
-
-      if (externalAudioTrack && externalAudioTrack.readyState === 'live') {
-        // Clone the class mic track so tuner analysis never mutates the live class stream.
-        inputStream = new MediaStream([externalAudioTrack.clone()])
-      } else {
-        inputStream = await navigator.mediaDevices.getUserMedia({ audio: true })
-      }
-
-      streamRef.current = inputStream
-
-      const source = audioContextRef.current.createMediaStreamSource(inputStream)
-      source.connect(analyserRef.current)
-      analyserRef.current.connect(scriptProcessorRef.current)
-      scriptProcessorRef.current.connect(audioContextRef.current.destination)
-
-      scriptProcessorRef.current.addEventListener('audioprocess', (event: AudioProcessingEvent) => {
-        const input = event.inputBuffer.getChannelData(0)
-
-        // Amplitude gate, pitch detection and the 60-2000Hz plausibility gate
-        // all happen inside analyzeBuffer, identical to the Scale Trainer.
-        // Returns null for anything that should not count as a sung note.
-        const detected = analyzeBuffer(input, pitchDetectorRef.current, sensitivityRef.current)
-        if (!detected) return
-
-        if (onNoteDetectedRef.current) {
-          onNoteDetectedRef.current(detected)
-        }
-
-        // Record sample for metrics
-        if (onSampleRecordedRef.current) {
-          onSampleRecordedRef.current({
-            frequency: detected.frequency,
-            cents: detected.cents,
-            timestamp: Date.now(),
-            isInTune: detected.isInTune,
-          })
-        }
-      })
-
-      setIsListening(true)
-    } catch (error: any) {
-      console.error('Microphone error:', error)
-      alert(error.name + ': ' + error.message)
-    }
-  }, [])
-
-  const stopListening = useCallback(() => {
-    if (streamRef.current) {
-      streamRef.current.getTracks().forEach(track => track.stop())
-      streamRef.current = null
-    }
-    if (scriptProcessorRef.current) {
-      scriptProcessorRef.current.disconnect()
-      scriptProcessorRef.current = null
-    }
-    if (analyserRef.current) {
-      analyserRef.current.disconnect()
-      analyserRef.current = null
-    }
-    if (audioContextRef.current) {
-      audioContextRef.current.close()
-      audioContextRef.current = null
-    }
-    pitchDetectorRef.current = null
-    setIsListening(false)
-  }, [])
-
-  return {
-    isListening,
-    aubioLoaded,
-    setAubioLoaded,
-    startListening,
-    stopListening,
+    timeToFirstSound: Math.round(timeToFirstSound),
+    verdict: describeHeldNote(analysis),
+    vibratoRateHz: analysis.vibrato?.rateHz ?? null,
+    vibratoDepthCents: analysis.vibrato?.depthCents ?? null,
+    scoopCents: analysis.scoopCents,
+    driftCents: analysis.driftCents,
   }
 }
 
@@ -464,49 +261,32 @@ export default function ModernPitchTrainer({ variant = 'floating' }: ModernPitch
 
   const availableOctaves = [0, 2, 3, 4, 5, 6, 7, 8]
 
-  // Handle sample recording for current attempt - RECORDS PITCHES WITHIN RANGE
-  const handleSampleRecorded = useCallback((sample: BasePitchSample) => {
-    if (!currentAttempt || !selectedNote || !detectedNote) return
+  // The note being scored right now. Readings are pushed straight into its
+  // `samples` array (about 90 a second), so nothing re-renders per reading.
+  const attemptRef = useRef<NoteAttempt | null>(null)
+  const trailRef = useRef<PitchTrailHandle | null>(null)
+  const [lastVerdict, setLastVerdict] = useState<{ label: string; verdict: NoteVerdict } | null>(null)
 
-    // Calculate target note value for comparison
-    const targetNoteName = selectedNote.replace('#', '♯')
-    const targetNoteIndex = NOTE_STRINGS.indexOf(targetNoteName)
-    const targetNoteValue = (selectedOctave + 1) * 12 + targetNoteIndex
+  const handleFrame = useCallback((frame: VoiceFrame) => {
+    const target = targetRef.current
+    // The reference note coming out of the speakers is not the singer.
+    if (!target || tonePlayingRef.current) return
+    const targetMidi = (target.octave + 1) * 12 + NOTE_STRINGS_DISPLAY.indexOf(target.note)
+    trailRef.current?.push(frame.time, frame.midi, targetMidi)
 
-    // Calculate semitone deviation from target
-    const semitoneDeviationFromTarget = detectedNote.value - targetNoteValue
-
-    // RANGE FILTER: Only track notes within ±TRACKING_RANGE_SEMITONES of target
-    // Notes outside this range are likely mistakes, background noise, or speech
-    if (Math.abs(semitoneDeviationFromTarget) > TRACKING_RANGE_SEMITONES) {
-      return // Skip this sample - too far from target
-    }
-
-    // Enrich sample with detected note info
-    const enrichedSample: PitchSample = {
-      ...sample,
-      detectedNoteName: detectedNote.name,
-      detectedOctave: detectedNote.octave,
-      detectedNoteValue: detectedNote.value,
-      semitoneDeviationFromTarget,
-      centsFromDetectedNote: detectedNote.cents,
-      // Update isInTune to consider being on the target note AND within cents threshold
-      isInTune: semitoneDeviationFromTarget === 0 && Math.abs(detectedNote.cents) <= IN_TUNE_THRESHOLD,
-    }
-
-    setCurrentAttempt(prev => {
-      if (!prev) return prev
-      return {
-        ...prev,
-        samples: [...prev.samples, enrichedSample]
-      }
-    })
-  }, [currentAttempt, selectedNote, detectedNote, selectedOctave])
+    const attempt = attemptRef.current
+    if (!attempt || practiceRef.current !== 'running') return
+    // Only readings near the target are an attempt at it; anything further is
+    // talking, a cough, or a different note altogether.
+    if (Math.abs(frame.midi - targetMidi) > TRACKING_RANGE_SEMITONES + 0.5) return
+    attempt.samples.push({ t: frame.time, midi: frame.midi })
+  }, [])
 
   // Every detected pitch lands here. During guided practice it also runs the
   // "hold the note for a second" timer that moves on to the next note.
-  const handleNoteDetected = useCallback((note: DetectedNote) => {
+  const handleNoteDetected = useCallback((note: DetectedNote | null) => {
     setDetectedNote(note)
+    if (!note) return
 
     const target = targetRef.current
     // The reference note itself must not count as the singer's answer.
@@ -536,14 +316,13 @@ export default function ModernPitchTrainer({ variant = 'floating' }: ModernPitch
 
   const {
     isListening,
-    setAubioLoaded,
-    startListening,
-    stopListening,
-  } = usePitchDetection({
+    start: startListening,
+    stop: stopListening,
+  } = useVoiceTracker({
     sensitivity,
     externalMicStream: sharedMicStream,
-    onNoteDetected: handleNoteDetected,
-    onSampleRecorded: handleSampleRecorded,
+    onNote: handleNoteDetected,
+    onFrame: handleFrame,
   })
 
   // Start session when first note is played
@@ -570,6 +349,7 @@ export default function ModernPitchTrainer({ variant = 'floating' }: ModernPitch
       octave,
       targetFrequency: getNoteFrequency(noteName, octave),
       startTime: Date.now(),
+      startPerf: performance.now(),
       samples: [],
       // Legacy metrics
       pitchAccuracy: 0,
@@ -590,20 +370,35 @@ export default function ModernPitchTrainer({ variant = 'floating' }: ModernPitch
       mostSungOctave: null,
       pitchDirection: 'on-target',
       timeToFirstSound: 0,
+      verdict: null,
+      vibratoRateHz: null,
+      vibratoDepthCents: null,
+      scoopCents: 0,
+      driftCents: 0,
     }
 
+    attemptRef.current = newAttempt
+    trailRef.current?.clear()
     setCurrentAttempt(newAttempt)
   }, [session, startSession])
 
   // Complete current note attempt and save if better
   const completeNoteAttempt = useCallback(() => {
-    if (!currentAttempt || currentAttempt.samples.length === 0) {
+    attemptRef.current = null
+    // Fewer than a quarter of a second of singing is not enough to judge.
+    if (!currentAttempt || currentAttempt.samples.length < 20) {
       setCurrentAttempt(null)
       return
     }
 
     const completedAttempt = calculateNoteMetrics(currentAttempt)
     const key = `${completedAttempt.noteName}-${completedAttempt.octave}`
+    if (completedAttempt.verdict) {
+      setLastVerdict({
+        label: `${completedAttempt.noteName}${completedAttempt.octave}`,
+        verdict: completedAttempt.verdict,
+      })
+    }
 
     setSession(prev => {
       const existingAttempt = prev.noteAttempts.get(key)
@@ -656,6 +451,14 @@ export default function ModernPitchTrainer({ variant = 'floating' }: ModernPitch
         pitchDirection: attempt.pitchDirection,
         timeToFirstSound: attempt.timeToFirstSound,
         sampleCount: attempt.samples.length,
+        // For the AI coach only (not stored as columns)
+        coachNote: attempt.verdict
+          ? [attempt.verdict.headline, attempt.verdict.detail].filter(Boolean).join('. ')
+          : null,
+        vibratoRateHz: attempt.vibratoRateHz,
+        vibratoDepthCents: attempt.vibratoDepthCents,
+        scoopCents: attempt.scoopCents,
+        driftCents: attempt.driftCents,
       }))
 
       const response = await fetch('/api/pitch-training/session', {
@@ -795,12 +598,9 @@ export default function ModernPitchTrainer({ variant = 'floating' }: ModernPitch
     void audio.play().catch(finish)
   }
 
-  // Turn the mic on for the singer, unless the pitch library is still loading
-  // (they can press "Start mic" a moment later instead of seeing an error).
+  // Turn the mic on for the singer
   const ensureMic = () => {
-    if (!isListening && typeof window !== 'undefined' && typeof window.aubio === 'function') {
-      void startListening()
-    }
+    if (!isListening) void startListening()
   }
 
   // Move the practice to a note: play it, then listen for the singer
@@ -819,6 +619,7 @@ export default function ModernPitchTrainer({ variant = 'floating' }: ModernPitch
     if (practice === 'idle' || practice === 'done') {
       setMatchedNotes([])
       setSkippedNotes([])
+      setLastVerdict(null)
       if (practice === 'done') {
         // A finished run was already saved; begin a fresh session.
         setSession({ startedAt: new Date(), endedAt: null, noteAttempts: new Map(), isActive: true })
@@ -1416,6 +1217,36 @@ export default function ModernPitchTrainer({ variant = 'floating' }: ModernPitch
                 {isListening && <div className="shrink-0">{renderMeter()}</div>}
               </Panel>
 
+              {/* Your voice against the note, and how the last note went */}
+              {isListening && selectedNote && (
+                <div>
+                  <PitchTrail
+                    ref={trailRef}
+                    className="h-20"
+                    aria-label={`Your voice against ${selectedNote}${selectedOctave}`}
+                  />
+                  <p className="mt-1 text-center text-xs text-gray-400">
+                    Keep the line inside the green band
+                  </p>
+                </div>
+              )}
+
+              {lastVerdict && (
+                <Panel
+                  padding="sm"
+                  tone={lastVerdict.verdict.tone === 'good' ? 'success' : 'default'}
+                  className="text-center"
+                  aria-live="polite"
+                >
+                  <p className="text-sm font-semibold text-white">
+                    {lastVerdict.label}: {lastVerdict.verdict.headline}
+                  </p>
+                  {lastVerdict.verdict.detail && (
+                    <p className="mt-0.5 text-xs text-gray-300">{lastVerdict.verdict.detail}</p>
+                  )}
+                </Panel>
+              )}
+
               {/* Session Stats */}
               {session.isActive && renderSessionStats()}
             </div>
@@ -1423,11 +1254,6 @@ export default function ModernPitchTrainer({ variant = 'floating' }: ModernPitch
         </ToolDialog>
       )}
 
-      <Script
-        src="https://cdn.jsdelivr.net/npm/aubiojs@0.1.1/build/aubio.min.js"
-        strategy="lazyOnload"
-        onLoad={() => setAubioLoaded(true)}
-      />
     </>
   )
 }

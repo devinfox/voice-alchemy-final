@@ -30,6 +30,8 @@ interface NoteMetricInput {
   pitchDirection?: 'sharp' | 'flat' | 'on-target'
   timeToFirstSound?: number
   sampleCount?: number
+  // Sent for the AI coach only; not stored as columns
+  coachNote?: string | null
 }
 
 interface SessionInput {
@@ -379,7 +381,8 @@ async function generateAndSaveAIFeedback(
         pitchOnsetSpeedMs: n.pitchOnsetSpeedMs,
         pitchStability: n.pitchStability,
         inTuneSustainMs: n.inTuneSustainMs,
-        avgCentsDeviation: n.avgCentsDeviation
+        avgCentsDeviation: n.avgCentsDeviation,
+        coachNote: typeof n.coachNote === 'string' ? n.coachNote.replace(/\s+/g, ' ').slice(0, 220) : undefined
       })),
       studentContext
     )

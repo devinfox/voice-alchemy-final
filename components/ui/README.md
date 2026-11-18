@@ -21,6 +21,7 @@ use these; do not hand-write a new one.
 - `panel.tsx`: `Panel` (grouped area), `Stat` (number with caption), `Eyebrow` (small label).
 - `segmented.tsx`: `Segmented`, pick one of a few options.
 - `tool-dialog.tsx`: `ToolDialog`, the window every practice tool opens in.
+- `pitch-trail.tsx`: `PitchTrail`, the moving line of a singer's voice against a target note.
 - `lib/use-draggable-fab.ts`: makes a floating button draggable.
 
 ## Screens on the template so far

@@ -37,6 +37,8 @@ export interface NoteMetrics {
   pitchStability: number
   inTuneSustainMs: number
   avgCentsDeviation: number
+  /** What the trainer noticed on this note, in plain words. */
+  coachNote?: string
 }
 
 export interface WeeklyProgress {
@@ -106,7 +108,14 @@ Metrics explanation:
 A good pitch accuracy is 85%+, excellent is 95%+.
 A good onset speed is under 500ms, excellent is under 200ms.
 A good stability is 80%+, excellent is 90%+.
-A good sustain is 2000ms+, excellent is 4000ms+.`
+A good sustain is 2000ms+, excellent is 4000ms+.
+
+How the numbers are measured, so you can trust them:
+- Each note is judged on the pitch the singer settled on, not on the slide into it.
+- Stability ignores vibrato: an even vibrato is healthy and is never counted as shakiness.
+- Some notes carry a short observation after "Heard:" (for example a slide up into the note, natural vibrato, sinking at the end). Use these: they are what a teacher listening would have noticed.
+
+Speak to a singer, not an engineer. Never use the words "cents", "Hz" or "milliseconds" in your feedback.`
 
   const contextInfo = studentContext ? `
 Additional context about this student:
@@ -128,7 +137,7 @@ SESSION OVERVIEW:
 - Notes Successfully Matched: ${sessionMetrics.totalNotesMatched}
 
 PER-NOTE BREAKDOWN:
-${noteMetrics.map(n => `${n.noteName}${n.octave}: Accuracy ${n.pitchAccuracy.toFixed(1)}%, Onset ${n.pitchOnsetSpeedMs}ms, Stability ${n.pitchStability.toFixed(1)}%, Sustain ${n.inTuneSustainMs}ms, Deviation ${n.avgCentsDeviation.toFixed(1)} cents`).join('\n')}
+${noteMetrics.map(n => `${n.noteName}${n.octave}: Accuracy ${n.pitchAccuracy.toFixed(1)}%, Onset ${n.pitchOnsetSpeedMs}ms, Stability ${n.pitchStability.toFixed(1)}%, Sustain ${n.inTuneSustainMs}ms, Deviation ${n.avgCentsDeviation.toFixed(1)} cents${n.coachNote ? `. Heard: ${n.coachNote}` : ''}`).join('\n')}
 ${contextInfo}
 
 Provide your analysis in the following JSON format:

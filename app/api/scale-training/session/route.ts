@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase-server'
 import { createSupabaseAdmin } from '@/lib/supabase-admin'
 import { analyzeScaleSession, saveTrainingFeedback, fetchLessonContext } from '@/lib/training-ai'
+import { describeDegree } from '@/lib/music-theory'
 
 interface NoteMetric {
   noteName: string
@@ -17,6 +18,9 @@ interface NoteMetric {
   wasInOrder: boolean
   sampleCount: number
   avgDetectedFrequency: number
+  // Sent for the AI coach only; not stored as columns
+  coachNote?: string
+  degree?: number
 }
 
 interface SessionPayload {
@@ -34,6 +38,9 @@ interface SessionPayload {
   pitchAccuracy: number
   overallScore: number
   noteMetrics: NoteMetric[]
+  // Sent for the AI coach only; not stored as columns
+  scaleName?: string
+  insights?: string[]
 }
 
 // POST - Save a scale training session
@@ -225,6 +232,13 @@ export async function POST(request: NextRequest) {
             totalNotesExpected: body.totalNotesExpected,
             totalNotesSung: body.totalNotesSung,
             notesInCorrectOrder: body.notesInCorrectOrder,
+            scaleName: typeof body.scaleName === 'string' ? body.scaleName : null,
+            insights: Array.isArray(body.insights) ? body.insights.filter(line => typeof line === 'string') : [],
+            noteNotes: (body.noteMetrics || [])
+              .filter(metric => typeof metric.coachNote === 'string' && metric.coachNote.length > 0)
+              .map(metric =>
+                `Note ${metric.expectedPosition} (${metric.noteName}, ${describeDegree(Number(metric.degree) || 0).name}): ${metric.coachNote}`
+              ),
           },
           { lessonNotes }
         )

@@ -172,6 +172,10 @@ export function describeFrequency(frequency: number): DetectedNote | null {
  * plausibility gate. Returns null when the buffer should be ignored.
  *
  * `detector` is an aubio Pitch instance.
+ *
+ * Legacy path, used only by the unmounted SongPitchTrainer. The live tools
+ * (Pitch Perfect, Scale Trainer, Rhythm Trainer) listen through
+ * lib/use-voice-tracker, which is about eight times finer in time.
  */
 export function analyzeBuffer(
   input: Float32Array,

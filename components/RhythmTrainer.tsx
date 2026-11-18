@@ -6,6 +6,9 @@ import { Button } from '@/components/ui/button'
 import { Panel, Stat } from '@/components/ui/panel'
 import { Segmented } from '@/components/ui/segmented'
 import { ToolDialog } from '@/components/ui/tool-dialog'
+import { useVoiceTracker } from '@/lib/use-voice-tracker'
+import { DRUM_FEELS, STEPS_PER_PATTERN, type DrumRole } from '@/lib/groove-patterns'
+import { playDrum } from '@/lib/drum-synth'
 import { SpotlightTour, SpotlightTriggerButton, SpotlightStep } from '@/components/spotlight-tour'
 
 const rhythmTourSteps: SpotlightStep[] = [
@@ -48,8 +51,10 @@ interface BeatTiming {
 /** A scheduled metronome beat still waiting for a tap (or a missed verdict). */
 interface PendingBeat {
   beatNumber: number // Monotonic, 1-based across the whole session
-  timeMs: number // Expected time on the Date.now() axis
+  timeMs: number // When the beat is heard, on the performance.now() clock
 }
+
+type HitSource = 'tap' | 'mic'
 
 interface SessionMetrics {
   startedAt: Date | null
@@ -82,9 +87,18 @@ interface SessionStats {
 // ============================================================================
 
 const TIMING_THRESHOLDS = {
-  onBeat: 30,    // Within ±30ms = on beat
+  // How close counts as "on the beat". A tap is a sharp event; a clap or a
+  // sung "ta" swells in, so the mic gets a little more room.
+  onBeat: { tap: 35, mic: 45 } as Record<HitSource, number>,
   window: 200,   // Detection window around beat (±200ms)
 }
+
+// How far the typical hit must sit from the beat (in ms) to be called a
+// tendency. The two sides differ on purpose: people tapping to a click land a
+// little ahead of it by nature (roughly 10-30 ms even for trained musicians),
+// so "early" only means something beyond that, while any steady lateness does.
+const TENDENCY_EARLY_MS = 25
+const TENDENCY_LATE_MS = 15
 
 const SCHEDULE_AHEAD_SECONDS = 0.3
 const TAP_TEMPO_RESET_FACTOR = 1.5
@@ -125,9 +139,12 @@ function createMetronomeSound(
   audioContext: AudioContext,
   soundType: MetronomeSound,
   isAccent: boolean = false,
-  volumePercent: number = 70
+  volumePercent: number = 70,
+  when?: number
 ): void {
-  const now = audioContext.currentTime
+  // `when` is a time on the audio clock. Scheduling there (rather than firing
+  // "now" from a timer) is what makes the click land exactly on the beat.
+  const now = Math.max(when ?? audioContext.currentTime, audioContext.currentTime)
   // Apply user volume (0-100) to base volume (accent: 0.8, normal: 0.5)
   const baseVolume = isAccent ? 0.8 : 0.5
   const volume = baseVolume * (volumePercent / 100)
@@ -220,130 +237,6 @@ function createMetronomeSound(
 }
 
 // ============================================================================
-// ONSET DETECTION HOOK
-// ============================================================================
-
-interface UseOnsetDetectionOptions {
-  threshold: number
-  onOnset?: (time: number) => void
-}
-
-function useOnsetDetection({ threshold, onOnset }: UseOnsetDetectionOptions) {
-  const [isListening, setIsListening] = useState(false)
-  const audioContextRef = useRef<AudioContext | null>(null)
-  const analyserRef = useRef<AnalyserNode | null>(null)
-  const streamRef = useRef<MediaStream | null>(null)
-  const previousRmsRef = useRef(0)
-  const onOnsetRef = useRef(onOnset)
-  const thresholdRef = useRef(threshold)
-  const lastOnsetTimeRef = useRef(0)
-  const animationFrameRef = useRef<number | null>(null)
-  const processAudioRef = useRef<(() => void) | null>(null)
-
-  useEffect(() => {
-    onOnsetRef.current = onOnset
-  }, [onOnset])
-
-  useEffect(() => {
-    thresholdRef.current = threshold
-  }, [threshold])
-
-  const processAudio = useCallback(() => {
-    if (!analyserRef.current) return
-
-    const bufferLength = analyserRef.current.frequencyBinCount
-    const dataArray = new Float32Array(bufferLength)
-    analyserRef.current.getFloatTimeDomainData(dataArray)
-
-    // Calculate RMS
-    let sum = 0
-    for (let i = 0; i < bufferLength; i++) {
-      sum += dataArray[i] * dataArray[i]
-    }
-    const rms = Math.sqrt(sum / bufferLength)
-
-    // Detect onset (sudden increase in amplitude)
-    const now = Date.now()
-    const onsetThreshold = 0.01 + (1 - thresholdRef.current / 100) * 0.1
-    const minTimeBetweenOnsets = 100 // Minimum 100ms between onsets
-
-    if (
-      rms > onsetThreshold &&
-      rms > previousRmsRef.current * 1.5 &&
-      now - lastOnsetTimeRef.current > minTimeBetweenOnsets
-    ) {
-      lastOnsetTimeRef.current = now
-      if (onOnsetRef.current) {
-        onOnsetRef.current(now)
-      }
-    }
-
-    previousRmsRef.current = rms
-    if (processAudioRef.current) {
-      animationFrameRef.current = requestAnimationFrame(processAudioRef.current)
-    }
-  }, [])
-
-  // Keep processAudioRef in sync with processAudio
-  useEffect(() => {
-    processAudioRef.current = processAudio
-  }, [processAudio])
-
-  const startListening = useCallback(async () => {
-    try {
-      audioContextRef.current = createBrowserAudioContext()
-      analyserRef.current = audioContextRef.current.createAnalyser()
-      analyserRef.current.fftSize = 2048
-
-      const stream = await navigator.mediaDevices.getUserMedia({ audio: true })
-      streamRef.current = stream
-
-      const source = audioContextRef.current.createMediaStreamSource(stream)
-      source.connect(analyserRef.current)
-
-      setIsListening(true)
-      animationFrameRef.current = requestAnimationFrame(processAudio)
-    } catch (error) {
-      console.error('Microphone error:', error)
-      alert('Could not access microphone. Please check permissions.')
-    }
-  }, [processAudio])
-
-  const stopListening = useCallback(() => {
-    if (animationFrameRef.current) {
-      cancelAnimationFrame(animationFrameRef.current)
-      animationFrameRef.current = null
-    }
-    if (streamRef.current) {
-      streamRef.current.getTracks().forEach(track => track.stop())
-      streamRef.current = null
-    }
-    if (audioContextRef.current) {
-      audioContextRef.current.close()
-      audioContextRef.current = null
-    }
-    analyserRef.current = null
-    setIsListening(false)
-  }, [])
-
-  useEffect(() => {
-    return () => {
-      if (animationFrameRef.current) {
-        cancelAnimationFrame(animationFrameRef.current)
-      }
-      if (streamRef.current) {
-        streamRef.current.getTracks().forEach(track => track.stop())
-      }
-      if (audioContextRef.current) {
-        audioContextRef.current.close()
-      }
-    }
-  }, [])
-
-  return { isListening, startListening, stopListening }
-}
-
-// ============================================================================
 // STATS CALCULATION
 // ============================================================================
 
@@ -401,19 +294,16 @@ function calculateStats(timings: BeatTiming[]): SessionStats {
     ? lateTimings.reduce((sum, t) => sum + (t.offsetMs || 0), 0) / lateTimings.length
     : 0
 
-  // Determine overall tendency based on count and average offset
+  // Overall tendency: where the typical hit lands. The middle value is used
+  // rather than the average so one wild tap cannot decide it, and it shows a
+  // lean even when every hit was close enough to count as on the beat.
   let rhythmTendency: 'early' | 'late' | 'on-time' = 'on-time'
-  if (completedTimings.length > 0) {
-    // If more than 40% of non-on-beat hits are one direction, that's the tendency
-    const nonOnBeat = earlyCount + lateCount
-    if (nonOnBeat > 0) {
-      const earlyRatio = earlyCount / nonOnBeat
-      if (earlyRatio > 0.6) {
-        rhythmTendency = 'early'
-      } else if (earlyRatio < 0.4) {
-        rhythmTendency = 'late'
-      }
-    }
+  if (completedTimings.length >= 4) {
+    const sorted = completedTimings.map(t => t.offsetMs || 0).sort((a, b) => a - b)
+    const mid = sorted.length >> 1
+    const typical = sorted.length % 2 ? sorted[mid] : (sorted[mid - 1] + sorted[mid]) / 2
+    if (typical <= -TENDENCY_EARLY_MS) rhythmTendency = 'early'
+    else if (typical >= TENDENCY_LATE_MS) rhythmTendency = 'late'
   }
 
   return {
@@ -450,6 +340,8 @@ export default function RhythmTrainer({ variant = 'floating' }: RhythmTrainerPro
   const [bpm, setBpm] = useState(90)
   const [timeSignature, setTimeSignature] = useState<TimeSignature>('4/4')
   const [metronomeSound, setMetronomeSound] = useState<MetronomeSound>('click')
+  // 'none' = click only, otherwise a drummer feel id (4/4 only)
+  const [drumFeel, setDrumFeel] = useState<string>('none')
   const [volume, setVolume] = useState(70)
   const [isPlaying, setIsPlaying] = useState(false)
 
@@ -486,10 +378,27 @@ export default function RhythmTrainer({ variant = 'floating' }: RhythmTrainerPro
   // duplicate beat numbers in long sessions).
   const pendingBeatsRef = useRef<PendingBeat[]>([])
   const lastMatchedBeatNumberRef = useRef(0)
-  // Time synchronization refs - store reference points for both time bases
-  const audioContextStartTimeRef = useRef(0) // audioContext.currentTime at start
-  const dateNowStartTimeRef = useRef(0) // Date.now() at start
   const volumeRef = useRef(volume) // Volume ref for use in callbacks
+  const stepCounterRef = useRef(0) // 16th-note position for the drummer
+  const nextStepTimeRef = useRef(0)
+
+  /**
+   * When a moment on the audio clock is actually heard, on the page clock.
+   * The browser reports which audio moment is leaving the speakers right now,
+   * so this accounts for the delay through the sound card and Bluetooth.
+   */
+  const heardAtMs = useCallback((audioTime: number): number => {
+    const ctx = audioContextRef.current
+    if (!ctx) return performance.now()
+    const stamp = typeof ctx.getOutputTimestamp === 'function' ? ctx.getOutputTimestamp() : null
+    // Some browsers (older Safari) return a stale or empty reading here;
+    // only trust one taken within the last half second.
+    if (stamp && stamp.contextTime && stamp.performanceTime && Math.abs(performance.now() - stamp.performanceTime) < 500) {
+      return stamp.performanceTime + (audioTime - stamp.contextTime) * 1000
+    }
+    const delay = (ctx.outputLatency || ctx.baseLatency || 0) * 1000
+    return performance.now() + (audioTime - ctx.currentTime) * 1000 + delay
+  }, [])
 
   // Keep volume ref in sync
   useEffect(() => {
@@ -511,7 +420,7 @@ export default function RhythmTrainer({ variant = 'floating' }: RhythmTrainerPro
    * the timing result so the tap pad can flash feedback, or null when the hit
    * landed outside the matching window (or the metronome is not running).
    */
-  const handleOnset = useCallback((onsetTime: number): TimingResult | null => {
+  const handleOnset = useCallback((onsetTime: number, source: HitSource = 'tap'): TimingResult | null => {
     if (!isPlaying || pendingBeatsRef.current.length === 0) return null
 
     // Find the closest expected beat
@@ -537,7 +446,7 @@ export default function RhythmTrainer({ variant = 'floating' }: RhythmTrainerPro
     // swept as missed once their window expires.
     pendingBeatsRef.current.splice(closestBeatIndex, 1)
 
-    const result: TimingResult = Math.abs(closestOffset) <= TIMING_THRESHOLDS.onBeat
+    const result: TimingResult = Math.abs(closestOffset) <= TIMING_THRESHOLDS.onBeat[source]
       ? 'on-beat'
       : closestOffset < 0
         ? 'early'
@@ -560,9 +469,18 @@ export default function RhythmTrainer({ variant = 'floating' }: RhythmTrainerPro
     return result
   }, [isPlaying])
 
-  const { isListening, startListening, stopListening } = useOnsetDetection({
-    threshold: sensitivity,
-    onOnset: handleOnset,
+  // The mic listens for claps and sung beats on the audio thread, timed to a
+  // few milliseconds, and reports them on the same clock as taps.
+  const micUsedRef = useRef(false)
+  const handleMicOnset = useCallback((timeMs: number) => {
+    if (handleOnset(timeMs, 'mic')) micUsedRef.current = true
+  }, [handleOnset])
+
+  const { isListening, start: startListening, stop: stopListening } = useVoiceTracker({
+    sensitivity,
+    pitch: false,
+    onsets: true,
+    onOnset: handleMicOnset,
   })
 
   // ==========================================================================
@@ -578,13 +496,14 @@ export default function RhythmTrainer({ variant = 'floating' }: RhythmTrainerPro
   const tapFeedbackTimerRef = useRef<NodeJS.Timeout | null>(null)
   const tapIdRef = useRef(0)
 
-  const registerTap = useCallback(() => {
-    // Timestamp as early as possible. Expected beat times are stored on the
-    // Date.now() axis (synchronised to audioContext at start), so this is
-    // directly comparable without conversion.
-    const tapTime = Date.now()
+  const registerTap = useCallback((eventTime?: number) => {
+    // Use the moment the browser recorded the touch or key press, not the
+    // moment this code got round to running: under load the gap between the
+    // two is several milliseconds and varies from tap to tap.
+    const now = performance.now()
+    const tapTime = eventTime && eventTime > 0 && now - eventTime >= 0 && now - eventTime < 250 ? eventTime : now
 
-    const result = handleOnset(tapTime)
+    const result = handleOnset(tapTime, 'tap')
 
     tapIdRef.current += 1
     setTapFeedback({ result: result ?? 'no-match', id: tapIdRef.current })
@@ -605,7 +524,7 @@ export default function RhythmTrainer({ variant = 'floating' }: RhythmTrainerPro
 
       e.preventDefault() // stop the page scrolling on every tap
       if (e.repeat) return // holding the key is not a stream of beats
-      registerTap()
+      registerTap(e.timeStamp)
     }
 
     window.addEventListener('keydown', onKeyDown)
@@ -688,7 +607,7 @@ export default function RhythmTrainer({ variant = 'floating' }: RhythmTrainerPro
   // accuracy was computed over attempts only - three good taps across a
   // hundred metronome beats scored ~100%.
   const sweepMissedBeats = useCallback(() => {
-    const now = Date.now()
+    const now = performance.now()
     const expired = pendingBeatsRef.current.filter(b => now - b.timeMs > TIMING_THRESHOLDS.window)
     if (expired.length === 0) return
 
@@ -711,32 +630,27 @@ export default function RhythmTrainer({ variant = 'floating' }: RhythmTrainerPro
 
   // Schedule metronome beats
   const scheduleBeats = useCallback(() => {
-    if (!audioContextRef.current) return
+    const ctx = audioContextRef.current
+    if (!ctx) return
 
-    const currentTime = audioContextRef.current.currentTime
+    const currentTime = ctx.currentTime
     const secondsPerBeat = 60.0 / bpm
     // Must be larger than TIMING_THRESHOLDS.window so early taps can match a
     // beat that is about to happen.
     const scheduleAhead = SCHEDULE_AHEAD_SECONDS
+    const feel = beatsPerMeasure === 4 ? DRUM_FEELS.find(f => f.id === drumFeel) : undefined
 
     while (nextBeatTimeRef.current < currentTime + scheduleAhead) {
       const beatInMeasure = beatCounterRef.current % beatsPerMeasure
       const isAccent = beatInMeasure === 0
 
-      // Schedule the sound
+      // The click, placed exactly on the audio clock. With a drummer playing
+      // it drops back to a quiet guide so the beat is never in doubt.
       const beatTime = nextBeatTimeRef.current
-      const currentVolume = volumeRef.current
-      setTimeout(() => {
-        if (audioContextRef.current) {
-          createMetronomeSound(audioContextRef.current, metronomeSound, isAccent, currentVolume)
-        }
-      }, (beatTime - audioContextRef.current.currentTime) * 1000)
+      createMetronomeSound(ctx, metronomeSound, isAccent, volumeRef.current * (feel ? 0.35 : 1), beatTime)
 
-      // Track expected beat time for onset detection
-      // Use synchronized time bases to avoid drift between audioContext.currentTime and Date.now()
-      // Calculate: dateNow at beat = dateNowStart + (beatTime - audioContextStart) * 1000
-      const expectedTimeMs = dateNowStartTimeRef.current +
-        (beatTime - audioContextStartTimeRef.current) * 1000
+      // When this beat will be heard, for judging taps and claps against
+      const expectedTimeMs = heardAtMs(beatTime)
       // beatCounterRef is 0-based and never resets mid-session, giving a
       // monotonic 1-based beat number (the DB has UNIQUE(session_id, beat_number)).
       pendingBeatsRef.current.push({
@@ -744,15 +658,38 @@ export default function RhythmTrainer({ variant = 'floating' }: RhythmTrainerPro
         timeMs: expectedTimeMs,
       })
 
-      // Update visual beat indicator
+      // Update visual beat indicator as the beat is heard
       setTimeout(() => {
         setCurrentBeat(beatInMeasure + 1)
-      }, (beatTime - audioContextRef.current.currentTime) * 1000)
+      }, Math.max(0, expectedTimeMs - performance.now()))
 
       beatCounterRef.current++
       nextBeatTimeRef.current += secondsPerBeat
     }
-  }, [bpm, beatsPerMeasure, metronomeSound])
+
+    // The drummer: a two-bar pattern of 16th notes, each hit nudged early or
+    // late by the amount a real drummer played it.
+    if (feel) {
+      const secondsPerStep = secondsPerBeat / 4
+      // Feel offsets were measured at the drummer's own tempo; scale them so
+      // the groove keeps its shape faster or slower, and never let a hit
+      // wander more than a fifth of a step.
+      const feelScale = feel.sourceBpm / bpm
+      const maxNudge = secondsPerStep * 0.2
+      while (nextStepTimeRef.current < currentTime + scheduleAhead) {
+        const step = stepCounterRef.current % STEPS_PER_PATTERN
+        for (const role of Object.keys(feel.hits) as DrumRole[]) {
+          for (const [hitStep, velocity, feelMs] of feel.hits[role] ?? []) {
+            if (hitStep !== step) continue
+            const nudge = Math.max(-maxNudge, Math.min(maxNudge, (feelMs / 1000) * feelScale))
+            playDrum(ctx, role, Math.max(currentTime, nextStepTimeRef.current + nudge), velocity, volumeRef.current / 100)
+          }
+        }
+        stepCounterRef.current++
+        nextStepTimeRef.current += secondsPerStep
+      }
+    }
+  }, [bpm, beatsPerMeasure, metronomeSound, drumFeel, heardAtMs])
 
   // Start metronome
   const startMetronome = useCallback(async () => {
@@ -760,13 +697,15 @@ export default function RhythmTrainer({ variant = 'floating' }: RhythmTrainerPro
       audioContextRef.current = createBrowserAudioContext()
     }
 
-    // Initialize synchronized time references
-    // This ensures Date.now() and audioContext.currentTime stay in sync throughout the session
-    audioContextStartTimeRef.current = audioContextRef.current.currentTime
-    dateNowStartTimeRef.current = Date.now()
+    if (audioContextRef.current.state === 'suspended') await audioContextRef.current.resume()
 
+    // Start a moment ahead so the very first click is scheduled, not rushed
+    const firstBeat = audioContextRef.current.currentTime + 0.12
     beatCounterRef.current = 0
-    nextBeatTimeRef.current = audioContextRef.current.currentTime
+    stepCounterRef.current = 0
+    nextBeatTimeRef.current = firstBeat
+    nextStepTimeRef.current = firstBeat
+    micUsedRef.current = false
     pendingBeatsRef.current = []
     lastMatchedBeatNumberRef.current = 0
 
@@ -831,11 +770,14 @@ export default function RhythmTrainer({ variant = 'floating' }: RhythmTrainerPro
         : Math.round((Date.now() - session.startedAt.getTime()) / 1000)
 
       // Prepare beat metrics for saving
+      // Times are kept on the page clock while playing; stored as whole
+      // milliseconds of wall-clock time, as they always have been.
+      const toWallClock = (ms: number) => Math.round(performance.timeOrigin + ms)
       const beatMetrics = session.beatTimings.map((bt) => ({
         beatNumber: bt.beatNumber,
-        expectedTimeMs: bt.expectedTime,
-        actualTimeMs: bt.actualTime,
-        timingOffsetMs: bt.offsetMs,
+        expectedTimeMs: toWallClock(bt.expectedTime),
+        actualTimeMs: bt.actualTime === null ? null : toWallClock(bt.actualTime),
+        timingOffsetMs: bt.offsetMs === null ? null : Math.round(bt.offsetMs * 100) / 100,
         timingResult: bt.result,
       }))
 
@@ -863,6 +805,9 @@ export default function RhythmTrainer({ variant = 'floating' }: RhythmTrainerPro
           avgLateMs: stats.avgLateMs,
           // Include detailed beat metrics
           beatMetrics,
+          // For the AI coach
+          drumFeel: beatsPerMeasure === 4 ? DRUM_FEELS.find(f => f.id === drumFeel)?.label ?? null : null,
+          inputMethod: micUsedRef.current ? 'clapping or singing into the microphone' : 'tapping',
         }),
       })
 
@@ -884,7 +829,7 @@ export default function RhythmTrainer({ variant = 'floating' }: RhythmTrainerPro
       setIsSaving(false)
       setTimeout(() => setSaveMessage(null), 5000)
     }
-  }, [session])
+  }, [session, drumFeel, beatsPerMeasure])
 
   // Cleanup on close
   useEffect(() => {
@@ -1102,6 +1047,25 @@ export default function RhythmTrainer({ variant = 'floating' }: RhythmTrainerPro
       </div>
 
       <div>
+        <p className="mb-2 text-xs text-gray-400">Play along with a drummer</p>
+        <Segmented
+          aria-label="Drummer"
+          value={beatsPerMeasure === 4 ? drumFeel : 'none'}
+          onChange={setDrumFeel}
+          disabled={isPlaying || beatsPerMeasure !== 4}
+          options={[
+            { value: 'none', label: 'Click only' },
+            ...DRUM_FEELS.map((feel) => ({ value: feel.id, label: feel.label })),
+          ]}
+        />
+        <p className="mt-1.5 text-xs text-gray-500">
+          {beatsPerMeasure === 4
+            ? 'Real drummer grooves with a human feel. Keep tapping the main beats. Grooves from the Groove MIDI Dataset (CC BY 4.0).'
+            : 'The drummer plays in 4/4. Switch the bar length to 4/4 to use it.'}
+        </p>
+      </div>
+
+      <div>
         <div className="mb-2 flex items-center justify-between text-xs">
           <label htmlFor="rhythm-volume" className="flex items-center gap-2 text-gray-400">
             <Volume2 className="size-3.5" /> Volume
@@ -1212,7 +1176,7 @@ export default function RhythmTrainer({ variant = 'floating' }: RhythmTrainerPro
                     <Settings2 />
                     <span className="flex flex-col items-start leading-tight">
                       <span>More settings</span>
-                      <span className="text-xs font-normal text-gray-400">Bar length, click sound, volume and mic</span>
+                      <span className="text-xs font-normal text-gray-400">Bar length, drummer, click sound, volume and mic</span>
                     </span>
                   </Button>
 
@@ -1293,7 +1257,7 @@ export default function RhythmTrainer({ variant = 'floating' }: RhythmTrainerPro
                     // pointerdown, not click: fires on contact rather than
                     // release, which is what makes a tap pad feel accurate.
                     e.preventDefault()
-                    registerTap()
+                    registerTap(e.timeStamp)
                   }}
                   disabled={!isPlaying}
                   aria-label="Tap on the beat"

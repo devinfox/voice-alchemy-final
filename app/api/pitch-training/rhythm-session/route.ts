@@ -33,6 +33,9 @@ interface RhythmSessionInput {
     timingOffsetMs: number | null
     timingResult: string
   }[]
+  // Sent for the AI coach only; not stored as columns
+  drumFeel?: string | null
+  inputMethod?: string | null
 }
 
 // Timing thresholds (matching the component)
@@ -71,6 +74,8 @@ export async function POST(request: NextRequest) {
       avgEarlyMs,
       avgLateMs,
       beatMetrics,
+      drumFeel,
+      inputMethod,
     } = body
 
     if (totalBeats === 0) {
@@ -193,6 +198,8 @@ export async function POST(request: NextRequest) {
             earlyCount, lateCount, missedCount, avgTimingOffsetMs,
             timingConsistency, onBeatPercent, bestStreak, overallScore,
             rhythmTendency, avgEarlyMs, avgLateMs,
+            drumFeel: typeof drumFeel === 'string' ? drumFeel : null,
+            inputMethod: typeof inputMethod === 'string' ? inputMethod : null,
           },
           {
             lessonNotes,
