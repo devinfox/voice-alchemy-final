@@ -997,7 +997,7 @@ export default function ModernPitchTrainer({ variant = 'floating' }: ModernPitch
             if (fab.consumeDrag()) return
             setIsOpen(true)
           }}
-          className="fixed bottom-4 right-[76px] w-12 h-12 lg:bottom-6 lg:right-24 lg:w-14 lg:h-14 bg-gradient-to-br from-indigo-600 to-violet-600 rounded-full shadow-lg flex items-center justify-center text-white hover:scale-110 active:scale-95 transition-all duration-300 z-50"
+          className="fixed bottom-4 right-[76px] w-12 h-12 lg:bottom-6 lg:right-24 lg:w-14 lg:h-14 bg-gradient-to-br from-indigo-600 to-violet-600 rounded-full shadow-lg flex items-center justify-center text-white hover:scale-110 active:scale-95 transition-all duration-300 z-40"
           style={{ boxShadow: '0 8px 24px rgba(99, 102, 241, 0.4)', ...fab.style }}
           title="Pitch Perfect (drag to move)"
           aria-label="Pitch Perfect"

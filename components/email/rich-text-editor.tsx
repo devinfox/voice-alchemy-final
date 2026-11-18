@@ -269,6 +269,8 @@ export const RichTextEditor = forwardRef<RichTextEditorRef, RichTextEditorProps>
     const lastEmittedRef = useRef<string>(content)
 
     const editor = useEditor({
+      // Next renders this on the server first; Tiptap must wait for the browser.
+      immediatelyRender: false,
       extensions: [
         StarterKit.configure({
           heading: false, // Disable headings for email
@@ -282,7 +284,7 @@ export const RichTextEditor = forwardRef<RichTextEditorRef, RichTextEditorProps>
         }),
         Placeholder.configure({
           placeholder,
-          emptyEditorClass: 'before:content-[attr(data-placeholder)] before:text-gray-500 before:pointer-events-none before:absolute before:left-0 before:top-0',
+          emptyEditorClass: 'before:content-[attr(data-placeholder)] before:text-gray-500 before:pointer-events-none before:float-left before:h-0',
         }),
         Underline,
         TextStyle,
@@ -358,6 +360,8 @@ export const RichTextEditor = forwardRef<RichTextEditorRef, RichTextEditorProps>
 export const SimpleRichTextEditor = forwardRef<RichTextEditorRef, RichTextEditorProps>(
   function SimpleRichTextEditor(props, ref) {
     const editor = useEditor({
+      // Next renders this on the server first; Tiptap must wait for the browser.
+      immediatelyRender: false,
       extensions: [
         StarterKit.configure({
           heading: false,

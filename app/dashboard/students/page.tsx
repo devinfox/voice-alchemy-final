@@ -353,7 +353,7 @@ export default function StudentsPage() {
       {/* Header */}
       <section className="glass-card-luxe rounded-2xl sm:rounded-3xl border border-[#CEB466]/40 p-4 sm:p-6 md:p-7 relative overflow-hidden">
         <div className="flex flex-col md:flex-row md:items-end justify-between gap-4 relative z-10">
-          <div>
+          <div className="min-w-0">
             <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-[#CEB466]/15 border border-[#CEB466]/30 text-[10px] sm:text-xs font-semibold text-[#CEB466] mb-2">
               <Users className="w-3.5 h-3.5" />
               <span>Voice Alchemy · Coaching</span>
@@ -364,7 +364,7 @@ export default function StudentsPage() {
             </p>
           </div>
 
-          <div className="flex flex-wrap items-center gap-2.5">
+          <div className="flex flex-wrap items-center gap-2.5 md:shrink-0 md:flex-nowrap md:justify-end">
             {!loading && !error && pageItems.length > 0 && (
               <SpotlightTriggerButton tourKey="teacher_roster_v4" label="How to" />
             )}
@@ -380,8 +380,8 @@ export default function StudentsPage() {
                 </span>
               )}
             </Link>
-            <div className="flex items-center gap-2 px-3.5 py-2.5 rounded-xl bg-white/[0.04] border border-white/10">
-              <Search className="w-3.5 h-3.5 text-gray-500" />
+            <div className="flex w-full items-center gap-2 px-3.5 py-2.5 rounded-xl bg-white/[0.04] border border-white/10 sm:w-auto">
+              <Search className="w-3.5 h-3.5 shrink-0 text-gray-500" />
               <input
                 type="text"
                 value={search}
@@ -390,7 +390,7 @@ export default function StudentsPage() {
                   setPage(1)
                 }}
                 placeholder="Search students…"
-                className="bg-transparent text-xs text-white placeholder-gray-500 focus:outline-none w-36 sm:w-44"
+                className="min-w-0 flex-1 bg-transparent text-xs text-white placeholder-gray-500 focus:outline-none sm:w-44 sm:flex-none"
               />
             </div>
           </div>

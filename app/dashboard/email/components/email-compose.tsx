@@ -1239,12 +1239,12 @@ export function EmailCompose({
                 className="inline-flex items-center gap-2 text-sm text-gray-400 hover:text-white transition-colors"
               >
                 <ArrowLeft className="w-4 h-4" />
-                Back to Inbox
+                <span className="hidden sm:inline">Back to Inbox</span>
               </button>
               <div className="w-px h-5 bg-white/[0.08]" />
             </>
           )}
-          <span className="text-white font-semibold tracking-tight">
+          <span className="text-white font-semibold tracking-tight whitespace-nowrap">
             {replyTo ? 'Reply' : forward ? 'Forward' : isAiDraft ? 'AI Draft' : 'New Message'}
           </span>
           {isAiDraft && (
@@ -1591,7 +1591,8 @@ export function EmailCompose({
           />
         </div>
 
-        {/* Signature preview - Rendered as HTML below the editor, styled for dark mode.
+        {/* Signature preview - Rendered as HTML below the editor on a white card, the
+            way the recipient sees it (the signature's own colours assume a light page).
             This is ONLY a preview: it is visually scaled to ~78% via `zoom` so it stays
             compact in the composer. The full-size `signatureHtml` (unchanged) is what gets
             appended to the outgoing email in handleSend. `zoom` (unlike a bare transform)
@@ -1629,7 +1630,7 @@ export function EmailCompose({
               </div>
             )}
             <div
-              className="signature-preview-shell overflow-hidden"
+              className="signature-preview-shell overflow-x-auto rounded-xl bg-white px-4 py-3"
               onClick={isInfoAccount ? cycleInfoSignature : undefined}
               role={isInfoAccount ? 'button' : undefined}
               title={isInfoAccount ? 'Click to switch signature' : undefined}

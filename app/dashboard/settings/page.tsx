@@ -22,8 +22,8 @@ export default async function SettingsPage() {
     <div className="space-y-6">
       {/* Header */}
       <div className="flex items-center gap-3">
-        <div className="w-12 h-12 rounded-xl bg-blue-500/20 flex items-center justify-center">
-          <Settings className="w-6 h-6 text-blue-400" />
+        <div className="w-12 h-12 rounded-xl bg-gold-400/15 flex items-center justify-center">
+          <Settings className="w-6 h-6 text-gold-400" />
         </div>
         <div>
           <h1 className="text-2xl font-bold text-white">Settings</h1>
@@ -35,13 +35,13 @@ export default async function SettingsPage() {
         {/* Profile Section */}
         <div className="bg-white/5 backdrop-blur-sm rounded-xl border border-white/10 p-6">
           <div className="flex items-center gap-2 mb-6">
-            <User className="w-5 h-5 text-blue-400" />
+            <User className="w-5 h-5 text-gold-400" />
             <h2 className="text-lg font-semibold text-white">Profile</h2>
           </div>
 
           <div className="space-y-4">
             <div className="flex items-center gap-4">
-              <div className="w-16 h-16 rounded-full bg-gradient-to-br from-blue-500 to-purple-600 flex items-center justify-center text-white font-bold text-xl">
+              <div className="w-16 h-16 rounded-full bg-gradient-to-br from-gold-300 to-gold-500 flex items-center justify-center text-ink-900 font-bold text-xl">
                 {displayName.slice(0, 2).toUpperCase()}
               </div>
               <div>

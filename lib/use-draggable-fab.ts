@@ -19,6 +19,18 @@ interface DragState {
   moved: boolean
 }
 
+/**
+ * Where a button was dropped, saved as its distance from the right and bottom
+ * edges. Floating buttons live in that corner, so measuring from there keeps
+ * them in the same place (and the same distance apart) when the window is a
+ * different size next time. Saving left/top instead made buttons pile on top
+ * of each other whenever the window got narrower.
+ */
+interface SavedSpot {
+  right: number
+  bottom: number
+}
+
 const DRAG_THRESHOLD_PX = 6
 const EDGE_MARGIN_PX = 4
 
@@ -29,6 +41,14 @@ function clamp(point: Point, width: number, height: number): Point {
     x: Math.min(maxX, Math.max(EDGE_MARGIN_PX, point.x)),
     y: Math.min(maxY, Math.max(EDGE_MARGIN_PX, point.y)),
   }
+}
+
+function fromSpot(saved: SavedSpot, width: number, height: number): Point {
+  return clamp(
+    { x: window.innerWidth - saved.right - width, y: window.innerHeight - saved.bottom - height },
+    width,
+    height
+  )
 }
 
 /**
@@ -43,6 +63,7 @@ export function useDraggableFab<T extends HTMLElement = HTMLButtonElement>(stora
   const justDragged = useRef(false)
   const [position, setPosition] = useState<Point | null>(null)
   const [dragging, setDragging] = useState(false)
+  const spot = useRef<SavedSpot | null>(null)
 
   // Restore the saved spot, and keep it on screen when the window resizes.
   useEffect(() => {
@@ -53,10 +74,14 @@ export function useDraggableFab<T extends HTMLElement = HTMLButtonElement>(stora
     try {
       const raw = window.localStorage.getItem(storageKey)
       if (raw) {
-        const saved = JSON.parse(raw) as Point
-        if (Number.isFinite(saved?.x) && Number.isFinite(saved?.y)) {
+        const saved = JSON.parse(raw) as Partial<SavedSpot>
+        if (Number.isFinite(saved?.right) && Number.isFinite(saved?.bottom)) {
           const { width, height } = size()
-          setPosition(clamp(saved, width, height))
+          spot.current = { right: saved.right as number, bottom: saved.bottom as number }
+          setPosition(fromSpot(spot.current, width, height))
+        } else {
+          // An older save measured from the top-left: start again from the default spot.
+          window.localStorage.removeItem(storageKey)
         }
       }
     } catch {
@@ -64,7 +89,10 @@ export function useDraggableFab<T extends HTMLElement = HTMLButtonElement>(stora
     }
     const onResize = () => {
       const { width, height } = size()
-      setPosition((current) => (current ? clamp(current, width, height) : current))
+      setPosition((current) => {
+        if (!current) return current
+        return spot.current ? fromSpot(spot.current, width, height) : clamp(current, width, height)
+      })
     }
     window.addEventListener('resize', onResize)
     return () => window.removeEventListener('resize', onResize)
@@ -115,8 +143,12 @@ export function useDraggableFab<T extends HTMLElement = HTMLButtonElement>(stora
       setDragging(false)
       setPosition((current) => {
         if (current) {
+          spot.current = {
+            right: window.innerWidth - current.x - d.width,
+            bottom: window.innerHeight - current.y - d.height,
+          }
           try {
-            window.localStorage.setItem(storageKey, JSON.stringify(current))
+            window.localStorage.setItem(storageKey, JSON.stringify(spot.current))
           } catch {
             /* ignore */
           }

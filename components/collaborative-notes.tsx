@@ -59,6 +59,8 @@ export function CollaborativeNotes({
 
   // Set up editor
   const editor = useEditor({
+    // Next renders this on the server first; Tiptap must wait for the browser.
+    immediatelyRender: false,
     extensions: [
       StarterKit.configure({
         // Yjs handles history - disable the built-in history extension

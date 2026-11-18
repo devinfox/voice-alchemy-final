@@ -1108,7 +1108,7 @@ export default function RhythmTrainer({ variant = 'floating' }: RhythmTrainerPro
       {variant === 'floating' ? (
         <button
           onClick={() => setIsOpen(true)}
-          className="fixed bottom-20 right-4 w-12 h-12 lg:bottom-24 lg:right-8 lg:w-14 lg:h-14 bg-gradient-to-br from-amber-500 to-orange-600 rounded-full shadow-lg flex items-center justify-center text-white hover:scale-110 active:scale-95 transition-all duration-300 z-50"
+          className="fixed bottom-20 right-4 w-12 h-12 lg:bottom-24 lg:right-8 lg:w-14 lg:h-14 bg-gradient-to-br from-amber-500 to-orange-600 rounded-full shadow-lg flex items-center justify-center text-white hover:scale-110 active:scale-95 transition-all duration-300 z-40"
           style={{ boxShadow: '0 8px 24px rgba(245, 158, 11, 0.4)' }}
           title="Rhythm Trainer"
         >
@@ -1161,8 +1161,8 @@ export default function RhythmTrainer({ variant = 'floating' }: RhythmTrainerPro
                 </div>
               )}
 
-              <div className="grid gap-4 lg:grid-cols-2">
-                <div className="min-w-0">
+              <div className="grid gap-4 lg:grid-cols-2 lg:items-center">
+                <div className="flex min-w-0 flex-col gap-4">
                   {/* BPM Control */}
                   {renderBpmControl()}
 
@@ -1170,7 +1170,7 @@ export default function RhythmTrainer({ variant = 'floating' }: RhythmTrainerPro
                     size="lg"
                     variant="outline"
                     block
-                    className="my-4 justify-start"
+                    className="justify-start"
                     onClick={() => setShowSettings(true)}
                   >
                     <Settings2 />

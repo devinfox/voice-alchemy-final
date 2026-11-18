@@ -209,7 +209,7 @@ export function ChatWidget({ currentUserId }: ChatWidgetProps) {
           if (fab.consumeDrag()) return
           setIsOpen(true)
         }}
-        className="fixed bottom-4 right-4 w-12 h-12 lg:bottom-6 lg:right-6 lg:w-14 lg:h-14 bg-gradient-to-br from-[#CEB466] to-[#9c8644] rounded-full shadow-lg flex items-center justify-center text-[#171229] hover:scale-110 active:scale-95 transition-all duration-300 z-50 fab-button"
+        className="fixed bottom-4 right-4 w-12 h-12 lg:bottom-6 lg:right-6 lg:w-14 lg:h-14 bg-gradient-to-br from-[#CEB466] to-[#9c8644] rounded-full shadow-lg flex items-center justify-center text-[#171229] hover:scale-110 active:scale-95 transition-all duration-300 z-40 fab-button"
         style={{
           boxShadow: '0 8px 24px rgba(206, 180, 102, 0.4), 0 0 0 0 rgba(206, 180, 102, 0.4)',
           ...fab.style,

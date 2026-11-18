@@ -719,7 +719,7 @@ export default function ScaleTrainer({ variant = 'floating' }: ScaleTrainerProps
             </Button>
           </div>
 
-          <div data-tour="scale-notes-strip" className="flex flex-wrap gap-2">
+          <div data-tour="scale-notes-strip" className="flex flex-wrap gap-1.5 sm:gap-2">
             {scaleNotes.map((note, idx) => {
               const isCurrentNote = idx === currentNoteIndex
               const isCompleted = idx < currentNoteIndex
@@ -732,7 +732,7 @@ export default function ScaleTrainer({ variant = 'floating' }: ScaleTrainerProps
                   onClick={() => !isPracticing && playScaleNote(idx)}
                   disabled={isPracticing}
                   className={`
-                    relative px-4 py-3 rounded-xl border transition-all duration-300 cursor-pointer
+                    relative px-2.5 py-3 sm:px-4 rounded-xl border transition-all duration-300 cursor-pointer
                     ${isPlaying ? 'border-yellow-500 bg-yellow-500/20 scale-105 shadow-lg shadow-yellow-500/30' : ''}
                     ${isCurrentNote && !isPlaying ? 'border-gold-400 bg-gold-400/15 scale-110' : ''}
                     ${isCompleted && !isPlaying ? 'border-emerald-500/50 bg-emerald-500/10' : ''}
@@ -935,7 +935,7 @@ export default function ScaleTrainer({ variant = 'floating' }: ScaleTrainerProps
       {variant === 'floating' ? (
         <button
           onClick={() => setIsOpen(true)}
-          className="fixed bottom-4 right-[140px] w-12 h-12 lg:bottom-6 lg:right-40 lg:w-14 lg:h-14 bg-gradient-to-br from-pink-500 to-purple-600 rounded-full shadow-lg flex items-center justify-center text-white hover:scale-110 active:scale-95 transition-all duration-300 z-50"
+          className="fixed bottom-4 right-[140px] w-12 h-12 lg:bottom-6 lg:right-40 lg:w-14 lg:h-14 bg-gradient-to-br from-pink-500 to-purple-600 rounded-full shadow-lg flex items-center justify-center text-white hover:scale-110 active:scale-95 transition-all duration-300 z-40"
           style={{ boxShadow: '0 8px 24px rgba(236, 72, 153, 0.4)' }}
           title="Scale Trainer"
         >

@@ -558,7 +558,7 @@ export default function TrainingCenterPage() {
         <>
           {/* Practice tools — launch a session right from here */}
           <div data-tour="training-start-practicing" className="space-y-3">
-            <div className="flex items-center justify-between">
+            <div className="flex flex-col gap-1 sm:flex-row sm:items-center sm:justify-between">
               <h2 className="text-lg font-bold text-white font-luxury flex items-center gap-2">
                 <Music className="w-5 h-5 text-[#CEB466]" />
                 <span>Start Practicing</span>

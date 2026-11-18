@@ -81,7 +81,7 @@ export default function ProfileEditForm({
 
         <button
           onClick={() => setIsEditing(true)}
-          className="flex items-center gap-2 px-4 py-2 rounded-lg bg-blue-500/20 text-blue-400 hover:bg-blue-500/30 transition-colors mt-4"
+          className="flex items-center gap-2 px-4 py-2 rounded-lg border border-gold-400/30 bg-gold-400/10 text-gold-300 hover:bg-gold-400/20 transition-colors mt-4"
         >
           <Pencil className="w-4 h-4" />
           Edit Name
@@ -106,7 +106,7 @@ export default function ProfileEditForm({
           value={firstName}
           onChange={(e) => setFirstName(e.target.value)}
           placeholder="Enter your first name"
-          className="w-full px-4 py-2 rounded-lg bg-white/5 border border-white/10 text-white placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-blue-500/50 focus:border-blue-500/50"
+          className="w-full px-4 py-2 rounded-lg bg-white/5 border border-white/10 text-white placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-gold-400/40 focus:border-gold-400/50"
           disabled={isSaving}
         />
       </div>
@@ -118,7 +118,7 @@ export default function ProfileEditForm({
           value={lastName}
           onChange={(e) => setLastName(e.target.value)}
           placeholder="Enter your last name"
-          className="w-full px-4 py-2 rounded-lg bg-white/5 border border-white/10 text-white placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-blue-500/50 focus:border-blue-500/50"
+          className="w-full px-4 py-2 rounded-lg bg-white/5 border border-white/10 text-white placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-gold-400/40 focus:border-gold-400/50"
           disabled={isSaving}
         />
       </div>
@@ -127,7 +127,7 @@ export default function ProfileEditForm({
         <button
           onClick={handleSave}
           disabled={isSaving}
-          className="flex items-center gap-2 px-4 py-2 rounded-lg bg-blue-500 text-white hover:bg-blue-600 transition-colors disabled:opacity-50"
+          className="flex items-center gap-2 px-4 py-2 rounded-lg bg-gold-400 font-semibold text-ink-900 hover:bg-gold-300 transition-colors disabled:opacity-50"
         >
           {isSaving ? (
             <>
