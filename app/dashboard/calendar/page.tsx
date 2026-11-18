@@ -31,18 +31,32 @@ export default async function CalendarPage() {
   const instructorIds = rawBookings?.map(b => b.instructor_id).filter(Boolean) || []
   const allProfileIds = [...new Set([...studentIds, ...instructorIds])]
 
-  let profileMap: Record<string, { id: string; first_name: string | null; last_name: string | null; name: string | null }> = {}
+  // Names and one-off changes (a cancelled or moved date) load together.
+  // The lesson_exceptions table may not exist yet on a database that has not
+  // had the migration applied: treat that as "none".
+  const bookingIds = (rawBookings || []).map((b) => b.id)
+  const [{ data: profiles }, { data: exceptionRows }] = await Promise.all([
+    allProfileIds.length > 0
+      ? supabase.from('profiles').select('id, first_name, last_name, name').in('id', allProfileIds)
+      : Promise.resolve({ data: [] as { id: string; first_name: string | null; last_name: string | null; name: string | null }[] }),
+    bookingIds.length > 0
+      ? supabase
+          .from('lesson_exceptions')
+          .select('booking_id, original_date, kind, new_date, new_time, new_duration_minutes')
+          .in('booking_id', bookingIds)
+      : Promise.resolve({ data: [] }),
+  ])
 
-  if (allProfileIds.length > 0) {
-    const { data: profiles } = await supabase
-      .from('profiles')
-      .select('id, first_name, last_name, name')
-      .in('id', allProfileIds)
-
-    if (profiles) {
-      profileMap = Object.fromEntries(profiles.map(p => [p.id, p]))
-    }
-  }
+  const profileMap: Record<string, { id: string; first_name: string | null; last_name: string | null; name: string | null }> =
+    Object.fromEntries((profiles || []).map((p) => [p.id, p]))
+  const exceptions = (exceptionRows || []) as {
+    booking_id: string
+    original_date: string
+    kind: 'cancelled' | 'rescheduled'
+    new_date: string | null
+    new_time: string | null
+    new_duration_minutes: number | null
+  }[]
 
   // Combine bookings with profile data
   const bookings = rawBookings?.map(b => ({
@@ -51,25 +65,6 @@ export default async function CalendarPage() {
     instructor: profileMap[b.instructor_id] || null,
   })) || []
 
-
-  // One-off changes (a cancelled or moved date). The table may not exist yet
-  // on a database that has not had the migration applied: treat as "none".
-  const bookingIds = bookings.map((b) => b.id)
-  let exceptions: {
-    booking_id: string
-    original_date: string
-    kind: 'cancelled' | 'rescheduled'
-    new_date: string | null
-    new_time: string | null
-    new_duration_minutes: number | null
-  }[] = []
-  if (bookingIds.length > 0) {
-    const { data: exceptionRows } = await supabase
-      .from('lesson_exceptions')
-      .select('booking_id, original_date, kind, new_date, new_time, new_duration_minutes')
-      .in('booking_id', bookingIds)
-    exceptions = exceptionRows || []
-  }
 
   return (
     <CalendarView

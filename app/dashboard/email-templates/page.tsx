@@ -25,38 +25,52 @@ export default async function EmailTemplatesPage({ searchParams }: PageProps) {
     redirect('/login')
   }
 
-  const { data: templates, error: templatesError } = await supabase
-    .from('email_templates')
-    .select('*')
-    .eq('is_deleted', false)
-    .order('created_at', { ascending: false })
-  if (templatesError) console.error('Error fetching email templates:', templatesError)
-
-  const { data: funnels, error: funnelsError } = await supabase
-    .from('email_funnels')
-    .select(`
+  // Four independent lookups, run together.
+  const [
+    { data: templates, error: templatesError },
+    { data: funnels, error: funnelsError },
+    { data: pendingEnrollments },
+    { data: audienceRows, error: audiencesQueryError },
+  ] = await Promise.all([
+    supabase
+      .from('email_templates')
+      .select('*')
+      .eq('is_deleted', false)
+      .order('created_at', { ascending: false }),
+    supabase
+      .from('email_funnels')
+      .select(`
       *,
       phases:email_funnel_phases(
         *,
         template:email_templates(id, name, subject)
       )
     `)
-    .eq('is_deleted', false)
-    .order('created_at', { ascending: false })
+      .eq('is_deleted', false)
+      .order('created_at', { ascending: false }),
+    // Suggested enrollments awaiting review. lead_id holds a profiles.id; the
+    // email lives in the `users` mirror table.
+    supabase
+      .from('email_funnel_enrollments')
+      .select(`id, funnel_id, lead_id, enrolled_at, match_reason, funnel:email_funnels(id, name, description, tags)`)
+      .eq('status', 'pending_approval')
+      .order('enrolled_at', { ascending: false }),
+    // User types (audiences). The table arrives with migration 20260907000002;
+    // until it is applied the Funnels tab shows a flat list with a notice.
+    supabase
+      .from('email_audiences')
+      .select('id, key, name, description, sort_order')
+      .eq('is_deleted', false)
+      .order('sort_order', { ascending: true })
+      .order('name', { ascending: true }),
+  ])
+  if (templatesError) console.error('Error fetching email templates:', templatesError)
   if (funnelsError) console.error('Error fetching funnels:', funnelsError)
 
   const funnelsWithSortedPhases = funnels?.map(funnel => ({
     ...funnel,
     phases: funnel.phases?.sort((a: { phase_order: number }, b: { phase_order: number }) => a.phase_order - b.phase_order),
   })) as EmailFunnel[] | undefined
-
-  // Suggested enrollments awaiting review. lead_id holds a profiles.id; the
-  // email lives in the `users` mirror table.
-  const { data: pendingEnrollments } = await supabase
-    .from('email_funnel_enrollments')
-    .select(`id, funnel_id, lead_id, enrolled_at, match_reason, funnel:email_funnels(id, name, description, tags)`)
-    .eq('status', 'pending_approval')
-    .order('enrolled_at', { ascending: false })
 
   const pendingStudentIds = [...new Set((pendingEnrollments || []).map(e => e.lead_id).filter(Boolean) as string[])]
   const pendingStudentMap = new Map<string, { id: string; first_name: string | null; last_name: string | null; email: string | null }>()
@@ -81,12 +95,6 @@ export default async function EmailTemplatesPage({ searchParams }: PageProps) {
   // until it is applied the Funnels tab shows a flat list with a notice.
   let audiences: EmailAudience[] = []
   let audiencesError: string | null = null
-  const { data: audienceRows, error: audiencesQueryError } = await supabase
-    .from('email_audiences')
-    .select('id, key, name, description, sort_order')
-    .eq('is_deleted', false)
-    .order('sort_order', { ascending: true })
-    .order('name', { ascending: true })
   if (audiencesQueryError) {
     audiencesError = /does not exist|schema cache/i.test(audiencesQueryError.message)
       ? 'run migration 20260907000002_email_audiences.sql to enable them.'

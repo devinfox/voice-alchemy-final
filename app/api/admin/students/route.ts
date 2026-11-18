@@ -66,83 +66,86 @@ export async function GET() {
       email_confirmed_at: string | null
     }> = []
 
-    for (let page = 1; page <= 20; page++) {
-      const { data, error } = await admin.auth.admin.listUsers({ page, perPage: 200 })
-      if (error) {
-        console.error('[AdminStudents] listUsers failed:', error.message)
-        break
+    // Everything below is independent, so it all runs at the same time. Run
+    // one after another these twelve-odd round trips took about two seconds.
+    const loadAuthUsers = async () => {
+      for (let page = 1; page <= 20; page++) {
+        const { data, error } = await admin.auth.admin.listUsers({ page, perPage: 200 })
+        if (error) {
+          console.error('[AdminStudents] listUsers failed:', error.message)
+          break
+        }
+        authUsers.push(
+          ...data.users.map(u => ({
+            id: u.id,
+            email: u.email ?? null,
+            phone: u.phone ?? null,
+            created_at: u.created_at,
+            last_sign_in_at: u.last_sign_in_at ?? null,
+            email_confirmed_at: u.email_confirmed_at ?? null,
+          }))
+        )
+        if (data.users.length < 200) break
       }
-      authUsers.push(
-        ...data.users.map(u => ({
-          id: u.id,
-          email: u.email ?? null,
-          phone: u.phone ?? null,
-          created_at: u.created_at,
-          last_sign_in_at: u.last_sign_in_at ?? null,
-          email_confirmed_at: u.email_confirmed_at ?? null,
-        }))
-      )
-      if (data.users.length < 200) break
     }
 
-    const authById = new Map(authUsers.map(u => [u.id, u]))
-
-    // --- profiles ------------------------------------------------------------
-    const { data: profiles, error: profilesError } = await admin
+    const profilesQuery = admin
       .from('profiles')
       .select('id, first_name, last_name, name, role, timezone, created_at')
       .order('created_at', { ascending: false })
+
+    // Contact tags need the profile ids, so they chain off the profiles query.
+    // Optional: the directory still renders before migration
+    // 20261107000001_email_tags.sql is applied.
+    const loadTags = async () => {
+      try {
+        const { data } = await profilesQuery
+        return (await tagsForRecipients(admin, { profileIds: (data || []).map(p => p.id) })).profiles
+      } catch (tagError) {
+        console.error('[AdminStudents] tags unavailable:', tagError instanceof Error ? tagError.message : tagError)
+        return new Map<string, EmailTag[]>()
+      }
+    }
+
+    const [
+      ,
+      { data: profiles, error: profilesError },
+      // phone / admin_notes only exist after migration 20260728000003. Queried
+      // separately so the directory still renders if it has not been applied.
+      { data: contactRows, error: contactError },
+      tagsByProfile,
+      { data: bookings },
+      { data: recordings },
+      { data: notes },
+      { data: pitchSessions },
+      { data: rhythmSessions },
+      { data: scaleSessions },
+    ] = await Promise.all([
+      loadAuthUsers(),
+      profilesQuery,
+      admin.from('profiles').select('id, phone, admin_notes'),
+      loadTags(),
+      admin.from('bookings').select('id, student_id, instructor_id, status'),
+      admin.from('lesson_recordings').select('student_id, created_at'),
+      admin.from('notes_archive').select('student_id, class_ended_at'),
+      admin.from('pitch_training_sessions').select('user_id, created_at'),
+      admin.from('rhythm_training_sessions').select('user_id, created_at'),
+      admin.from('scale_training_sessions').select('user_id, created_at'),
+    ])
+
+    const authById = new Map(authUsers.map(u => [u.id, u]))
 
     if (profilesError) {
       console.error('[AdminStudents] profiles query failed:', profilesError.message)
       return NextResponse.json({ error: 'Failed to load students' }, { status: 500 })
     }
 
-    // phone / admin_notes only exist after migration 20260728000003. Query them
-    // separately so the directory still renders if it has not been applied yet.
     let contactById = new Map<string, { phone: string | null; admin_notes: string | null }>()
-    const { data: contactRows, error: contactError } = await admin
-      .from('profiles')
-      .select('id, phone, admin_notes')
     if (!contactError && contactRows) {
       contactById = new Map(
         contactRows.map(r => [r.id, { phone: r.phone ?? null, admin_notes: r.admin_notes ?? null }])
       )
     }
-
-    // Contact tags. Optional: the directory still renders before migration
-    // 20261107000001_email_tags.sql is applied.
-    let tagsByProfile = new Map<string, EmailTag[]>()
-    try {
-      tagsByProfile = (await tagsForRecipients(admin, { profileIds: (profiles || []).map(p => p.id) })).profiles
-    } catch (tagError) {
-      console.error('[AdminStudents] tags unavailable:', tagError instanceof Error ? tagError.message : tagError)
-    }
-
-    // --- relationships and activity -----------------------------------------
-    const { data: bookings } = await admin
-      .from('bookings')
-      .select('id, student_id, instructor_id, status')
-
-    const { data: recordings } = await admin
-      .from('lesson_recordings')
-      .select('student_id, created_at')
-
-    const { data: notes } = await admin
-      .from('notes_archive')
-      .select('student_id, class_ended_at')
-
-    const { data: pitchSessions } = await admin
-      .from('pitch_training_sessions')
-      .select('user_id, created_at')
-
-    const { data: rhythmSessions } = await admin
-      .from('rhythm_training_sessions')
-      .select('user_id, created_at')
-
-    const { data: scaleSessions } = await admin
-      .from('scale_training_sessions')
-      .select('user_id, created_at')
 
     const nameById = new Map(
       (profiles || []).map(p => [

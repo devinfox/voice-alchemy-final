@@ -1,20 +1,21 @@
-import { createClient, getCurrentUser } from '@/lib/supabase-server'
+import { createClient, getAuthUser } from '@/lib/supabase-server'
 import { NextResponse } from 'next/server'
 
 // GET /api/messages/unread - Get unread message count
 export async function GET() {
   try {
-    const supabase = await createClient()
-    const profile = await getCurrentUser()
+    // Polled from every page: only the signed-in user's id is needed, so skip
+    // the extra profile lookup.
+    const [supabase, user] = await Promise.all([createClient(), getAuthUser()])
 
-    if (!profile) {
+    if (!user) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     }
 
     const { count, error } = await supabase
       .from('messages')
       .select('id', { count: 'exact', head: true })
-      .eq('recipient_id', profile.id)
+      .eq('recipient_id', user.id)
       .is('read_at', null)
 
     if (error) {

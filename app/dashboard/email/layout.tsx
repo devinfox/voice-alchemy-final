@@ -1,5 +1,5 @@
 import type { Metadata } from 'next'
-import { createClient, getCurrentUser } from '@/lib/supabase-server'
+import { createClient, getAuthUser, getCurrentUser } from '@/lib/supabase-server'
 import { getSupabaseAdmin } from '@/lib/supabase-admin'
 import { redirect } from 'next/navigation'
 import { headers } from 'next/headers'
@@ -17,7 +17,7 @@ export default async function EmailLayout({
 }) {
   const profile = await getCurrentUser()
   const supabase = await createClient()
-  const { data: { user: authUser } } = await supabase.auth.getUser()
+  const authUser = await getAuthUser()
 
   if (!profile || !authUser) {
     redirect('/login')

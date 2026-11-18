@@ -1,5 +1,5 @@
 import type { Metadata } from 'next'
-import { createClient, getCurrentUser } from '@/lib/supabase-server'
+import { createClient, getAuthUser, getCurrentUser } from '@/lib/supabase-server'
 import { redirect } from 'next/navigation'
 import { Settings, User } from 'lucide-react'
 import ProfileEditForm from './profile-edit-form'
@@ -9,7 +9,7 @@ export const metadata: Metadata = { title: 'Settings', description: 'Your profil
 export default async function SettingsPage() {
   const supabase = await createClient()
   const profile = await getCurrentUser()
-  const { data: { user: authUser } } = await supabase.auth.getUser()
+  const authUser = await getAuthUser()
 
   if (!profile || !authUser) {
     redirect('/login')
