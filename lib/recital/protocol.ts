@@ -45,6 +45,8 @@ export interface RecitalPresence {
   audioProfile: 'talk' | 'performance'
   /** In the waiting room (training sessions): visible to the host, not connected. */
   waiting?: boolean
+  /** How this person is sending their camera; viewers pick the picture size from it. */
+  videoMode?: 'spotlight' | 'thumbnail' | 'off'
   /** Currently sharing a screen. */
   sharingScreen?: boolean
   joinedAt: number

@@ -1,6 +1,7 @@
 'use client'
 
 import React, { useEffect, useRef, useState, useCallback, useImperativeHandle, forwardRef } from 'react'
+import { FALLBACK_ICE_SERVERS, ICE_CANDIDATE_POOL_SIZE, fetchRecitalIceConfiguration, hasTurnServer, mergeIceServers } from '@/lib/recital/ice'
 import {
   Video,
   VideoOff,
@@ -61,20 +62,11 @@ interface PeerConnection {
 // Minimum time between processing offers from the same peer (ms)
 const OFFER_DEDUP_WINDOW = 1000
 
-// Optimized ICE configuration for best connectivity without TURN
-// Multiple STUN servers for redundancy, aggressive ICE settings
+// Starting ICE configuration: STUN, plus a TURN relay if one is set in env.
+// The real relay list (Cloudflare TURN, same as group classes and ../crm) is
+// fetched from /api/recitals/ice when the lesson opens; see the effect below.
 const getIceServers = (): RTCConfiguration => {
-  const iceServers: RTCIceServer[] = [
-    // Google STUN servers (most reliable)
-    { urls: 'stun:stun.l.google.com:19302' },
-    { urls: 'stun:stun1.l.google.com:19302' },
-    { urls: 'stun:stun2.l.google.com:19302' },
-    { urls: 'stun:stun3.l.google.com:19302' },
-    { urls: 'stun:stun4.l.google.com:19302' },
-    // Additional public STUN servers for redundancy
-    { urls: 'stun:stun.cloudflare.com:3478' },
-    { urls: 'stun:stun.nextcloud.com:443' },
-  ]
+  const iceServers: RTCIceServer[] = [...FALLBACK_ICE_SERVERS]
 
   // Add TURN server if configured (for NAT traversal behind strict firewalls)
   const turnUrl = process.env.NEXT_PUBLIC_TURN_URL
@@ -91,18 +83,18 @@ const getIceServers = (): RTCConfiguration => {
 
   return {
     iceServers,
-    // Pre-fetch ICE candidates before creating offers (faster connection)
-    iceCandidatePoolSize: 10,
+    // One bundled transport is all a call uses; a bigger pool only opens
+    // extra relay allocations for nothing.
+    iceCandidatePoolSize: ICE_CANDIDATE_POOL_SIZE,
     // Bundle all media into one connection (more efficient)
     bundlePolicy: 'max-bundle',
     // Require RTCP multiplexing (reduces ports needed)
     rtcpMuxPolicy: 'require',
-    // Use all available ICE transport types
-    iceTransportPolicy: turnUrl ? 'all' : 'all',
   }
 }
 
-const ICE_SERVERS: RTCConfiguration = getIceServers()
+// Replaced with the relay-capable list once it has been fetched.
+let ICE_SERVERS: RTCConfiguration = getIceServers()
 
 const VideoWebRTC = forwardRef<VideoWebRTCHandle, VideoWebRTCProps>(function VideoWebRTC({
   roomId,
@@ -226,6 +218,30 @@ const VideoWebRTC = forwardRef<VideoWebRTCHandle, VideoWebRTCProps>(function Vid
       peer.makingOffer = false
     }
   }, [isPolite])
+
+  // Fetch the relay servers (signed-in users only) so a lesson still connects
+  // when a school, hotel or office network blocks direct connections. Without
+  // a relay those lessons simply never connected.
+  useEffect(() => {
+    let cancelled = false
+    void fetchRecitalIceConfiguration('').then((fetched) => {
+      const servers = fetched.iceServers ?? []
+      if (cancelled || !hasTurnServer(servers)) return
+      const base = getIceServers()
+      ICE_SERVERS = { ...base, iceServers: mergeIceServers(servers, base.iceServers ?? []) }
+      // Connections opened before the list arrived pick it up on their next ICE restart.
+      peerConnectionsRef.current.forEach((peer) => {
+        try {
+          peer.connection.setConfiguration(ICE_SERVERS)
+        } catch {
+          // Not all browsers allow changing servers on a live connection.
+        }
+      })
+    })
+    return () => {
+      cancelled = true
+    }
+  }, [])
 
   // Create peer connection for a remote participant
   const createPeerConnection = useCallback((remoteParticipantId: string) => {
@@ -2050,13 +2066,15 @@ const RemoteVideoView = React.memo(function RemoteVideoView({
     let cancelled = false
     let unmuteTimeout: NodeJS.Timeout | null = null
 
-    // Reset playing state when stream changes
-    setIsVideoPlaying(false)
-
-    // Immediately check track state for the new stream
+    // Reset playing state and re-check the tracks when the stream changes.
+    // Deferred a tick so the effect body itself does not set state.
     const tracks = stream.getVideoTracks()
     const initialHasTrack = tracks.length > 0 && tracks.some(t => t.enabled && t.readyState === 'live')
-    setHasVideoTrack(initialHasTrack)
+    queueMicrotask(() => {
+      if (cancelled) return
+      setIsVideoPlaying(false)
+      setHasVideoTrack(initialHasTrack)
+    })
 
     const updateVideoTrackState = () => {
       if (cancelled) return
@@ -2392,7 +2410,9 @@ function LocalVideoDisplay({
       // Check for video tracks
       const videoTracks = stream.getVideoTracks()
       const hasTrack = videoTracks.length > 0 && videoTracks.some(t => t.enabled && t.readyState === 'live')
-      setHasVideoTrack(hasTrack)
+      queueMicrotask(() => {
+        if (!cancelled) setHasVideoTrack(hasTrack)
+      })
 
       video.srcObject = stream
       video.muted = true
@@ -2463,8 +2483,11 @@ function LocalVideoDisplay({
       }
     } else {
       video.srcObject = null
-      setIsPlaying(false)
-      setHasVideoTrack(false)
+      queueMicrotask(() => {
+        if (cancelled) return
+        setIsPlaying(false)
+        setHasVideoTrack(false)
+      })
     }
   }, [stream])
 

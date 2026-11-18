@@ -6,9 +6,9 @@
  * recitals; everyone talks on the normal speech profile.
  */
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { RecitalMesh, type PeerConnectionStatus } from '@/lib/recital/mesh'
+import type { PeerConnectionStatus } from '@/lib/recital/mesh'
+import { createRecitalTransport, type RecitalTransport } from '@/lib/recital/transport'
 import { RecitalAudioPipeline, type LevelReading } from '@/lib/recital/audio-pipeline'
-import { fetchRecitalIceConfiguration } from '@/lib/recital/ice'
 import type { ChatMessage, HostCommand, NetQuality, RecitalEnvelope, RecitalPresence } from '@/lib/recital/protocol'
 import type { Reaction, Toast } from '@/lib/recital/use-recital-room'
 import { resolveTrainingSettings, type TrainingJoinGrant } from '@/types/training.types'
@@ -34,7 +34,7 @@ const authHeaders = (token: string) => ({ 'Content-Type': 'application/json', Au
 export function useTrainingRoom({ grant, pipeline, cameraTrack, initialMuted = false, initialVideoOff = false }: Args) {
   const isHost = grant.role === 'host'
   const settings = useMemo(() => resolveTrainingSettings(grant.session.settings), [grant.session.settings])
-  const meshRef = useRef<RecitalMesh | null>(null)
+  const meshRef = useRef<RecitalTransport | null>(null)
   const cameraTrackRef = useRef(cameraTrack)
   const screenStreamRef = useRef<MediaStream | null>(null)
   const stateRef = useRef<TrainingLiveState>({ phase: 'lobby', version: 0 })
@@ -281,7 +281,7 @@ export function useTrainingRoom({ grant, pipeline, cameraTrack, initialMuted = f
 
   useEffect(() => {
     let cancelled = false
-    let mesh: RecitalMesh | null = null
+    let mesh: RecitalTransport | null = null
 
     const handleMessage = (env: RecitalEnvelope) => {
       const { msg, from } = env
@@ -342,12 +342,10 @@ export function useTrainingRoom({ grant, pipeline, cameraTrack, initialMuted = f
     }
 
     const run = async () => {
-      const ice = await fetchRecitalIceConfiguration(grant.token)
-      if (cancelled) return
-      mesh = new RecitalMesh({
+      const created = await createRecitalTransport({
+        sessionToken: grant.token,
         recitalId: `training-${grant.session.id}`,
         spotlightBudgetKbps: settings.uplinkKbps,
-        ice,
         shouldConnect: (p) => !p.waiting,
         presence: {
           id: grant.participantId,
@@ -406,6 +404,8 @@ export function useTrainingRoom({ grant, pipeline, cameraTrack, initialMuted = f
           },
         },
       })
+      if (cancelled) return
+      mesh = created
       meshRef.current = mesh
 
       const audioTrack = pipeline.track

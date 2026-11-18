@@ -13,10 +13,10 @@
  *     late joiners; the API keeps a durable copy for refreshes.
  */
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { RecitalMesh, type PeerConnectionStatus, type PeerStats } from './mesh'
+import type { PeerConnectionStatus, PeerStats } from './mesh'
+import { createRecitalTransport, type RecitalTransport } from './transport'
 import { RecitalAudioPipeline, type LevelReading } from './audio-pipeline'
 import { LocalPerformanceRecorder } from './local-recorder'
-import { fetchRecitalIceConfiguration } from './ice'
 import {
   INITIAL_LIVE_STATE,
   type ChatMessage,
@@ -64,7 +64,7 @@ export function useRecitalRoom({ grant, pipeline, cameraTrack, initialMuted = fa
   const isHost = grant.role === 'host'
   const settings: RecitalSettings = useMemo(() => resolveSettings(grant.recital.settings), [grant.recital.settings])
 
-  const meshRef = useRef<RecitalMesh | null>(null)
+  const meshRef = useRef<RecitalTransport | null>(null)
   const recorderRef = useRef(new LocalPerformanceRecorder())
   const hostArchiveRef = useRef(new LocalPerformanceRecorder())
   const liveStateRef = useRef<RecitalLiveState>(INITIAL_LIVE_STATE)
@@ -363,16 +363,13 @@ export function useRecitalRoom({ grant, pipeline, cameraTrack, initialMuted = fa
 
   useEffect(() => {
     let cancelled = false
-    let mesh: RecitalMesh | null = null
+    let mesh: RecitalTransport | null = null
 
     const run = async () => {
-      const ice = await fetchRecitalIceConfiguration(grant.token)
-      if (cancelled) return
-
-      mesh = new RecitalMesh({
+      const created = await createRecitalTransport({
+        sessionToken: grant.token,
         recitalId: grant.recital.id,
         spotlightBudgetKbps: settings.performerUplinkKbps,
-        ice,
         presence: {
           id: grant.participantId,
           name: grant.displayName,
@@ -433,6 +430,8 @@ export function useRecitalRoom({ grant, pipeline, cameraTrack, initialMuted = fa
           },
         },
       })
+      if (cancelled) return
+      mesh = created
       meshRef.current = mesh
 
       const audioTrack = pipeline.track

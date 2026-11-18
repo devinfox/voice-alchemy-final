@@ -74,7 +74,7 @@ interface Peer {
   stats: PeerStats
 }
 
-interface MeshOptions {
+export interface MeshOptions {
   recitalId: string
   presence: RecitalPresence
   ice: RTCConfiguration

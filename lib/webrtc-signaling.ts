@@ -6,12 +6,47 @@
 import { createClient as createSupabaseClient } from '@supabase/supabase-js'
 import type { RealtimeChannel } from '@supabase/supabase-js'
 
+// What each participant tracks in the channel's presence state.
+type PresenceFields = {
+  id: string
+  name: string
+  isHost?: boolean
+  isMuted?: boolean
+  isVideoOff?: boolean
+  isScreenSharing?: boolean
+  joinedAt?: number
+}
+
+/**
+ * Everything a signal can carry. Which fields are actually present depends on
+ * the message `type` (an offer has `sdp`, a chat has `message`, and so on);
+ * receivers read only the fields their message type carries.
+ */
+export interface SignalPayload {
+  sdp: RTCSessionDescriptionInit
+  candidate: RTCIceCandidateInit | null
+  id: string
+  name?: string
+  isHost?: boolean
+  isMuted: boolean
+  isVideoOff: boolean
+  isScreenSharing: boolean
+  message: string
+  senderName: string
+  isRecording: boolean
+  startedAt?: number
+  startedBy?: string
+}
+
+/** A message on its way out: only the fields for its type are filled in. */
+export type OutgoingSignal = Omit<SignalingMessage, 'payload'> & { payload: Partial<SignalPayload> }
+
 // Types for signaling messages
 export interface SignalingMessage {
   type: 'offer' | 'answer' | 'ice-candidate' | 'participant-joined' | 'participant-left' | 'mute-status' | 'video-status' | 'screen-share' | 'chat' | 'recording-status'
   from: string
   to?: string // If undefined, broadcast to all
-  payload: any
+  payload: SignalPayload
   timestamp: number
 }
 
@@ -82,7 +117,7 @@ export class WebRTCSignaling {
 
       // Handle presence (participant tracking)
       this.channel.on('presence', { event: 'sync' }, () => {
-        const presenceState = this.channel?.presenceState() || {}
+        const presenceState = this.channel?.presenceState<PresenceFields>() || {}
         console.log(`[Signaling] Presence sync on ${channelName}:`, JSON.stringify(presenceState, null, 2))
         this.updateParticipantsFromPresence(presenceState)
       })
@@ -90,24 +125,25 @@ export class WebRTCSignaling {
       this.channel.on('presence', { event: 'join' }, ({ key, newPresences }) => {
         console.log('[Signaling] Participant joined via presence:', key, newPresences)
         // Update participants from latest presence state to ensure new participant is detected
-        const presenceState = this.channel?.presenceState() || {}
+        const presenceState = this.channel?.presenceState<PresenceFields>() || {}
         this.updateParticipantsFromPresence(presenceState)
 
         // Only fire participant-joined for unique participant IDs we haven't seen yet
         // This prevents duplicate callbacks when a participant has multiple stale presence entries
         const seenIds = new Set<string>()
-        newPresences.forEach((presence: any) => {
+        newPresences.forEach((presence: Partial<PresenceFields> & { presence_ref: string }) => {
           if (presence.id && presence.id !== this.participantId && !seenIds.has(presence.id)) {
             seenIds.add(presence.id)
             console.log(`[Signaling] Firing participant-joined callback for ${presence.id}`)
             const message: SignalingMessage = {
               type: 'participant-joined',
               from: presence.id,
+              // A join carries only who joined.
               payload: {
                 id: presence.id,
                 name: presence.name,
                 isHost: presence.isHost,
-              },
+              } as SignalPayload,
               timestamp: Date.now(),
             }
             this.handleSignalingMessage(message)
@@ -202,7 +238,7 @@ export class WebRTCSignaling {
   /**
    * Send a signaling message (offer, answer, ICE candidate)
    */
-  sendSignal(to: string, type: SignalingMessage['type'], payload: any): void {
+  sendSignal(to: string, type: SignalingMessage['type'], payload: Partial<SignalPayload>): void {
     this.broadcast({
       type,
       from: this.participantId,
@@ -215,7 +251,7 @@ export class WebRTCSignaling {
   /**
    * Broadcast a message to all participants
    */
-  broadcast(message: SignalingMessage): void {
+  broadcast(message: OutgoingSignal): void {
     if (!this.channel) {
       console.error('[Signaling] Not connected')
       return
@@ -351,16 +387,16 @@ export class WebRTCSignaling {
     callbacks.forEach((callback) => callback(message))
   }
 
-  private updateParticipantsFromPresence(presenceState: Record<string, any[]>): void {
+  private updateParticipantsFromPresence(presenceState: Record<string, PresenceFields[]>): void {
     this.roomState.participants.clear()
 
     // For each participant ID, only keep the most recent presence entry (by joinedAt)
     // This handles stale presence entries from disconnected tabs/sessions
     Object.entries(presenceState).forEach(([_key, presences]) => {
       // Group by participant ID and keep only the most recent
-      const latestByParticipant = new Map<string, any>()
+      const latestByParticipant = new Map<string, PresenceFields>()
 
-      presences.forEach((presence: any) => {
+      presences.forEach((presence) => {
         const existingPresence = latestByParticipant.get(presence.id)
         if (!existingPresence || (presence.joinedAt || 0) > (existingPresence.joinedAt || 0)) {
           latestByParticipant.set(presence.id, presence)
