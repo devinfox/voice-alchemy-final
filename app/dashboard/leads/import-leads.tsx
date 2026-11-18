@@ -29,6 +29,7 @@ export function ImportLeads() {
   const input = useRef<HTMLInputElement>(null)
   const depth = useRef(0)
   const [dragging, setDragging] = useState(false)
+  const [chooserOpen, setChooserOpen] = useState(false)
   const [parsing, setParsing] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [file, setFile] = useState<{ name: string; sheet: ImportSheet } | null>(null)
@@ -44,41 +45,65 @@ export function ImportLeads() {
     finally { setParsing(false); if (input.current) input.current.value = '' }
   }
 
+  useEffect(() => {
+    if (!chooserOpen || file) return
+    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape' && !parsing) setChooserOpen(false) }
+    document.addEventListener('keydown', onKey)
+    return () => document.removeEventListener('keydown', onKey)
+  }, [chooserOpen, file, parsing])
+
   function drop(event: DragEvent) {
     event.preventDefault(); depth.current = 0; setDragging(false)
     if (event.dataTransfer.files.length !== 1) { setError('Drop one CSV file at a time.'); return }
     void openFile(event.dataTransfer.files[0])
   }
 
+  // Header button. Upload instructions and the drop zone live in the chooser
+  // dialog, so the Leads list starts near the top of the page.
   return <>
-    <section
-      aria-label="Import leads from CSV"
-      className={`relative overflow-hidden rounded-2xl border p-5 sm:p-6 transition-colors ${dragging ? 'border-[#CEB466] bg-[#CEB466]/15' : 'border-[#CEB466]/25 bg-gradient-to-br from-[#302344] via-[#20182f] to-[#171229]'}`}
-      onDragEnter={e => { e.preventDefault(); depth.current++; setDragging(true) }}
-      onDragOver={e => { e.preventDefault(); e.dataTransfer.dropEffect = 'copy' }}
-      onDragLeave={e => { e.preventDefault(); if (--depth.current <= 0) setDragging(false) }}
-      onDrop={drop}
-    >
-      <div className="relative flex flex-wrap items-center gap-5">
-        <div className="flex h-14 w-14 shrink-0 items-center justify-center rounded-2xl border border-[#CEB466]/30 bg-[#CEB466]/10 text-[#CEB466]">
-          {parsing ? <Loader2 className="h-6 w-6 animate-spin" /> : <Upload className="h-6 w-6" />}
-        </div>
-        <div className="min-w-0 flex-1 basis-64">
-          <h2 className="font-luxury text-xl text-white">{dragging ? 'Drop your CSV here' : 'Bring your community to Voice Alchemy'}</h2>
-          <p className="mt-1 text-sm leading-relaxed text-gray-300">Drag in a CSV and we’ll match the columns for you. Review your singers and coaches before importing.</p>
-          <p className="mt-2 text-xs text-[#CEB466]/80">CSV or TSV · up to 25,000 leads · 10 MB</p>
-        </div>
-        <div className="flex flex-col items-center gap-2">
-          <button type="button" className={GOLD_BUTTON} onClick={() => input.current?.click()} disabled={parsing}>
-            <FileSpreadsheet className="h-4 w-4" /> {parsing ? 'Reading file…' : 'Import leads'}
-          </button>
-          <button type="button" className="text-xs text-gray-400 hover:text-[#CEB466]" onClick={() => download('Email Address,First Name,Last Name,Singer or Coach,Source,Email Marketing Status\nexample@example.com,Alex,River,Singer,Workshop,non-subscribed\n', 'voice-alchemy-leads-template.csv')}>Download sample CSV</button>
+    <button type="button" className={`${GOLD_BUTTON} px-4 py-2`} onClick={() => { setError(null); setChooserOpen(true) }}>
+      <Upload className="h-4 w-4" /> Import leads
+    </button>
+    <input ref={input} type="file" accept=".csv,.tsv,text/csv,text/tab-separated-values" className="sr-only" aria-label="Choose lead CSV" onChange={e => void openFile(e.target.files?.[0])} />
+
+    {chooserOpen && !file && (
+      <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+        <div className="absolute inset-0 bg-black/70 backdrop-blur-sm" onClick={() => !parsing && setChooserOpen(false)} />
+        <div role="dialog" aria-labelledby="import-chooser-title" className="relative w-full max-w-lg rounded-3xl border border-[#CEB466]/35 bg-[#171229] p-6 text-white shadow-2xl">
+          <div className="flex items-start justify-between gap-3">
+            <div>
+              <p className="text-[10px] font-semibold uppercase tracking-[0.2em] text-[#CEB466]">Voice Alchemy Academy</p>
+              <h2 id="import-chooser-title" className="mt-1 font-luxury text-2xl">Import leads</h2>
+            </div>
+            <button type="button" onClick={() => setChooserOpen(false)} disabled={parsing} aria-label="Close" className="rounded-lg p-2 text-gray-400 hover:bg-white/10 hover:text-white disabled:opacity-30"><X className="h-5 w-5" /></button>
+          </div>
+          <section
+            aria-label="Drop a CSV file"
+            className={`mt-5 flex flex-col items-center justify-center rounded-2xl border-2 border-dashed px-6 py-10 text-center transition-colors ${dragging ? 'border-[#CEB466] bg-[#CEB466]/15' : 'border-[#CEB466]/30 bg-white/[0.03]'}`}
+            onDragEnter={e => { e.preventDefault(); depth.current++; setDragging(true) }}
+            onDragOver={e => { e.preventDefault(); e.dataTransfer.dropEffect = 'copy' }}
+            onDragLeave={e => { e.preventDefault(); if (--depth.current <= 0) setDragging(false) }}
+            onDrop={drop}
+          >
+            <div className="flex h-14 w-14 items-center justify-center rounded-2xl border border-[#CEB466]/30 bg-[#CEB466]/10 text-[#CEB466]">
+              {parsing ? <Loader2 className="h-6 w-6 animate-spin" /> : <Upload className="h-6 w-6" />}
+            </div>
+            <p className="mt-4 font-medium">{dragging ? 'Drop your CSV here' : 'Drag a CSV here, or choose a file'}</p>
+            <p className="mt-1 text-sm text-gray-400">We match the columns for you and you review every lead before anything is saved.</p>
+            <p className="mt-2 text-xs text-[#CEB466]/80">CSV or TSV · up to 25,000 leads · 10 MB · unzip Mailchimp exports first</p>
+            <button type="button" className={`${GOLD_BUTTON} mt-5`} onClick={() => input.current?.click()} disabled={parsing}>
+              <FileSpreadsheet className="h-4 w-4" /> {parsing ? 'Reading file…' : 'Choose file'}
+            </button>
+          </section>
+          <div className="mt-4 flex items-center justify-between">
+            <button type="button" className="text-xs text-gray-400 hover:text-[#CEB466]" onClick={() => download('Email Address,First Name,Last Name,Singer or Coach,Source,Email Marketing Status\nexample@example.com,Alex,River,Singer,Workshop,non-subscribed\n', 'voice-alchemy-leads-template.csv')}>Download sample CSV</button>
+            <span className="text-xs text-gray-500">No emails are sent by an import.</span>
+          </div>
+          {error && <p role="alert" className="mt-4 text-sm text-red-300">{error}</p>}
         </div>
       </div>
-      <input ref={input} type="file" accept=".csv,.tsv,text/csv,text/tab-separated-values" className="sr-only" aria-label="Choose lead CSV" onChange={e => void openFile(e.target.files?.[0])} />
-      {error && <p role="alert" className="mt-4 text-sm text-red-300">{error}</p>}
-    </section>
-    {file && <ImportDialog file={file} onClose={() => setFile(null)} />}
+    )}
+    {file && <ImportDialog file={file} onClose={() => { setFile(null); setChooserOpen(false) }} />}
   </>
 }
 

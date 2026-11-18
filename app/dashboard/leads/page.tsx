@@ -161,28 +161,28 @@ export default async function LeadsPage({ searchParams }: { searchParams: Promis
 
   return (
     <DesktopOnly featureName="Leads">
-      <div className="space-y-5 max-w-[1600px]">
-        <div>
-          <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-[#CEB466]/15 border border-[#CEB466]/30 text-[10px] sm:text-xs font-semibold text-[#CEB466] mb-2">
-            <UserPlus className="w-3.5 h-3.5" />
-            <span>Voice Alchemy · Leads</span>
-          </div>
-          <div className="flex items-center gap-3">
-            <div>
-              <h1 className="text-2xl sm:text-3xl md:text-4xl font-bold text-white font-luxury">Leads</h1>
-              <p className="text-xs sm:text-sm text-gray-300 mt-1 max-w-2xl">
-                Your singers and coaches, from website signups to imported contacts. See where they came from and follow their journey.
-                <Link href="/dashboard/email-templates?tab=funnels" className="ml-2 text-[#CEB466] hover:underline">Manage funnels</Link>
-              </p>
-            </div>
+      <div className="space-y-4 max-w-[1600px]">
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <h1 className="text-2xl sm:text-3xl font-bold text-white font-luxury flex items-center gap-3">
+            <UserPlus className="w-6 h-6 text-[#CEB466]" />
+            Leads
+            <span className="text-lg font-normal text-gray-500">· {(totalLeads || 0).toLocaleString()}</span>
+          </h1>
+          <div className="flex items-center gap-2">
+            <Link
+              href="/dashboard/email-templates?tab=funnels"
+              className="inline-flex items-center gap-2 rounded-xl border border-white/10 bg-white/5 px-4 py-2 text-sm text-gray-200 hover:bg-white/10"
+            >
+              Manage funnels
+            </Link>
+            <ImportLeads />
           </div>
         </div>
-        <ImportLeads />
-        {(totalLeads || 0) > pageSize && <div className="flex items-center justify-between gap-3 text-sm text-gray-400">
-          <p>Showing {(page - 1) * pageSize + 1}–{Math.min(page * pageSize, totalLeads || 0)} of {(totalLeads || 0).toLocaleString()} leads. Filters apply to this page.</p>
-          <nav aria-label="Lead pages" className="flex gap-4">
-            {page > 1 && <Link className="text-[#CEB466] hover:underline" href={`/dashboard/leads?page=${page - 1}`}>Previous</Link>}
-            {page * pageSize < (totalLeads || 0) && <Link className="text-[#CEB466] hover:underline" href={`/dashboard/leads?page=${page + 1}`}>Next</Link>}
+        {(totalLeads || 0) > pageSize && <div className="flex items-center justify-between gap-3 text-xs text-gray-400">
+          <p>Loaded {(page - 1) * pageSize + 1}–{Math.min(page * pageSize, totalLeads || 0)} of {(totalLeads || 0).toLocaleString()} leads. Search and filters apply to this batch.</p>
+          <nav aria-label="Lead batches" className="flex gap-4">
+            {page > 1 && <Link className="text-[#CEB466] hover:underline" href={`/dashboard/leads?page=${page - 1}`}>Previous batch</Link>}
+            {page * pageSize < (totalLeads || 0) && <Link className="text-[#CEB466] hover:underline" href={`/dashboard/leads?page=${page + 1}`}>Next batch</Link>}
           </nav>
         </div>}
         <LeadsTable
